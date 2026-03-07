@@ -27,5 +27,5 @@
     "vitest": "catalog:",
     "wait-on": "^8.0.2"
   },
-  "productName": "XBE Code (Alpha)"
+  "productName": "XBE Code"
 }

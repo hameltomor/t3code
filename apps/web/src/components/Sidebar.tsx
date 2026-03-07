@@ -20,7 +20,6 @@ import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/rea
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useAppSettings } from "../appSettings";
 import { isElectron } from "../env";
-import { APP_STAGE_LABEL } from "../branding";
 import { newCommandId, newProjectId, newThreadId } from "../lib/utils";
 import { useStore } from "../store";
 import { isChatNewLocalShortcut, isChatNewShortcut, shortcutLabelForCommand } from "../keybindings";
@@ -32,6 +31,7 @@ import { readNativeApi } from "../nativeApi";
 import { type DraftThreadEnvMode, useComposerDraftStore } from "../composerDraftStore";
 import { selectThreadTerminalState, useTerminalStateStore } from "../terminalStateStore";
 import { toastManager } from "./ui/toast";
+import { RepoSummaryBadge } from "./RepoSwitcher";
 import {
   getDesktopUpdateActionError,
   getDesktopUpdateButtonTooltip,
@@ -996,9 +996,6 @@ export default function Sidebar() {
         <span className="truncate text-sm font-medium tracking-tight text-muted-foreground">
           Code
         </span>
-        <span className="rounded-full bg-muted/50 px-1.5 py-0.5 text-[8px] font-medium uppercase tracking-[0.18em] text-muted-foreground/60">
-          {APP_STAGE_LABEL}
-        </span>
       </div>
     </div>
   );
@@ -1090,6 +1087,7 @@ export default function Sidebar() {
                         <span className="flex-1 truncate text-xs font-medium text-foreground/90">
                           {project.name}
                         </span>
+                        <RepoSummaryBadge projectId={project.id} workspaceRoot={project.cwd} />
                       </CollapsibleTrigger>
                       <Tooltip>
                         <TooltipTrigger

@@ -48,7 +48,7 @@ const STATE_DIR =
 const DESKTOP_SCHEME = "xbe";
 const ROOT_DIR = Path.resolve(__dirname, "../../..");
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
-const APP_DISPLAY_NAME = isDevelopment ? "XBE Code (Dev)" : "XBE Code (Alpha)";
+const APP_DISPLAY_NAME = isDevelopment ? "XBE Code (Dev)" : "XBE Code";
 const APP_USER_MODEL_ID = "com.xbetools.xbecode";
 const COMMIT_HASH_PATTERN = /^[0-9a-f]{7,40}$/i;
 const COMMIT_HASH_DISPLAY_LENGTH = 12;
@@ -727,7 +727,7 @@ function configureAutoUpdater(): void {
 
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
-  // Keep alpha branding, but force all installs onto the stable update track.
+  // Force all installs onto the stable update track.
   autoUpdater.channel = DESKTOP_UPDATE_CHANNEL;
   autoUpdater.allowPrerelease = DESKTOP_UPDATE_ALLOW_PRERELEASE;
   autoUpdater.allowDowngrade = false;
