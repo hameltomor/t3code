@@ -221,6 +221,7 @@ export type ServerRuntimeServices =
   | ServerCoreRuntimeServices
   | GitManager
   | GitCore
+  | WorkspaceRepoScanner
   | TerminalManager
   | Keybindings
   | Open

@@ -21,6 +21,8 @@ export interface AppState {
   projects: Project[];
   threads: Thread[];
   threadsHydrated: boolean;
+  /** UI-only: selected repo cwd per project for multi-repo workspaces. Not persisted to server. */
+  selectedRepoCwdByProject: Record<string, string>;
 }
 
 const PERSISTED_STATE_KEY = "xbecode:renderer-state:v8";
@@ -39,6 +41,7 @@ const initialState: AppState = {
   projects: [],
   threads: [],
   threadsHydrated: false,
+  selectedRepoCwdByProject: {},
 };
 const persistedExpandedProjectCwds = new Set<string>();
 
@@ -349,6 +352,24 @@ export function setError(state: AppState, threadId: ThreadId, error: string | nu
   return threads === state.threads ? state : { ...state, threads };
 }
 
+export function setSelectedRepoCwd(
+  state: AppState,
+  projectId: Project["id"],
+  repoCwd: string | null,
+): AppState {
+  if (repoCwd === null) {
+    if (!(projectId in state.selectedRepoCwdByProject)) return state;
+    const next = { ...state.selectedRepoCwdByProject };
+    delete next[projectId];
+    return { ...state, selectedRepoCwdByProject: next };
+  }
+  if (state.selectedRepoCwdByProject[projectId] === repoCwd) return state;
+  return {
+    ...state,
+    selectedRepoCwdByProject: { ...state.selectedRepoCwdByProject, [projectId]: repoCwd },
+  };
+}
+
 export function setThreadBranch(
   state: AppState,
   threadId: ThreadId,
@@ -378,6 +399,7 @@ interface AppStore extends AppState {
   setProjectExpanded: (projectId: Project["id"], expanded: boolean) => void;
   setError: (threadId: ThreadId, error: string | null) => void;
   setThreadBranch: (threadId: ThreadId, branch: string | null, worktreePath: string | null) => void;
+  setSelectedRepoCwd: (projectId: Project["id"], repoCwd: string | null) => void;
 }
 
 export const useStore = create<AppStore>((set) => ({
@@ -392,6 +414,8 @@ export const useStore = create<AppStore>((set) => ({
   setError: (threadId, error) => set((state) => setError(state, threadId, error)),
   setThreadBranch: (threadId, branch, worktreePath) =>
     set((state) => setThreadBranch(state, threadId, branch, worktreePath)),
+  setSelectedRepoCwd: (projectId, repoCwd) =>
+    set((state) => setSelectedRepoCwd(state, projectId, repoCwd)),
 }));
 
 // Persist on every state change

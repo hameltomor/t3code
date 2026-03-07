@@ -6,11 +6,15 @@ const GIT_STATUS_STALE_TIME_MS = 5_000;
 const GIT_STATUS_REFETCH_INTERVAL_MS = 15_000;
 const GIT_BRANCHES_STALE_TIME_MS = 15_000;
 const GIT_BRANCHES_REFETCH_INTERVAL_MS = 60_000;
+const GIT_WORKSPACE_REPOS_STALE_TIME_MS = 30_000;
+const GIT_WORKSPACE_REPOS_REFETCH_INTERVAL_MS = 60_000;
 
 export const gitQueryKeys = {
   all: ["git"] as const,
   status: (cwd: string | null) => ["git", "status", cwd] as const,
   branches: (cwd: string | null) => ["git", "branches", cwd] as const,
+  workspaceRepos: (workspaceRoot: string | null) =>
+    ["git", "workspaceRepos", workspaceRoot] as const,
 };
 
 export const gitMutationKeys = {
@@ -166,5 +170,21 @@ export function gitRemoveWorktreeMutationOptions(input: { queryClient: QueryClie
     onSettled: async () => {
       await invalidateGitQueries(input.queryClient);
     },
+  });
+}
+
+export function gitWorkspaceReposQueryOptions(workspaceRoot: string | null) {
+  return queryOptions({
+    queryKey: gitQueryKeys.workspaceRepos(workspaceRoot),
+    queryFn: async () => {
+      const api = ensureNativeApi();
+      if (!workspaceRoot) throw new Error("Workspace repos query is unavailable.");
+      return api.git.listWorkspaceRepos({ workspaceRoot });
+    },
+    enabled: workspaceRoot !== null,
+    staleTime: GIT_WORKSPACE_REPOS_STALE_TIME_MS,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchInterval: GIT_WORKSPACE_REPOS_REFETCH_INTERVAL_MS,
   });
 }

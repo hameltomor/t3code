@@ -47,7 +47,11 @@ import {
   type VirtualItem,
   useVirtualizer,
 } from "@tanstack/react-virtual";
-import { gitBranchesQueryOptions, gitCreateWorktreeMutationOptions } from "~/lib/gitReactQuery";
+import {
+  gitBranchesQueryOptions,
+  gitCreateWorktreeMutationOptions,
+  gitWorkspaceReposQueryOptions,
+} from "~/lib/gitReactQuery";
 import { projectSearchEntriesQueryOptions } from "~/lib/projectReactQuery";
 import { serverConfigQueryOptions, serverQueryKeys } from "~/lib/serverReactQuery";
 
@@ -116,6 +120,7 @@ import {
 } from "../lib/turnDiffTree";
 import BranchToolbar from "./BranchToolbar";
 import GitActionsControl from "./GitActionsControl";
+import RepoSwitcher from "./RepoSwitcher";
 import {
   isOpenFavoriteEditorShortcut,
   resolveShortcutCommand,
@@ -3468,7 +3473,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
         <ChatHeader
           activeThreadId={activeThread.id}
           activeThreadTitle={activeThread.title}
+          activeProjectId={activeProject?.id ?? null}
           activeProjectName={activeProject?.name}
+          activeProjectCwd={activeProject?.cwd ?? null}
           isGitRepo={isGitRepo}
           openInCwd={activeThread.worktreePath ?? activeProject?.cwd ?? null}
           activeProjectScripts={activeProject?.scripts}
@@ -4055,7 +4062,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
 interface ChatHeaderProps {
   activeThreadId: ThreadId;
   activeThreadTitle: string;
+  activeProjectId: ProjectId | null;
   activeProjectName: string | undefined;
+  activeProjectCwd: string | null;
   isGitRepo: boolean;
   openInCwd: string | null;
   activeProjectScripts: ProjectScript[] | undefined;
@@ -4076,7 +4085,9 @@ const MAX_HEADER_PROJECT_NAME_LENGTH = 24;
 const ChatHeader = memo(function ChatHeader({
   activeThreadId,
   activeThreadTitle,
+  activeProjectId,
   activeProjectName,
+  activeProjectCwd,
   isGitRepo,
   openInCwd,
   activeProjectScripts,
@@ -4094,6 +4105,16 @@ const ChatHeader = memo(function ChatHeader({
   const truncatedProjectName = activeProjectName
     ? truncateTitle(activeProjectName, MAX_HEADER_PROJECT_NAME_LENGTH)
     : null;
+  const setSelectedRepoCwd = useStore((store) => store.setSelectedRepoCwd);
+  const selectedRepoCwd = useStore(
+    (store) => (activeProjectId ? store.selectedRepoCwdByProject[activeProjectId] : null) ?? null,
+  );
+  const workspaceReposQuery = useQuery(gitWorkspaceReposQueryOptions(activeProjectCwd));
+  const workspaceRepos = workspaceReposQuery.data?.repos ?? [];
+  const isMultiRepo =
+    workspaceRepos.length > 1 || (workspaceRepos.length === 1 && !workspaceRepos[0]!.isRoot);
+  // For GitActionsControl: use selected repo cwd when multi-repo, otherwise normal gitCwd
+  const gitActionsRepoCwd = isMultiRepo ? (selectedRepoCwd ?? workspaceRepos[0]?.path ?? null) : gitCwd;
 
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -4114,7 +4135,7 @@ const ChatHeader = memo(function ChatHeader({
             <span className="block truncate">{truncatedProjectName}</span>
           </Badge>
         )}
-        {activeProjectName && !isGitRepo && (
+        {activeProjectName && !isGitRepo && !isMultiRepo && (
           <Badge variant="outline" className="shrink-0 text-[10px] text-amber-700">
             No Git
           </Badge>
@@ -4138,7 +4159,16 @@ const ChatHeader = memo(function ChatHeader({
             openInCwd={openInCwd}
           />
         )}
-        {activeProjectName && <GitActionsControl gitCwd={gitCwd} activeThreadId={activeThreadId} />}
+        {activeProjectName && isMultiRepo && activeProjectId && activeProjectCwd && (
+          <RepoSwitcher
+            projectId={activeProjectId}
+            workspaceRoot={activeProjectCwd}
+            onSelectedRepoCwdChange={(repoCwd) => {
+              if (activeProjectId) setSelectedRepoCwd(activeProjectId, repoCwd);
+            }}
+          />
+        )}
+        {activeProjectName && <GitActionsControl gitCwd={gitActionsRepoCwd} activeThreadId={activeThreadId} />}
         <Tooltip>
           <TooltipTrigger
             render={
