@@ -33,16 +33,16 @@ Remote access should use the built web app (not local Vite redirect mode).
 ```bash
 bun run build
 TOKEN="$(openssl rand -hex 24)"
-bun run --cwd apps/server start -- --host 0.0.0.0 --port 3773 --auth-token "$TOKEN" --no-browser
+bun run --cwd apps/server start -- --host 0.0.0.0 --port 3775 --auth-token "$TOKEN" --no-browser
 ```
 
 Then open on your phone:
 
-`http://<your-machine-ip>:3773`
+`http://<your-machine-ip>:3775`
 
 Example:
 
-`http://192.168.1.42:3773`
+`http://192.168.1.42:3775`
 
 Notes:
 
@@ -57,11 +57,11 @@ If you use Tailscale, you can bind directly to your Tailnet address.
 ```bash
 TAILNET_IP="$(tailscale ip -4)"
 TOKEN="$(openssl rand -hex 24)"
-bun run --cwd apps/server start -- --host "$(tailscale ip -4)" --port 3773 --auth-token "$TOKEN" --no-browser
+bun run --cwd apps/server start -- --host "$(tailscale ip -4)" --port 3775 --auth-token "$TOKEN" --no-browser
 ```
 
 Open from any device in your tailnet:
 
-`http://<tailnet-ip>:3773`
+`http://<tailnet-ip>:3775`
 
 You can also bind `--host 0.0.0.0` and connect through the Tailnet IP, but binding directly to the Tailnet IP limits exposure.

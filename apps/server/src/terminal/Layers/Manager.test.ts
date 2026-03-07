@@ -610,7 +610,7 @@ describe("TerminalManager", () => {
     };
 
     setEnv("PORT", "5173");
-    setEnv("T3CODE_PORT", "3773");
+    setEnv("T3CODE_PORT", "3775");
     setEnv("VITE_DEV_SERVER_URL", "http://localhost:5173");
     setEnv("TEST_TERMINAL_KEEP", "keep-me");
 

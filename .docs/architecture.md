@@ -7,7 +7,7 @@ T3 Code runs as a **Node.js WebSocket server** that wraps `codex app-server` (JS
 │  Browser (React + Vite)         │
 │  Connected via WebSocket        │
 └──────────┬──────────────────────┘
-           │ ws://localhost:3773
+           │ ws://localhost:3775
 ┌──────────▼──────────────────────┐
 │  apps/server (Node.js)          │
 │  WebSocket + HTTP static server │

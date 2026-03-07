@@ -8,7 +8,7 @@
  */
 import { Effect, FileSystem, Layer, Path, ServiceMap } from "effect";
 
-export const DEFAULT_PORT = 3773;
+export const DEFAULT_PORT = 3775;
 
 export type RuntimeMode = "web" | "desktop";
 

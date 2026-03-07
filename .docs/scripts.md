@@ -35,7 +35,7 @@
 
 Set `T3CODE_DEV_INSTANCE` to any value to deterministically shift all dev ports together.
 
-- Default ports: server `3773`, web `5733`
+- Default ports: dev server `3774`, prod server `3775`, web `5733`
 - Shifted ports: `base + offset` (offset is hashed from `T3CODE_DEV_INSTANCE`)
 - Example: `T3CODE_DEV_INSTANCE=branch-a bun run dev:desktop`
 
