@@ -59,4 +59,14 @@ describe("isScrollContainerNearBottom", () => {
     ).toBe(true);
     expect(AUTO_SCROLL_BOTTOM_THRESHOLD_PX).toBe(64);
   });
+
+  it("treats overscrolled values as bottom", () => {
+    expect(
+      isScrollContainerNearBottom({
+        scrollTop: 610,
+        clientHeight: 400,
+        scrollHeight: 1_000,
+      }),
+    ).toBe(true);
+  });
 });
