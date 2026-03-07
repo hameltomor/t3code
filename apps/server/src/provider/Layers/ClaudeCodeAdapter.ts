@@ -33,7 +33,7 @@ import {
   RuntimeTaskId,
   ThreadId,
   TurnId,
-} from "@t3tools/contracts";
+} from "@xbetools/contracts";
 import { Cause, DateTime, Deferred, Effect, Layer, Queue, Random, Ref, Stream } from "effect";
 
 import {

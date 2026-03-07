@@ -170,3 +170,35 @@ export const GitPullResult = Schema.Struct({
   upstreamBranch: TrimmedNonEmptyStringSchema.pipe(Schema.NullOr),
 });
 export type GitPullResult = typeof GitPullResult.Type;
+
+// ── Workspace Repos ─────────────────────────────────────────────────
+
+export const GitListWorkspaceReposInput = Schema.Struct({
+  workspaceRoot: TrimmedNonEmptyStringSchema,
+  maxDepth: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
+});
+export type GitListWorkspaceReposInput = typeof GitListWorkspaceReposInput.Type;
+
+const WorkspaceRepoSummaryPr = Schema.Struct({
+  number: PositiveInt,
+  url: Schema.String,
+  state: GitStatusPrState,
+});
+
+export const WorkspaceRepoSummary = Schema.Struct({
+  path: TrimmedNonEmptyStringSchema,
+  name: TrimmedNonEmptyStringSchema,
+  relativePath: TrimmedNonEmptyStringSchema,
+  isRoot: Schema.Boolean,
+  branch: TrimmedNonEmptyStringSchema.pipe(Schema.NullOr),
+  hasChanges: Schema.Boolean,
+  aheadCount: NonNegativeInt,
+  behindCount: NonNegativeInt,
+  pr: Schema.NullOr(WorkspaceRepoSummaryPr),
+});
+export type WorkspaceRepoSummary = typeof WorkspaceRepoSummary.Type;
+
+export const GitListWorkspaceReposResult = Schema.Struct({
+  repos: Schema.Array(WorkspaceRepoSummary),
+});
+export type GitListWorkspaceReposResult = typeof GitListWorkspaceReposResult.Type;

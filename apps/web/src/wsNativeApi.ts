@@ -9,7 +9,7 @@ import {
   WS_CHANNELS,
   WS_METHODS,
   WsWelcomePayload,
-} from "@t3tools/contracts";
+} from "@xbetools/contracts";
 import { Cause, Schema } from "effect";
 
 import { showContextMenuFallback } from "./contextMenuFallback";
@@ -170,6 +170,7 @@ export function createWsNativeApi(): NativeApi {
       createBranch: (input) => transport.request(WS_METHODS.gitCreateBranch, input),
       checkout: (input) => transport.request(WS_METHODS.gitCheckout, input),
       init: (input) => transport.request(WS_METHODS.gitInit, input),
+      listWorkspaceRepos: (input) => transport.request(WS_METHODS.gitListWorkspaceRepos, input),
     },
     contextMenu: {
       show: async <T extends string>(

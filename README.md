@@ -1,24 +1,20 @@
-# T3 Code
+# XBE Code
 
-T3 Code is a minimal web GUI for coding agents. Currently Codex-first, with Claude Code support coming soon.
+XBE Code is a minimal web GUI for coding agents. Currently Codex-first, with Claude Code support coming soon.
+
+> **Fork notice:** This project is a fork of [T3 Code](https://github.com/pingdotgg/t3code) by [Ping.gg](https://github.com/pingdotgg). The original project is licensed under its respective license. XBE Code is an independent rebranding and continuation with extended functionality.
 
 ## How to use
 
 > [!WARNING]
-> You need to have [Codex CLI](https://github.com/openai/codex) installed and authorized for T3 Code to work.
+> You need to have [Codex CLI](https://github.com/openai/codex) installed and authorized for XBE Code to work.
 
 ```bash
-npx t3
+npx xbe
 ```
 
 You can also just install the desktop app. It's cooler.
 
-Install the [desktop app from the Releases page](https://github.com/pingdotgg/t3code/releases)
-
 ## Some notes
 
 We are very very early in this project. Expect bugs.
-
-We are not accepting contributions yet.
-
-Need support? Join the [Discord](https://discord.gg/jn4EGJjrvv).

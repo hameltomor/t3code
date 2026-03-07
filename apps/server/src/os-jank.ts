@@ -1,6 +1,6 @@
 import * as OS from "node:os";
 import { Effect, Path } from "effect";
-import { readPathFromLoginShell } from "@t3tools/shared/shell";
+import { readPathFromLoginShell } from "@xbetools/shared/shell";
 
 export function fixPath(): void {
   if (process.platform !== "darwin") return;
@@ -30,7 +30,7 @@ export const expandHomePath = Effect.fn(function* (input: string) {
 export const resolveStateDir = Effect.fn(function* (raw: string | undefined) {
   const { join, resolve } = yield* Path.Path;
   if (!raw || raw.trim().length === 0) {
-    return join(OS.homedir(), ".t3", "userdata");
+    return join(OS.homedir(), ".xbe", "userdata");
   }
   return resolve(yield* expandHomePath(raw.trim()));
 });

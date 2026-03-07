@@ -8,15 +8,15 @@ const NODE24 = path.join(
 module.exports = {
   apps: [
     {
-      name: "t3code-prod",
+      name: "xbecode-prod",
       script: path.join(__dirname, "apps/server/dist/index.mjs"),
       interpreter: NODE24,
       cwd: __dirname,
       env: {
         NODE_ENV: "production",
-        T3CODE_PORT: "3775",
-        T3CODE_STATE_DIR: path.join(require("os").homedir(), ".t3", "prod"),
-        T3CODE_NO_BROWSER: "1",
+        XBECODE_PORT: "3775",
+        XBECODE_STATE_DIR: path.join(require("os").homedir(), ".xbe", "prod"),
+        XBECODE_NO_BROWSER: "1",
       },
     },
   ],

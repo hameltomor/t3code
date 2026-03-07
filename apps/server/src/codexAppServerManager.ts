@@ -18,8 +18,8 @@ import {
   type ProviderTurnStartResult,
   RuntimeMode,
   ProviderInteractionMode,
-} from "@t3tools/contracts";
-import { normalizeModelSlug } from "@t3tools/shared/model";
+} from "@xbetools/contracts";
+import { normalizeModelSlug } from "@xbetools/shared/model";
 import { Effect, ServiceMap } from "effect";
 
 import {
@@ -404,8 +404,8 @@ export function normalizeCodexModelSlug(
 export function buildCodexInitializeParams() {
   return {
     clientInfo: {
-      name: "t3code_desktop",
-      title: "T3 Code Desktop",
+      name: "xbecode_desktop",
+      title: "XBE Code Desktop",
       version: "0.1.0",
     },
     capabilities: {

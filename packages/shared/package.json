@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/shared",
+  "name": "@xbetools/shared",
   "version": "0.0.0-alpha.1",
   "private": true,
   "type": "module",
@@ -31,7 +31,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@t3tools/contracts": "workspace:*",
+    "@xbetools/contracts": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

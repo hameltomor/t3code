@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
-import { type ProviderKind } from "@t3tools/contracts";
-import { getModelOptions, normalizeModelSlug } from "@t3tools/shared/model";
+import { type ProviderKind } from "@xbetools/contracts";
+import { getModelOptions, normalizeModelSlug } from "@xbetools/shared/model";
 import { ZapIcon } from "lucide-react";
 
 import {
@@ -207,7 +207,7 @@ function SettingsRouteView() {
               <div className="mb-4">
                 <h2 className="text-sm font-medium text-foreground">Appearance</h2>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Choose how T3 Code handles light and dark mode.
+                  Choose how XBE Code handles light and dark mode.
                 </p>
               </div>
 

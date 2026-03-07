@@ -7,7 +7,7 @@ import {
   ProjectId,
   ThreadId,
   TurnId,
-} from "@t3tools/contracts";
+} from "@xbetools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { Effect, Layer, ManagedRuntime } from "effect";
@@ -804,7 +804,7 @@ projectionLayer("OrchestrationProjectionPipeline", (it) => {
           threadId,
           turnId: TurnId.makeUnsafe("turn-keep"),
           checkpointTurnCount: 1,
-          checkpointRef: CheckpointRef.makeUnsafe("refs/t3/checkpoints/thread-revert-files/turn/1"),
+          checkpointRef: CheckpointRef.makeUnsafe("refs/xbe/checkpoints/thread-revert-files/turn/1"),
           status: "ready",
           files: [],
           assistantMessageId: MessageId.makeUnsafe("message-keep"),
@@ -857,7 +857,7 @@ projectionLayer("OrchestrationProjectionPipeline", (it) => {
           threadId,
           turnId: TurnId.makeUnsafe("turn-remove"),
           checkpointTurnCount: 2,
-          checkpointRef: CheckpointRef.makeUnsafe("refs/t3/checkpoints/thread-revert-files/turn/2"),
+          checkpointRef: CheckpointRef.makeUnsafe("refs/xbe/checkpoints/thread-revert-files/turn/2"),
           status: "ready",
           files: [],
           assistantMessageId: MessageId.makeUnsafe("message-remove"),
@@ -1482,7 +1482,7 @@ projectionLayer("OrchestrationProjectionPipeline", (it) => {
             threadId: ThreadId.makeUnsafe("thread-conflict"),
             turnId: TurnId.makeUnsafe("turn-completed"),
             checkpointTurnCount: 1,
-            checkpointRef: CheckpointRef.makeUnsafe("refs/t3/checkpoints/thread-conflict/turn/1"),
+            checkpointRef: CheckpointRef.makeUnsafe("refs/xbe/checkpoints/thread-conflict/turn/1"),
             status: "ready",
             files: [],
             assistantMessageId: MessageId.makeUnsafe("assistant-conflict"),
@@ -1584,7 +1584,7 @@ projectionLayer("OrchestrationProjectionPipeline", (it) => {
           threadId: ThreadId.makeUnsafe("thread-revert"),
           turnId: TurnId.makeUnsafe("turn-1"),
           checkpointTurnCount: 1,
-          checkpointRef: CheckpointRef.makeUnsafe("refs/t3/checkpoints/thread-revert/turn/1"),
+          checkpointRef: CheckpointRef.makeUnsafe("refs/xbe/checkpoints/thread-revert/turn/1"),
           status: "ready",
           files: [],
           assistantMessageId: MessageId.makeUnsafe("assistant-keep"),
@@ -1628,7 +1628,7 @@ projectionLayer("OrchestrationProjectionPipeline", (it) => {
           threadId: ThreadId.makeUnsafe("thread-revert"),
           turnId: TurnId.makeUnsafe("turn-2"),
           checkpointTurnCount: 2,
-          checkpointRef: CheckpointRef.makeUnsafe("refs/t3/checkpoints/thread-revert/turn/2"),
+          checkpointRef: CheckpointRef.makeUnsafe("refs/xbe/checkpoints/thread-revert/turn/2"),
           status: "ready",
           files: [],
           assistantMessageId: MessageId.makeUnsafe("assistant-remove"),

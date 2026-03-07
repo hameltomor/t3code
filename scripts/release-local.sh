@@ -20,7 +20,7 @@ echo "==> Building project..."
 bun run build
 
 echo "==> Restarting PM2 process..."
-if pm2 describe t3code-prod > /dev/null 2>&1; then
+if pm2 describe xbecode-prod > /dev/null 2>&1; then
   pm2 restart ecosystem.config.cjs
 else
   pm2 start ecosystem.config.cjs
@@ -28,5 +28,5 @@ fi
 
 pm2 save
 
-echo "==> Done. t3code-prod running on port 3775"
-pm2 status t3code-prod
+echo "==> Done. xbecode-prod running on port 3775"
+pm2 status xbecode-prod

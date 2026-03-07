@@ -1,4 +1,4 @@
-import { ProjectId, ThreadId } from "@t3tools/contracts";
+import { ProjectId, ThreadId } from "@xbetools/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { type ComposerImageAttachment, useComposerDraftStore } from "./composerDraftStore";

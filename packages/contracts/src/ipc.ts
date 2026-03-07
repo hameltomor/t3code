@@ -13,6 +13,8 @@ import type {
   GitRunStackedActionResult,
   GitStatusInput,
   GitStatusResult,
+  GitListWorkspaceReposInput,
+  GitListWorkspaceReposResult,
 } from "./git";
 import type {
   ProjectSearchEntriesInput,
@@ -127,6 +129,9 @@ export interface NativeApi {
     pull: (input: GitPullInput) => Promise<GitPullResult>;
     status: (input: GitStatusInput) => Promise<GitStatusResult>;
     runStackedAction: (input: GitRunStackedActionInput) => Promise<GitRunStackedActionResult>;
+    listWorkspaceRepos: (
+      input: GitListWorkspaceReposInput,
+    ) => Promise<GitListWorkspaceReposResult>;
   };
   contextMenu: {
     show: <T extends string>(

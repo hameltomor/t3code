@@ -26,7 +26,7 @@ import {
   WebSocketRequest,
   WsPush,
   WsResponse,
-} from "@t3tools/contracts";
+} from "@xbetools/contracts";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import {
   Cause,
@@ -59,6 +59,7 @@ import { clamp } from "effect/Number";
 import { Open, resolveAvailableEditors } from "./open";
 import { ServerConfig } from "./config";
 import { GitCore } from "./git/Services/GitCore.ts";
+import { WorkspaceRepoScanner } from "./git/Services/WorkspaceRepoScanner.ts";
 import { tryHandleProjectFaviconRequest } from "./projectFaviconRoute";
 import {
   ATTACHMENTS_ROUTE_PREFIX,
@@ -96,7 +97,7 @@ export interface ServerShape {
 /**
  * Server - Service tag for HTTP/WebSocket lifecycle management.
  */
-export class Server extends ServiceMap.Service<Server, ServerShape>()("t3/wsServer/Server") {}
+export class Server extends ServiceMap.Service<Server, ServerShape>()("xbe/wsServer/Server") {}
 
 const isServerNotRunningError = (error: unknown): boolean => {
   if (!(error instanceof Error)) return false;
@@ -262,6 +263,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
   const keybindingsManager = yield* Keybindings;
   const providerHealth = yield* ProviderHealth;
   const git = yield* GitCore;
+  const workspaceRepoScanner = yield* WorkspaceRepoScanner;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
 
@@ -851,6 +853,11 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
       case WS_METHODS.gitInit: {
         const body = stripRequestTag(request.body);
         return yield* git.initRepo(body);
+      }
+
+      case WS_METHODS.gitListWorkspaceRepos: {
+        const body = stripRequestTag(request.body);
+        return yield* workspaceRepoScanner.listWorkspaceRepos(body);
       }
 
       case WS_METHODS.terminalOpen: {
