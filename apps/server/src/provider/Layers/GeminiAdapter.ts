@@ -17,6 +17,7 @@ import {
   type Content,
   type GenerateContentConfig,
   type GenerateContentResponse,
+  type Part,
 } from "@google/genai";
 import {
   DEFAULT_MODEL_BY_PROVIDER,
@@ -513,7 +514,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
     const runAgentLoop = (
       ctx: GeminiSessionContext,
       userMessage: string,
-      providerMessage: string,
+      providerParts: Part[],
     ): Effect.Effect<void, ProviderAdapterRequestError> =>
       Effect.gen(function* () {
         const ts = ctx.turnState;
@@ -523,12 +524,18 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
         ctx.abortControllers.add(abortController);
         const cleanup = () => ctx.abortControllers.delete(abortController);
 
+        // Extract text-only version for transcript persistence (images not replayed on resume)
+        const providerMessageText = providerParts
+          .filter((p) => typeof p.text === "string")
+          .map((p) => p.text!)
+          .join("\n\n") || undefined;
+
         try {
           // Build initial contents from transcript history + new user message
           const historyContents = turnsToHistory(ctx.turns);
           const currentContents: Content[] = [
             ...historyContents,
-            { role: "user", parts: [{ text: providerMessage }] },
+            { role: "user", parts: providerParts },
           ];
 
           const toolInteractions: TranscriptTurn["toolInteractions"][number][] = [];
@@ -614,7 +621,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
             ctx.turns.push({
               id: ts.turnId,
               userMessage,
-              providerMessage,
+              providerMessage: providerMessageText,
               assistantText: ts.accumulatedText || "(Agent reached maximum tool iterations without a final answer)",
               toolInteractions,
             });
@@ -624,7 +631,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
             ctx.turns.push({
               id: ts.turnId,
               userMessage,
-              providerMessage,
+              providerMessage: providerMessageText,
               assistantText: ts.accumulatedText,
               toolInteractions,
             });
@@ -808,7 +815,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
             : undefined;
 
         const userMessage = buildUserMessage(input, materializedImages);
-        const providerMessage = buildProviderMessage(userMessage, {
+        const providerParts = buildProviderMessage(userMessage, {
           cwd: ctx.session.cwd,
           projectContext: ctx.projectContext,
           ...(materializedImages ? { materializedImages } : {}),
@@ -817,7 +824,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
 
         // Run agent loop in background (non-blocking)
         Effect.runFork(
-          runAgentLoop(ctx, userMessage, providerMessage).pipe(
+          runAgentLoop(ctx, userMessage, providerParts).pipe(
             Effect.catchCause((cause) =>
               Effect.gen(function* () {
                 if (Cause.hasInterruptsOnly(cause) || ctx.stopped) return;
@@ -1152,15 +1159,34 @@ function buildUserMessage(
 
 function buildProviderMessage(
   userMessage: string,
-  _opts: {
+  opts: {
     cwd: string | undefined;
     projectContext: string | undefined;
     materializedImages?: MaterializedImageAttachment[];
   },
-): string {
-  // For the agent loop, project context is in systemInstruction.
-  // Images are deferred to the attachment parity phase.
-  return userMessage;
+): Part[] {
+  const parts: Part[] = [];
+
+  if (userMessage) {
+    parts.push({ text: userMessage });
+  }
+
+  if (opts.materializedImages && opts.materializedImages.length > 0) {
+    for (const img of opts.materializedImages) {
+      parts.push({
+        inlineData: {
+          mimeType: img.mimeType,
+          data: img.base64,
+        },
+      });
+    }
+  }
+
+  if (parts.length === 0) {
+    parts.push({ text: "Continue." });
+  }
+
+  return parts;
 }
 
 export const GeminiAdapterLive = Layer.effect(GeminiAdapter, makeGeminiAdapter());
