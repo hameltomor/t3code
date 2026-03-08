@@ -729,7 +729,7 @@ describe("GeminiAdapterLive", () => {
   });
 
   describe("interruption", () => {
-    it("interruption during tool execution clears pending state", () =>
+    it("interruption during approval marks turn as interrupted, not completed", () =>
       run(
         Effect.gen(function* () {
           // Set up a function call that requires approval
@@ -759,6 +759,10 @@ describe("GeminiAdapterLive", () => {
 
           // Session should still be valid (interrupt cancels the turn, not the session)
           expect(yield* adapter.hasSession(TEST_THREAD_ID)).toBe(true);
+
+          // The interrupted turn should NOT be persisted in the transcript
+          const thread = yield* adapter.readThread(TEST_THREAD_ID);
+          expect(thread.turns).toHaveLength(0);
         }),
       ));
   });

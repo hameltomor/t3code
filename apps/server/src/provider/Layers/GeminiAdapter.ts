@@ -606,8 +606,21 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
             }
           }
 
-          if (!ctx.stopped) {
-            // Record the completed turn in the transcript
+          if (ctx.stopped || abortController.signal.aborted) {
+            // Turn was interrupted — mark it as such, don't persist to transcript
+            yield* completeTurn(ctx, "interrupted");
+          } else if (iterations >= MAX_TOOL_LOOP_ITERATIONS) {
+            // Safety cap reached without a final answer
+            ctx.turns.push({
+              id: ts.turnId,
+              userMessage,
+              providerMessage,
+              assistantText: ts.accumulatedText || "(Agent reached maximum tool iterations without a final answer)",
+              toolInteractions,
+            });
+            yield* completeTurn(ctx, "failed", "Agent reached maximum tool loop iterations");
+          } else {
+            // Normal completion
             ctx.turns.push({
               id: ts.turnId,
               userMessage,
