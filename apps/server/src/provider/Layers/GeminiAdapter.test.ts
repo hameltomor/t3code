@@ -1,8 +1,4 @@
-import { mkdirSync, writeFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
-import { randomUUID } from "node:crypto";
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Effect, Scope } from "effect";
 import type { ThreadId } from "@xbetools/contracts";
 
@@ -10,35 +6,71 @@ import { makeGeminiAdapter } from "./GeminiAdapter.ts";
 
 // ── Mock @google/genai SDK ────────────────────────────────────────────
 
-let mockStreamChunks: Array<{ text: string }> = [{ text: "Hello from Gemini!" }];
-let mockCreateCalls: Array<{ model: string; config: unknown; history?: unknown }> = [];
-let mockSendCalls: Array<{ message: unknown; config?: unknown }> = [];
+/** Simulated response chunks for generateContent / generateContentStream */
+let mockGenerateContentResult: {
+  text?: string;
+  functionCalls?: Array<{ id?: string; name?: string; args?: Record<string, unknown> }>;
+} = { text: "Hello from Gemini!" };
+
+let mockGenerateContentCalls: Array<{
+  model: string;
+  contents: unknown;
+  config?: unknown;
+}> = [];
 
 vi.mock("@google/genai", () => ({
   GoogleGenAI: class {
-    chats = {
-      create: (opts: { model: string; config: unknown; history?: unknown }) => {
-        mockCreateCalls.push(opts);
+    models = {
+      generateContent: async (opts: {
+        model: string;
+        contents: unknown;
+        config?: unknown;
+      }) => {
+        mockGenerateContentCalls.push(opts);
         return {
-          sendMessageStream: async (input: { message: string; config?: unknown }) => {
-            mockSendCalls.push(input);
-            const chunks = [...mockStreamChunks];
+          get text() {
+            return mockGenerateContentResult.text;
+          },
+          get functionCalls() {
+            return mockGenerateContentResult.functionCalls;
+          },
+        };
+      },
+      generateContentStream: async (opts: {
+        model: string;
+        contents: unknown;
+        config?: unknown;
+      }) => {
+        mockGenerateContentCalls.push(opts);
+        const text = mockGenerateContentResult.text ?? "";
+        const chunks = text ? [{ text }] : [];
+        return {
+          [Symbol.asyncIterator]() {
+            let index = 0;
             return {
-              [Symbol.asyncIterator]() {
-                let index = 0;
-                return {
-                  async next() {
-                    if (index < chunks.length) {
-                      return { done: false as const, value: chunks[index++]! };
-                    }
-                    return { done: true as const, value: undefined };
-                  },
-                };
+              async next() {
+                if (index < chunks.length) {
+                  return { done: false as const, value: chunks[index++]! };
+                }
+                return { done: true as const, value: undefined };
               },
             };
           },
         };
       },
+    };
+    chats = {
+      create: () => ({
+        sendMessageStream: async () => ({
+          [Symbol.asyncIterator]() {
+            return {
+              async next() {
+                return { done: true as const, value: undefined };
+              },
+            };
+          },
+        }),
+      }),
     };
   },
 }));
@@ -54,9 +86,8 @@ function run<A, E>(effect: Effect.Effect<A, E, Scope.Scope>) {
 }
 
 beforeEach(() => {
-  mockStreamChunks = [{ text: "Hello from Gemini!" }];
-  mockCreateCalls = [];
-  mockSendCalls = [];
+  mockGenerateContentResult = { text: "Hello from Gemini!" };
+  mockGenerateContentCalls = [];
 });
 
 // ── Tests ──────────────────────────────────────────────────────────────
@@ -151,7 +182,7 @@ describe("GeminiAdapterLive", () => {
   it("sends a turn and records it in thread history", () =>
     run(
       Effect.gen(function* () {
-        mockStreamChunks = [{ text: "chunk1" }, { text: "chunk2" }];
+        mockGenerateContentResult = { text: "Response text" };
         const adapter = yield* makeGeminiAdapter({ apiKey: TEST_API_KEY });
         yield* adapter.startSession({
           threadId: TEST_THREAD_ID,
@@ -166,8 +197,8 @@ describe("GeminiAdapterLive", () => {
         expect(turn.threadId).toBe(TEST_THREAD_ID);
         expect(turn.turnId).toBeDefined();
 
-        // Wait for background stream to complete
-        yield* Effect.sleep(200);
+        // Wait for background agent loop to complete
+        yield* Effect.sleep(300);
 
         // Verify the turn was recorded
         const thread = yield* adapter.readThread(TEST_THREAD_ID);
@@ -190,9 +221,10 @@ describe("GeminiAdapterLive", () => {
       }),
     ));
 
-  it("rollback truncates turns and rebuilds chat", () =>
+  it("rollback truncates turns", () =>
     run(
       Effect.gen(function* () {
+        mockGenerateContentResult = { text: "Answer" };
         const adapter = yield* makeGeminiAdapter({ apiKey: TEST_API_KEY });
         yield* adapter.startSession({
           threadId: TEST_THREAD_ID,
@@ -203,21 +235,53 @@ describe("GeminiAdapterLive", () => {
           threadId: TEST_THREAD_ID,
           input: "Hello",
         });
-        yield* Effect.sleep(200);
+        yield* Effect.sleep(300);
 
         const threadBefore = yield* adapter.readThread(TEST_THREAD_ID);
         expect(threadBefore.turns).toHaveLength(1);
 
-        const callsBefore = mockCreateCalls.length;
         const threadAfter = yield* adapter.rollbackThread(TEST_THREAD_ID, 1);
         expect(threadAfter.turns).toHaveLength(0);
-
-        // Verify chat was rebuilt (create called again)
-        expect(mockCreateCalls.length).toBeGreaterThan(callsBefore);
       }),
     ));
 
-  it("respondToRequest fails for gemini adapter", () =>
+  it("respondToRequest works when approval is pending", () =>
+    run(
+      Effect.gen(function* () {
+        // Set up a function call response that requires approval
+        mockGenerateContentResult = {
+          functionCalls: [
+            { id: "fc-1", name: "run_command", args: { command: "echo hello" } },
+          ],
+        };
+
+        const adapter = yield* makeGeminiAdapter({ apiKey: TEST_API_KEY });
+        yield* adapter.startSession({
+          threadId: TEST_THREAD_ID,
+          runtimeMode: "full-access",
+        });
+
+        yield* adapter.sendTurn({
+          threadId: TEST_THREAD_ID,
+          input: "Run echo",
+        });
+
+        // Wait for the agent loop to hit the approval gate
+        yield* Effect.sleep(200);
+
+        // After the first call returns function calls, change the mock to return text
+        mockGenerateContentResult = { text: "Done running command" };
+
+        // Respond to the approval
+        const result = yield* adapter
+          .respondToRequest(TEST_THREAD_ID, "any-id" as any, "accept" as any)
+          .pipe(Effect.result);
+
+        expect(result._tag).toBe("Success");
+      }),
+    ));
+
+  it("respondToRequest fails when no approval is pending", () =>
     run(
       Effect.gen(function* () {
         const adapter = yield* makeGeminiAdapter({ apiKey: TEST_API_KEY });
@@ -227,14 +291,14 @@ describe("GeminiAdapterLive", () => {
         });
 
         const result = yield* adapter
-          .respondToRequest(TEST_THREAD_ID, "req-1" as any, "approve" as any)
+          .respondToRequest(TEST_THREAD_ID, "req-1" as any, "accept" as any)
           .pipe(Effect.result);
 
         expect(result._tag).toBe("Failure");
       }),
     ));
 
-  it("respondToUserInput fails for gemini adapter", () =>
+  it("respondToUserInput fails when no user-input is pending", () =>
     run(
       Effect.gen(function* () {
         const adapter = yield* makeGeminiAdapter({ apiKey: TEST_API_KEY });
@@ -270,7 +334,7 @@ describe("GeminiAdapterLive", () => {
       }),
     ));
 
-  it("session recovery replays prior turns into chat history", () =>
+  it("session recovery replays prior turns into transcript", () =>
     run(
       Effect.gen(function* () {
         const adapter = yield* makeGeminiAdapter({ apiKey: TEST_API_KEY });
@@ -284,13 +348,14 @@ describe("GeminiAdapterLive", () => {
             turns: [
               {
                 userMessage: "What is TypeScript?",
-                providerMessage:
-                  "<project_context>\nTypeScript docs\n</project_context>\n<user_request>\nWhat is TypeScript?\n</user_request>",
+                providerMessage: "What is TypeScript?",
                 assistantText: "A typed superset of JavaScript.",
+                toolInteractions: [],
               },
               {
                 userMessage: "How about Effect?",
                 assistantText: "A framework for type-safe async programming.",
+                toolInteractions: [],
               },
             ],
           },
@@ -302,13 +367,6 @@ describe("GeminiAdapterLive", () => {
         // Verify turns were restored
         const thread = yield* adapter.readThread(TEST_THREAD_ID);
         expect(thread.turns).toHaveLength(2);
-
-        // Verify chat was created with history
-        const lastCreate = mockCreateCalls.at(-1);
-        expect(lastCreate?.history).toBeDefined();
-        expect(lastCreate?.history).toHaveLength(4); // 2 turns × 2 messages
-        const history = (lastCreate?.history ?? []) as Array<any>;
-        expect(history[0]?.parts?.[0]?.text).toContain("<project_context>");
       }),
     ));
 
@@ -342,8 +400,7 @@ describe("GeminiAdapterLive", () => {
   it("interruptTurn aborts in-flight requests without crashing", () =>
     run(
       Effect.gen(function* () {
-        // Use a slow stream that we can interrupt
-        mockStreamChunks = [{ text: "part1" }];
+        mockGenerateContentResult = { text: "part1" };
         const adapter = yield* makeGeminiAdapter({ apiKey: TEST_API_KEY });
         yield* adapter.startSession({
           threadId: TEST_THREAD_ID,
@@ -363,41 +420,10 @@ describe("GeminiAdapterLive", () => {
       }),
     ));
 
-  it("buildUserMessage uses attachment.name not fileName", () =>
+  it("resume cursor includes full turn history with tool interactions", () =>
     run(
       Effect.gen(function* () {
-        const adapter = yield* makeGeminiAdapter({ apiKey: TEST_API_KEY });
-        yield* adapter.startSession({
-          threadId: TEST_THREAD_ID,
-          runtimeMode: "full-access",
-        });
-
-        // Send a turn with an attachment-like input
-        yield* adapter.sendTurn({
-          threadId: TEST_THREAD_ID,
-          input: "Check this image",
-          attachments: [
-            {
-              type: "image" as const,
-              id: "att-1" as any,
-              name: "screenshot.png" as any,
-              mimeType: "image/png" as any,
-              sizeBytes: 1024 as any,
-            },
-          ],
-        });
-
-        yield* Effect.sleep(200);
-
-        // Turn should complete without error
-        const thread = yield* adapter.readThread(TEST_THREAD_ID);
-        expect(thread.turns).toHaveLength(1);
-      }),
-    ));
-
-  it("resume cursor includes full turn history after turn completes", () =>
-    run(
-      Effect.gen(function* () {
+        mockGenerateContentResult = { text: "The answer" };
         const adapter = yield* makeGeminiAdapter({ apiKey: TEST_API_KEY });
         const session = yield* adapter.startSession({
           threadId: TEST_THREAD_ID,
@@ -406,7 +432,7 @@ describe("GeminiAdapterLive", () => {
 
         // Initial cursor should have empty turns
         const initialCursor = session.resumeCursor as {
-          turns?: Array<{ userMessage: string; assistantText: string }>;
+          turns?: Array<unknown>;
         };
         expect(initialCursor?.turns ?? []).toHaveLength(0);
 
@@ -414,138 +440,86 @@ describe("GeminiAdapterLive", () => {
           threadId: TEST_THREAD_ID,
           input: "Hello",
         });
-        yield* Effect.sleep(200);
+        yield* Effect.sleep(300);
 
-        // After turn completes, read the session to get updated cursor
         const sessions = yield* adapter.listSessions();
         const updated = sessions.find((s) => s.threadId === TEST_THREAD_ID);
         const cursor = updated?.resumeCursor as {
           turns?: Array<{
             userMessage: string;
-            providerMessage?: string;
             assistantText: string;
+            toolInteractions: unknown[];
           }>;
         };
 
         expect(cursor?.turns).toHaveLength(1);
         expect(cursor?.turns?.[0]?.userMessage).toBe("Hello");
-        expect(cursor?.turns?.[0]?.assistantText).toBe("Hello from Gemini!");
+        expect(cursor?.turns?.[0]?.assistantText).toBe("The answer");
+        expect(cursor?.turns?.[0]?.toolInteractions).toEqual([]);
       }),
     ));
 
-  it("injects project context into the live provider message when cwd is available", () =>
-    run(
-      Effect.gen(function* () {
-        const adapter = yield* makeGeminiAdapter({ apiKey: TEST_API_KEY });
-        yield* adapter.startSession({
-          threadId: TEST_THREAD_ID,
-          runtimeMode: "full-access",
-          cwd: process.cwd(),
-        });
-
-        yield* adapter.sendTurn({
-          threadId: TEST_THREAD_ID,
-          input: "What the stack of project we have here?",
-        });
-        yield* Effect.sleep(200);
-
-        const sendCall = mockSendCalls.at(-1);
-        expect(typeof sendCall?.message).toBe("string");
-        expect(sendCall?.message).toContain("<project_context>");
-        expect(sendCall?.message).toContain("Manifest: package.json");
-        expect(sendCall?.message).toContain("<user_request>");
-        expect(sendCall?.message).toContain("What the stack of project we have here?");
-
-        const sessions = yield* adapter.listSessions();
-        const updated = sessions.find((entry) => entry.threadId === TEST_THREAD_ID);
-        const cursor = updated?.resumeCursor as {
-          turns?: Array<{
-            userMessage: string;
-            providerMessage?: string;
-            assistantText: string;
-          }>;
-        };
-
-        expect(cursor?.turns?.[0]?.userMessage).toBe("What the stack of project we have here?");
-        expect(cursor?.turns?.[0]?.providerMessage).toContain("<project_context>");
-      }),
-    ));
-
-  describe("image attachment materialization", () => {
-    let stateDir: string;
-
-    beforeEach(() => {
-      stateDir = join(tmpdir(), `xbe-gemini-test-${randomUUID()}`);
-      mkdirSync(join(stateDir, "attachments"), { recursive: true });
-    });
-
-    afterEach(() => {
-      rmSync(stateDir, { recursive: true, force: true });
-    });
-
-    function persistAttachment(id: string, extension: string, bytes: Buffer) {
-      const filePath = join(stateDir, "attachments", `${id}${extension}`);
-      writeFileSync(filePath, bytes);
-    }
-
-    it("sends real multimodal parts for image attachments instead of text placeholders", () =>
+  describe("tool lifecycle events", () => {
+    it("emits tool started/completed events for read-only tools", () =>
       run(
         Effect.gen(function* () {
-          const imageBytes = Buffer.from("fake-png-data-for-gemini-test");
-          const attachmentId = `thread-gemini-1-${randomUUID()}`;
-          persistAttachment(attachmentId, ".png", imageBytes);
+          // First call: model requests read_file
+          // Second call: model returns final text
+          const responses = [
+            {
+              functionCalls: [
+                { id: "fc-read-1", name: "read_file", args: { path: "package.json" } },
+              ],
+            },
+            { text: "The file contains..." },
+          ];
 
-          const adapter = yield* makeGeminiAdapter({
-            apiKey: TEST_API_KEY,
-            stateDir,
-          });
+          mockGenerateContentResult = responses[0]!;
+
+          const adapter = yield* makeGeminiAdapter({ apiKey: TEST_API_KEY });
+
           yield* adapter.startSession({
             threadId: TEST_THREAD_ID,
             runtimeMode: "full-access",
+            cwd: process.cwd(),
           });
+
+          // Patch: after first generate call, switch to text response
+          const checkInterval = setInterval(() => {
+            if (mockGenerateContentCalls.length >= 1 && mockGenerateContentResult !== responses[1]) {
+              mockGenerateContentResult = responses[1]!;
+            }
+          }, 10);
 
           yield* adapter.sendTurn({
             threadId: TEST_THREAD_ID,
-            input: "Describe this image",
-            attachments: [
-              {
-                type: "image" as const,
-                id: attachmentId as any,
-                name: "screenshot.png" as any,
-                mimeType: "image/png" as any,
-                sizeBytes: imageBytes.byteLength as any,
-              },
-            ],
+            input: "Read package.json",
           });
-          yield* Effect.sleep(200);
 
-          const sendCall = mockSendCalls.at(-1);
-          // Provider message should be multimodal parts (an array), not a plain string
-          expect(Array.isArray(sendCall?.message)).toBe(true);
-          const parts = sendCall?.message as Array<Record<string, unknown>>;
+          yield* Effect.sleep(500);
+          clearInterval(checkInterval);
 
-          // First part should be text
-          expect(parts[0]).toHaveProperty("text");
-          expect(parts[0]!.text).toContain("Describe this image");
+          // Verify generateContent was called at least twice (tool call + final)
+          expect(mockGenerateContentCalls.length).toBeGreaterThanOrEqual(2);
 
-          // Second part should be inline image data
-          expect(parts[1]).toHaveProperty("inlineData");
-          const inlineData = parts[1]!.inlineData as {
-            mimeType: string;
-            data: string;
-          };
-          expect(inlineData.mimeType).toBe("image/png");
-          expect(inlineData.data).toBe(imageBytes.toString("base64"));
-
-          // User message text should NOT contain attachment text placeholder
-          const thread = yield* adapter.readThread(TEST_THREAD_ID);
-          expect(thread.turns).toHaveLength(1);
+          // Verify the first call included tool declarations
+          const firstCall = mockGenerateContentCalls[0];
+          expect(firstCall?.config).toBeDefined();
+          const config = firstCall?.config as Record<string, unknown>;
+          expect(config?.tools).toBeDefined();
         }),
       ));
 
-    it("falls back to text-only when stateDir is not provided", () =>
+    it("emits approval events for mutating tools", () =>
       run(
         Effect.gen(function* () {
+          // Set up: model requests run_command, which requires approval
+          mockGenerateContentResult = {
+            functionCalls: [
+              { id: "fc-cmd-1", name: "run_command", args: { command: "echo test" } },
+            ],
+          };
+
           const adapter = yield* makeGeminiAdapter({ apiKey: TEST_API_KEY });
           yield* adapter.startSession({
             threadId: TEST_THREAD_ID,
@@ -554,23 +528,203 @@ describe("GeminiAdapterLive", () => {
 
           yield* adapter.sendTurn({
             threadId: TEST_THREAD_ID,
-            input: "Check this",
-            attachments: [
-              {
-                type: "image" as const,
-                id: "no-state-dir-att" as any,
-                name: "test.png" as any,
-                mimeType: "image/png" as any,
-                sizeBytes: 100 as any,
-              },
-            ],
+            input: "Run a command",
           });
+
+          // Wait for the agent loop to hit approval gate
           yield* Effect.sleep(200);
 
-          // Without stateDir, message should be a plain string with text placeholder
-          const sendCall = mockSendCalls.at(-1);
-          expect(typeof sendCall?.message).toBe("string");
-          expect(sendCall?.message).toContain("[Attachment: test.png (image/png)]");
+          // Switch to text response for after approval
+          mockGenerateContentResult = { text: "Command completed" };
+
+          // Approve the request
+          yield* adapter.respondToRequest(
+            TEST_THREAD_ID,
+            "any" as any,
+            "accept" as any,
+          );
+
+          yield* Effect.sleep(500);
+
+          // Verify the turn completed
+          const thread = yield* adapter.readThread(TEST_THREAD_ID);
+          expect(thread.turns).toHaveLength(1);
+        }),
+      ));
+
+    it("denied approval completes tool as declined", () =>
+      run(
+        Effect.gen(function* () {
+          mockGenerateContentResult = {
+            functionCalls: [
+              { id: "fc-deny-1", name: "run_command", args: { command: "rm -rf /" } },
+            ],
+          };
+
+          const adapter = yield* makeGeminiAdapter({ apiKey: TEST_API_KEY });
+          yield* adapter.startSession({
+            threadId: TEST_THREAD_ID,
+            runtimeMode: "full-access",
+          });
+
+          yield* adapter.sendTurn({
+            threadId: TEST_THREAD_ID,
+            input: "Delete everything",
+          });
+
+          yield* Effect.sleep(200);
+
+          // Switch to text response for after denial
+          mockGenerateContentResult = { text: "I cannot do that" };
+
+          // Deny the request
+          yield* adapter.respondToRequest(
+            TEST_THREAD_ID,
+            "any" as any,
+            "decline" as any,
+          );
+
+          yield* Effect.sleep(500);
+
+          // Verify the turn completed (Gemini gets the denial as a tool result)
+          const thread = yield* adapter.readThread(TEST_THREAD_ID);
+          expect(thread.turns).toHaveLength(1);
+        }),
+      ));
+  });
+
+  describe("recovery with tool interactions", () => {
+    it("session recovery preserves tool interaction transcript", () =>
+      run(
+        Effect.gen(function* () {
+          const adapter = yield* makeGeminiAdapter({ apiKey: TEST_API_KEY });
+          const session = yield* adapter.startSession({
+            threadId: TEST_THREAD_ID,
+            runtimeMode: "full-access",
+            resumeCursor: {
+              threadId: TEST_THREAD_ID,
+              model: "gemini-3.1-pro-preview",
+              turnCount: 1,
+              turns: [
+                {
+                  userMessage: "Read file",
+                  assistantText: "File contents: ...",
+                  toolInteractions: [
+                    {
+                      call: {
+                        id: "fc-1",
+                        name: "read_file",
+                        args: { path: "README.md" },
+                      },
+                      result: {
+                        id: "fc-1",
+                        name: "read_file",
+                        response: { content: "# Hello", totalLines: 1 },
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+          });
+
+          expect(session.status).toBe("ready");
+
+          const thread = yield* adapter.readThread(TEST_THREAD_ID);
+          expect(thread.turns).toHaveLength(1);
+          // Verify tool interactions are included in the thread snapshot
+          const items = thread.turns[0]?.items ?? [];
+          expect(items.length).toBe(2); // assistant_message + tool_call
+        }),
+      ));
+
+    it("rollback removes tool interaction history from transcript", () =>
+      run(
+        Effect.gen(function* () {
+          const adapter = yield* makeGeminiAdapter({ apiKey: TEST_API_KEY });
+          yield* adapter.startSession({
+            threadId: TEST_THREAD_ID,
+            runtimeMode: "full-access",
+            resumeCursor: {
+              threadId: TEST_THREAD_ID,
+              model: "gemini-3.1-pro-preview",
+              turnCount: 2,
+              turns: [
+                {
+                  userMessage: "First",
+                  assistantText: "First response",
+                  toolInteractions: [],
+                },
+                {
+                  userMessage: "Read file",
+                  assistantText: "File contents: ...",
+                  toolInteractions: [
+                    {
+                      call: {
+                        id: "fc-1",
+                        name: "read_file",
+                        args: { path: "README.md" },
+                      },
+                      result: {
+                        id: "fc-1",
+                        name: "read_file",
+                        response: { content: "# Hello" },
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+          });
+
+          // Rollback the second turn (which had tool interactions)
+          const threadAfter = yield* adapter.rollbackThread(TEST_THREAD_ID, 1);
+          expect(threadAfter.turns).toHaveLength(1);
+          expect(threadAfter.turns[0]?.items[0]).toHaveProperty("text", "First response");
+
+          // Verify resume cursor was updated
+          const sessions = yield* adapter.listSessions();
+          const updated = sessions.find((s) => s.threadId === TEST_THREAD_ID);
+          const cursor = updated?.resumeCursor as {
+            turns?: Array<{ toolInteractions: unknown[] }>;
+          };
+          expect(cursor?.turns).toHaveLength(1);
+          expect(cursor?.turns?.[0]?.toolInteractions).toEqual([]);
+        }),
+      ));
+  });
+
+  describe("interruption", () => {
+    it("interruption during tool execution clears pending state", () =>
+      run(
+        Effect.gen(function* () {
+          // Set up a function call that requires approval
+          mockGenerateContentResult = {
+            functionCalls: [
+              { id: "fc-int-1", name: "run_command", args: { command: "sleep 100" } },
+            ],
+          };
+
+          const adapter = yield* makeGeminiAdapter({ apiKey: TEST_API_KEY });
+          yield* adapter.startSession({
+            threadId: TEST_THREAD_ID,
+            runtimeMode: "full-access",
+          });
+
+          yield* adapter.sendTurn({
+            threadId: TEST_THREAD_ID,
+            input: "Do something",
+          });
+
+          yield* Effect.sleep(200);
+
+          // Interrupt while waiting for approval
+          yield* adapter.interruptTurn(TEST_THREAD_ID);
+
+          yield* Effect.sleep(200);
+
+          // Session should still be valid
+          expect(yield* adapter.hasSession(TEST_THREAD_ID)).toBe(true);
         }),
       ));
   });

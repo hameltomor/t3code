@@ -2,24 +2,34 @@
  * GeminiAdapterLive - Scoped live implementation for the Gemini provider adapter.
  *
  * Wraps `@google/genai` SDK behind the generic provider adapter contract and
- * emits canonical runtime events. Gemini v1 is an assistant-only provider — it
- * does not execute tools. Function calling support may be added in a future
- * iteration.
+ * emits canonical runtime events. Implements a manual agent tool loop:
+ *
+ * 1. Send user message + tool declarations to Gemini
+ * 2. Parse function call requests from the response
+ * 3. Gate mutating tools behind approval flow
+ * 4. Execute tools, emit canonical lifecycle events
+ * 5. Send results back to Gemini, loop until final text answer
  *
  * @module GeminiAdapterLive
  */
-import { GoogleGenAI, type Chat, type GenerateContentConfig } from "@google/genai";
+import {
+  GoogleGenAI,
+  type Content,
+  type GenerateContentConfig,
+  type GenerateContentResponse,
+} from "@google/genai";
 import {
   DEFAULT_MODEL_BY_PROVIDER,
-  EventId,
+  type ProviderApprovalDecision,
   type ProviderRuntimeEvent,
-  type ProviderSession,
   type ProviderSendTurnInput,
+  type ProviderSession,
+  type ProviderUserInputAnswers,
   RuntimeItemId,
-  ThreadId,
+  type ThreadId,
   TurnId,
 } from "@xbetools/contracts";
-import { Cause, DateTime, Effect, Layer, Queue, Random, Stream } from "effect";
+import { Cause, DateTime, Deferred, Effect, Layer, Queue, Random, Stream } from "effect";
 
 import {
   ProviderAdapterProcessError,
@@ -35,7 +45,27 @@ import {
   type MaterializedImageAttachment,
 } from "../attachmentMaterializer.ts";
 
+import { GEMINI_FUNCTION_DECLARATIONS, toolRequiresApproval } from "../gemini/GeminiToolDefinitions.ts";
+import {
+  createEventEmitter,
+  emitApprovalRequested,
+  emitApprovalResolved,
+  emitToolCompleted,
+  emitToolStarted,
+} from "../gemini/GeminiRuntimeEvents.ts";
+import { executeGeminiTool, type ToolExecutionResult } from "../gemini/GeminiToolRuntime.ts";
+import {
+  deserializeTurn,
+  parseFunctionCalls,
+  serializeTurn,
+  turnsToHistory,
+  type TranscriptFunctionCall,
+  type TranscriptFunctionResult,
+  type TranscriptTurn,
+} from "../gemini/GeminiTranscript.ts";
+
 const PROVIDER = "gemini" as const;
+const MAX_TOOL_LOOP_ITERATIONS = 25;
 
 interface GeminiTurnState {
   readonly turnId: TurnId;
@@ -45,10 +75,6 @@ interface GeminiTurnState {
   accumulatedText: string;
 }
 
-/**
- * Mutable session state. ProviderSession from contracts is readonly; we keep
- * a mutable copy here and spread it when returning to callers.
- */
 interface MutableSession {
   provider: ProviderSession["provider"];
   status: ProviderSession["status"];
@@ -67,26 +93,34 @@ function toProviderSession(s: MutableSession): ProviderSession {
   return { ...s } as ProviderSession;
 }
 
-/** Persisted conversation turn for session recovery. */
-interface PersistedTurn {
-  id: TurnId;
-  userMessage: string;
-  providerMessage: string | undefined;
-  assistantText: string;
+/** Pending approval state for a tool call awaiting user decision. */
+interface PendingApproval {
+  readonly requestId: string;
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly args: Record<string, unknown>;
+  readonly deferred: Deferred.Deferred<ProviderApprovalDecision>;
+}
+
+/** Pending user-input state for a tool call awaiting user answers. */
+interface PendingUserInput {
+  readonly requestId: string;
+  readonly deferred: Deferred.Deferred<ProviderUserInputAnswers>;
 }
 
 interface GeminiSessionContext {
   session: MutableSession;
-  chat: Chat;
   readonly ai: GoogleGenAI;
   readonly model: string;
   readonly config: GenerateContentConfig;
   readonly projectContext: string | undefined;
   readonly startedAt: string;
-  readonly turns: PersistedTurn[];
+  readonly turns: TranscriptTurn[];
   readonly abortControllers: Set<AbortController>;
   turnState: GeminiTurnState | undefined;
   stopped: boolean;
+  pendingApproval: PendingApproval | undefined;
+  pendingUserInput: PendingUserInput | undefined;
 }
 
 export interface GeminiAdapterLiveOptions {
@@ -108,46 +142,6 @@ function isAbortError(cause: unknown): boolean {
   return false;
 }
 
-interface GeminiResumeState {
-  threadId?: string;
-  model?: string;
-  turnCount?: number;
-  turns?: ReadonlyArray<{
-    userMessage: string;
-    providerMessage?: string;
-    assistantText: string;
-  }>;
-}
-
-function readGeminiResumeState(resumeCursor: unknown): GeminiResumeState | undefined {
-  if (!resumeCursor || typeof resumeCursor !== "object") {
-    return undefined;
-  }
-  const cursor = resumeCursor as Record<string, unknown>;
-  const out: GeminiResumeState = {};
-  if (typeof cursor.threadId === "string") out.threadId = cursor.threadId;
-  if (typeof cursor.model === "string") out.model = cursor.model;
-  if (typeof cursor.turnCount === "number") out.turnCount = cursor.turnCount;
-  if (Array.isArray(cursor.turns)) {
-    out.turns = cursor.turns.filter(
-      (
-        t,
-      ): t is {
-        userMessage: string;
-        providerMessage?: string;
-        assistantText: string;
-      } =>
-        t !== null &&
-        typeof t === "object" &&
-        typeof (t as Record<string, unknown>).userMessage === "string" &&
-        (!("providerMessage" in (t as Record<string, unknown>)) ||
-          typeof (t as Record<string, unknown>).providerMessage === "string") &&
-        typeof (t as Record<string, unknown>).assistantText === "string",
-    );
-  }
-  return out;
-}
-
 function resolveApiKey(
   layerOptions?: GeminiAdapterLiveOptions,
   sessionApiKey?: string,
@@ -162,57 +156,41 @@ function buildResumeCursor(ctx: GeminiSessionContext) {
     threadId: ctx.session.threadId,
     model: ctx.model,
     turnCount: ctx.turns.length,
-    turns: ctx.turns.map((t) => ({
-      userMessage: t.userMessage,
-      ...(t.providerMessage ? { providerMessage: t.providerMessage } : {}),
-      assistantText: t.assistantText,
-    })),
+    turns: ctx.turns.map(serializeTurn),
   };
 }
 
-/**
- * Create a fresh Gemini chat, optionally replaying prior turns
- * to reconstruct context after recovery or rollback.
- */
-function createChat(
-  ai: GoogleGenAI,
-  model: string,
-  config: GenerateContentConfig,
-  history?: ReadonlyArray<{
-    userMessage: string;
-    providerMessage?: string;
-    assistantText: string;
-  }>,
-): Chat {
-  const chatHistory =
-    history && history.length > 0
-      ? history.flatMap((turn) => [
-          {
-            role: "user" as const,
-            parts: [{ text: turn.providerMessage ?? turn.userMessage }],
-          },
-          { role: "model" as const, parts: [{ text: turn.assistantText }] },
-        ])
-      : undefined;
+interface GeminiResumeState {
+  threadId?: string;
+  model?: string;
+  turns: TranscriptTurn[];
+}
 
-  return ai.chats.create({
-    model,
-    config,
-    ...(chatHistory ? { history: chatHistory } : {}),
-  });
+function readResumeState(resumeCursor: unknown): GeminiResumeState | undefined {
+  if (!resumeCursor || typeof resumeCursor !== "object") return undefined;
+  const cursor = resumeCursor as Record<string, unknown>;
+  const turns: TranscriptTurn[] = [];
+  if (Array.isArray(cursor.turns)) {
+    for (let i = 0; i < cursor.turns.length; i++) {
+      const raw = cursor.turns[i] as Record<string, unknown>;
+      if (!raw || typeof raw !== "object") continue;
+      const turn = deserializeTurn(raw, TurnId.makeUnsafe(`restored-${i}`));
+      if (turn) turns.push(turn);
+    }
+  }
+  const result: GeminiResumeState = { turns };
+  if (typeof cursor.threadId === "string") result.threadId = cursor.threadId;
+  if (typeof cursor.model === "string") result.model = cursor.model;
+  return result;
 }
 
 export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
   return Effect.gen(function* () {
     const sessions = new Map<ThreadId, GeminiSessionContext>();
     const runtimeEventQueue = yield* Queue.unbounded<ProviderRuntimeEvent>();
+    const emitter = createEventEmitter(runtimeEventQueue);
 
     const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
-    const nextEventId = Effect.map(Random.nextUUIDv4, (id) => EventId.makeUnsafe(id));
-    const makeEventStamp = () => Effect.all({ eventId: nextEventId, createdAt: nowIso });
-
-    const emit = (event: ProviderRuntimeEvent): Effect.Effect<void> =>
-      Queue.offer(runtimeEventQueue, event).pipe(Effect.asVoid);
 
     const requireSession = (
       threadId: ThreadId,
@@ -247,8 +225,8 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
 
         // Emit fallback text if no streaming delta was sent yet
         if (!ts.emittedTextDelta && ts.accumulatedText.length > 0) {
-          const stamp = yield* makeEventStamp();
-          yield* emit({
+          const stamp = yield* emitter.makeEventStamp();
+          yield* emitter.emit({
             type: "content.delta",
             eventId: stamp.eventId,
             provider: PROVIDER,
@@ -262,8 +240,8 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
 
         // Complete the assistant message item
         {
-          const stamp = yield* makeEventStamp();
-          yield* emit({
+          const stamp = yield* emitter.makeEventStamp();
+          yield* emitter.emit({
             type: "item.completed",
             eventId: stamp.eventId,
             provider: PROVIDER,
@@ -282,8 +260,8 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
 
         // Emit turn.completed
         {
-          const stamp = yield* makeEventStamp();
-          yield* emit({
+          const stamp = yield* emitter.makeEventStamp();
+          yield* emitter.emit({
             type: "turn.completed",
             eventId: stamp.eventId,
             provider: PROVIDER,
@@ -318,6 +296,16 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
         }
         ctx.abortControllers.clear();
 
+        // Reject pending approval/user-input
+        if (ctx.pendingApproval) {
+          yield* Deferred.succeed(ctx.pendingApproval.deferred, "deny" as ProviderApprovalDecision);
+          ctx.pendingApproval = undefined;
+        }
+        if (ctx.pendingUserInput) {
+          yield* Deferred.succeed(ctx.pendingUserInput.deferred, {} as ProviderUserInputAnswers);
+          ctx.pendingUserInput = undefined;
+        }
+
         // Complete active turn if any
         if (ctx.turnState) {
           yield* completeTurn(ctx, "interrupted");
@@ -327,8 +315,8 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
         sessions.delete(ctx.session.threadId);
 
         if (opts.emitExitEvent) {
-          const stamp = yield* makeEventStamp();
-          yield* emit({
+          const stamp = yield* emitter.makeEventStamp();
+          yield* emitter.emit({
             type: "session.exited",
             eventId: stamp.eventId,
             provider: PROVIDER,
@@ -339,10 +327,193 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
         }
       });
 
-    const streamGeminiResponse = (
+    /**
+     * Call Gemini with the full transcript + tool declarations and return the response.
+     * Uses non-streaming `generateContent` for the tool loop so we get complete
+     * function call objects in a single response, and streaming for final text only.
+     */
+    const callGemini = (
+      ctx: GeminiSessionContext,
+      contents: Content[],
+      abortSignal: AbortSignal,
+    ): Effect.Effect<GenerateContentResponse, ProviderAdapterRequestError> =>
+      Effect.tryPromise({
+        try: () =>
+          ctx.ai.models.generateContent({
+            model: ctx.model,
+            contents,
+            config: {
+              ...ctx.config,
+              tools: [{ functionDeclarations: GEMINI_FUNCTION_DECLARATIONS }],
+              abortSignal,
+            },
+          }),
+        catch: (cause) => {
+          if (isAbortError(cause)) {
+            return new ProviderAdapterRequestError({
+              provider: PROVIDER,
+              method: "generateContent",
+              detail: "aborted",
+            });
+          }
+          return new ProviderAdapterRequestError({
+            provider: PROVIDER,
+            method: "generateContent",
+            detail: toMessage(cause, "Failed to call Gemini"),
+          });
+        },
+      });
+
+    /**
+     * Execute one tool call: gate behind approval if needed, then run.
+     */
+    const executeToolCall = (
+      ctx: GeminiSessionContext,
+      call: TranscriptFunctionCall,
+      turnId: TurnId,
+    ): Effect.Effect<TranscriptFunctionResult, ProviderAdapterRequestError> =>
+      Effect.gen(function* () {
+        const threadId = ctx.session.threadId;
+        const cwd = ctx.session.cwd ?? process.cwd();
+
+        // Emit tool started
+        yield* emitToolStarted(emitter, {
+          threadId,
+          turnId,
+          toolCallId: call.id,
+          toolName: call.name,
+          args: call.args,
+        });
+
+        // Gate behind approval if the tool mutates state
+        if (toolRequiresApproval(call.name)) {
+          const requestId = yield* Random.nextUUIDv4;
+
+          const deferred = yield* Deferred.make<ProviderApprovalDecision>();
+          ctx.pendingApproval = {
+            requestId,
+            toolCallId: call.id,
+            toolName: call.name,
+            args: call.args,
+            deferred,
+          };
+
+          // Emit approval request
+          yield* emitApprovalRequested(emitter, {
+            threadId,
+            turnId,
+            requestId,
+            toolCallId: call.id,
+            toolName: call.name,
+            args: call.args,
+          });
+
+          // Change session state to waiting
+          ctx.session.status = "running";
+          {
+            const stamp = yield* emitter.makeEventStamp();
+            yield* emitter.emit({
+              type: "session.state.changed",
+              eventId: stamp.eventId,
+              provider: PROVIDER,
+              threadId,
+              createdAt: stamp.createdAt,
+              payload: { state: "waiting" },
+            });
+          }
+
+          // Wait for user decision
+          const decision = yield* Deferred.await(deferred);
+          ctx.pendingApproval = undefined;
+
+          const isApproved = decision === "accept" || decision === "acceptForSession";
+          yield* emitApprovalResolved(emitter, {
+            threadId,
+            turnId,
+            requestId,
+            toolCallId: call.id,
+            toolName: call.name,
+            decision: isApproved ? "approved" : "denied",
+          });
+
+          if (!isApproved) {
+            yield* emitToolCompleted(emitter, {
+              threadId,
+              turnId,
+              toolCallId: call.id,
+              toolName: call.name,
+              args: call.args,
+              result: { error: "Tool execution denied by user" },
+              status: "declined",
+            });
+            return {
+              id: call.id,
+              name: call.name,
+              response: { error: "Tool execution was denied by the user." },
+            };
+          }
+        }
+
+        // Execute the tool
+        const result = yield* Effect.tryPromise({
+          try: () => executeGeminiTool(call.name, call.args, cwd),
+          catch: (err) => {
+            const message = err instanceof Error ? err.message : "Tool execution failed";
+            return new ProviderAdapterRequestError({
+              provider: PROVIDER,
+              method: `tool/${call.name}`,
+              detail: message,
+            });
+          },
+        }).pipe(
+          Effect.catchTag("ProviderAdapterRequestError", (err) =>
+            Effect.gen(function* () {
+              yield* emitToolCompleted(emitter, {
+                threadId,
+                turnId,
+                toolCallId: call.id,
+                toolName: call.name,
+                args: call.args,
+                result: { error: err.detail ?? "Tool execution failed" },
+                status: "failed",
+              });
+              return {
+                output: { error: err.detail ?? "Tool execution failed" },
+                error: err.detail ?? "Tool execution failed",
+              } as ToolExecutionResult;
+            }),
+          ),
+        );
+
+        yield* emitToolCompleted(emitter, {
+          threadId,
+          turnId,
+          toolCallId: call.id,
+          toolName: call.name,
+          args: call.args,
+          result: result.output,
+          status: result.error ? "failed" : "completed",
+        });
+
+        return {
+          id: call.id,
+          name: call.name,
+          response: result.output,
+        };
+      });
+
+    /**
+     * The main agent turn loop:
+     * 1. Build contents from transcript + current user message
+     * 2. Call Gemini with tool declarations
+     * 3. If response has function calls, execute them with approval gating
+     * 4. Send results back, loop
+     * 5. When Gemini returns text without function calls, stream the final response
+     */
+    const runAgentLoop = (
       ctx: GeminiSessionContext,
       userMessage: string,
-      providerMessage: string | Array<Record<string, unknown>>,
+      providerMessage: string,
     ): Effect.Effect<void, ProviderAdapterRequestError> =>
       Effect.gen(function* () {
         const ts = ctx.turnState;
@@ -350,99 +521,104 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
 
         const abortController = new AbortController();
         ctx.abortControllers.add(abortController);
-
         const cleanup = () => ctx.abortControllers.delete(abortController);
 
-        const response = yield* Effect.tryPromise({
-          try: () =>
-            ctx.chat.sendMessageStream({
-              message: providerMessage as any,
-              config: {
-                ...ctx.config,
-                abortSignal: abortController.signal,
-              },
-            }),
-          catch: (cause) => {
-            cleanup();
-            if (isAbortError(cause)) {
-              return new ProviderAdapterRequestError({
-                provider: PROVIDER,
-                method: "chat/sendMessageStream",
-                detail: "aborted",
-              });
-            }
-            return new ProviderAdapterRequestError({
-              provider: PROVIDER,
-              method: "chat/sendMessageStream",
-              detail: toMessage(cause, "Failed to start Gemini stream"),
-            });
-          },
-        });
+        try {
+          // Build initial contents from transcript history + new user message
+          const historyContents = turnsToHistory(ctx.turns);
+          const currentContents: Content[] = [
+            ...historyContents,
+            { role: "user", parts: [{ text: providerMessage }] },
+          ];
 
-        // Consume async iterator chunk by chunk
-        const iterator = response[Symbol.asyncIterator]();
-        let done = false;
-        while (!done && !ctx.stopped) {
-          const next = yield* Effect.tryPromise({
-            try: () => iterator.next(),
-            catch: (cause) => {
-              cleanup();
-              if (isAbortError(cause)) {
-                return new ProviderAdapterRequestError({
+          const toolInteractions: TranscriptTurn["toolInteractions"][number][] = [];
+          let iterations = 0;
+
+          while (iterations < MAX_TOOL_LOOP_ITERATIONS && !ctx.stopped) {
+            iterations++;
+
+            const response = yield* callGemini(ctx, currentContents, abortController.signal);
+
+            // Check for function calls
+            const functionCalls = response.functionCalls;
+            if (!functionCalls || functionCalls.length === 0) {
+              // No function calls - this is the final text response.
+              // Extract text from the non-streaming response.
+              const text = response.text ?? "";
+              if (text.length > 0) {
+                ts.accumulatedText += text;
+                ts.emittedTextDelta = true;
+
+                const stamp = yield* emitter.makeEventStamp();
+                yield* emitter.emit({
+                  type: "content.delta",
+                  eventId: stamp.eventId,
                   provider: PROVIDER,
-                  method: "chat/stream-chunk",
-                  detail: "aborted",
+                  threadId: ctx.session.threadId,
+                  createdAt: stamp.createdAt,
+                  turnId: ts.turnId,
+                  itemId: RuntimeItemId.makeUnsafe(ts.assistantItemId),
+                  payload: { streamKind: "assistant_text", delta: text },
                 });
               }
-              return new ProviderAdapterRequestError({
-                provider: PROVIDER,
-                method: "chat/stream-chunk",
-                detail: toMessage(cause, "Gemini stream error"),
-              });
-            },
-          });
+              break;
+            }
 
-          if (next.done) {
-            done = true;
-            break;
-          }
+            // Parse and execute function calls
+            const calls = parseFunctionCalls(functionCalls);
 
-          const text = next.value.text ?? "";
-          if (text.length > 0) {
-            ts.accumulatedText += text;
-            ts.emittedTextDelta = true;
-
-            const stamp = yield* makeEventStamp();
-            yield* emit({
-              type: "content.delta",
-              eventId: stamp.eventId,
-              provider: PROVIDER,
-              threadId: ctx.session.threadId,
-              createdAt: stamp.createdAt,
-              turnId: ts.turnId,
-              itemId: RuntimeItemId.makeUnsafe(ts.assistantItemId),
-              payload: { streamKind: "assistant_text", delta: text },
+            // Add model's function call to the contents
+            currentContents.push({
+              role: "model",
+              parts: calls.map((c) => ({
+                functionCall: { id: c.id, name: c.name, args: c.args },
+              })),
             });
+
+            // Execute each call sequentially (respecting approval flow)
+            const results: TranscriptFunctionResult[] = [];
+            for (const call of calls) {
+              if (ctx.stopped) break;
+              const result = yield* executeToolCall(ctx, call, ts.turnId);
+              results.push(result);
+              toolInteractions.push({ call, result });
+            }
+
+            if (ctx.stopped) break;
+
+            // Add function results to contents
+            currentContents.push({
+              role: "user",
+              parts: results.map((r) => ({
+                functionResponse: {
+                  id: r.id,
+                  name: r.name,
+                  response: r.response,
+                },
+              })),
+            });
+
+            // Also extract any text from the model response (thinking/reasoning)
+            const intermediateText = response.text ?? "";
+            if (intermediateText.length > 0) {
+              // Append model text part too so transcript is correct
+              // But don't emit as assistant text yet - it's intermediate
+            }
           }
-        }
 
-        cleanup();
-
-        if (!ctx.stopped) {
-          // Record turn in transcript before completing.
-          // Persist only the text version for session recovery (images are
-          // not re-uploaded on resume).
-          const persistedProviderMessage =
-            typeof providerMessage === "string"
-              ? providerMessage
-              : (providerMessage.find((p) => typeof p.text === "string") as { text: string })?.text;
-          ctx.turns.push({
-            id: ts.turnId,
-            userMessage,
-            providerMessage: persistedProviderMessage,
-            assistantText: ts.accumulatedText,
-          });
-          yield* completeTurn(ctx, "completed");
+          if (!ctx.stopped) {
+            // Record the completed turn in the transcript
+            ctx.turns.push({
+              id: ts.turnId,
+              userMessage,
+              providerMessage,
+              assistantText: ts.accumulatedText,
+              toolInteractions,
+            });
+            yield* completeTurn(ctx, "completed");
+          }
+        } finally {
+          cleanup();
         }
       });
 
@@ -470,7 +646,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
           });
         }
 
-        const resumeState = readGeminiResumeState(input.resumeCursor);
+        const resumeState = readResumeState(input.resumeCursor);
         const model =
           input.model ?? resumeState?.model ?? DEFAULT_MODEL_BY_PROVIDER.gemini;
 
@@ -482,19 +658,8 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
 
         const ai = new GoogleGenAI({ apiKey });
 
-        // Replay prior turns if resuming to reconstruct conversation context
-        const priorTurns = resumeState?.turns;
-        const chat = createChat(ai, model, config, priorTurns);
-
+        const restoredTurns = resumeState?.turns ?? [];
         const now = yield* nowIso;
-
-        // Restore persisted turn history
-        const restoredTurns: PersistedTurn[] = (priorTurns ?? []).map((t, i) => ({
-          id: TurnId.makeUnsafe(`restored-${i}`),
-          userMessage: t.userMessage,
-          providerMessage: t.providerMessage,
-          assistantText: t.assistantText,
-        }));
 
         const session: MutableSession = {
           provider: PROVIDER,
@@ -507,11 +672,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
             threadId,
             model,
             turnCount: restoredTurns.length,
-            turns: restoredTurns.map((t) => ({
-              userMessage: t.userMessage,
-              ...(t.providerMessage ? { providerMessage: t.providerMessage } : {}),
-              assistantText: t.assistantText,
-            })),
+            turns: restoredTurns.map(serializeTurn),
           },
           activeTurnId: undefined,
           createdAt: now,
@@ -520,22 +681,23 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
 
         const ctx: GeminiSessionContext = {
           session,
-          chat,
           ai,
           model,
           config,
           projectContext,
           startedAt: now,
-          turns: restoredTurns,
+          turns: [...restoredTurns],
           abortControllers: new Set(),
           turnState: undefined,
           stopped: false,
+          pendingApproval: undefined,
+          pendingUserInput: undefined,
         };
         sessions.set(threadId, ctx);
 
         {
-          const stamp = yield* makeEventStamp();
-          yield* emit({
+          const stamp = yield* emitter.makeEventStamp();
+          yield* emitter.emit({
             type: "session.started",
             eventId: stamp.eventId,
             provider: PROVIDER,
@@ -545,8 +707,8 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
           });
         }
         {
-          const stamp = yield* makeEventStamp();
-          yield* emit({
+          const stamp = yield* emitter.makeEventStamp();
+          yield* emitter.emit({
             type: "session.configured",
             eventId: stamp.eventId,
             provider: PROVIDER,
@@ -556,8 +718,8 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
           });
         }
         {
-          const stamp = yield* makeEventStamp();
-          yield* emit({
+          const stamp = yield* emitter.makeEventStamp();
+          yield* emitter.emit({
             type: "session.state.changed",
             eventId: stamp.eventId,
             provider: PROVIDER,
@@ -598,8 +760,8 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
         ctx.session.updatedAt = now;
 
         {
-          const stamp = yield* makeEventStamp();
-          yield* emit({
+          const stamp = yield* emitter.makeEventStamp();
+          yield* emitter.emit({
             type: "turn.started",
             eventId: stamp.eventId,
             provider: PROVIDER,
@@ -610,8 +772,8 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
           });
         }
         {
-          const stamp = yield* makeEventStamp();
-          yield* emit({
+          const stamp = yield* emitter.makeEventStamp();
+          yield* emitter.emit({
             type: "item.started",
             eventId: stamp.eventId,
             provider: PROVIDER,
@@ -640,24 +802,22 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
         });
         const threadId = input.threadId;
 
-        // Stream response in background (non-blocking), matching ClaudeCodeAdapter pattern
+        // Run agent loop in background (non-blocking)
         Effect.runFork(
-          streamGeminiResponse(ctx, userMessage, providerMessage).pipe(
+          runAgentLoop(ctx, userMessage, providerMessage).pipe(
             Effect.catchCause((cause) =>
               Effect.gen(function* () {
                 if (Cause.hasInterruptsOnly(cause) || ctx.stopped) return;
 
                 const squashed = Cause.squash(cause);
 
-                // Abort errors are interrupts, not failures
                 if (isAbortError(squashed)) {
                   yield* completeTurn(ctx, "interrupted");
                   return;
                 }
 
-                const msg = toMessage(squashed, "Gemini stream failed");
+                const msg = toMessage(squashed, "Gemini agent loop failed");
 
-                // Check if the error detail indicates abort
                 if (
                   squashed &&
                   typeof squashed === "object" &&
@@ -668,8 +828,8 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
                   return;
                 }
 
-                const stamp = yield* makeEventStamp();
-                yield* emit({
+                const stamp = yield* emitter.makeEventStamp();
+                yield* emitter.emit({
                   type: "runtime.error",
                   eventId: stamp.eventId,
                   provider: PROVIDER,
@@ -698,6 +858,16 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
           controller.abort();
         }
         ctx.abortControllers.clear();
+
+        // Also resolve any pending approval/user-input as deny
+        if (ctx.pendingApproval) {
+          yield* Deferred.succeed(ctx.pendingApproval.deferred, "deny" as ProviderApprovalDecision);
+          ctx.pendingApproval = undefined;
+        }
+        if (ctx.pendingUserInput) {
+          yield* Deferred.succeed(ctx.pendingUserInput.deferred, {} as ProviderUserInputAnswers);
+          ctx.pendingUserInput = undefined;
+        }
       });
 
     const readThread: GeminiAdapterShape["readThread"] = (threadId) =>
@@ -707,7 +877,15 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
           threadId,
           turns: ctx.turns.map((turn) => ({
             id: turn.id,
-            items: [{ type: "assistant_message" as const, text: turn.assistantText }],
+            items: [
+              { type: "assistant_message" as const, text: turn.assistantText },
+              ...turn.toolInteractions.map((ti) => ({
+                type: "tool_call" as const,
+                name: ti.call.name,
+                args: ti.call.args,
+                result: ti.result.response,
+              })),
+            ],
           })),
         };
       });
@@ -717,19 +895,6 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
         const ctx = yield* requireSession(threadId);
         const removeCount = Math.min(numTurns, ctx.turns.length);
         ctx.turns.splice(ctx.turns.length - removeCount, removeCount);
-
-        // Rebuild chat with remaining turns so SDK state matches local state
-        ctx.chat = createChat(
-          ctx.ai,
-          ctx.model,
-          ctx.config,
-          ctx.turns.map((t) => ({
-            userMessage: t.userMessage,
-            ...(t.providerMessage ? { providerMessage: t.providerMessage } : {}),
-            assistantText: t.assistantText,
-          })),
-        );
-
         ctx.session.resumeCursor = buildResumeCursor(ctx);
 
         return {
@@ -743,29 +908,37 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
 
     const respondToRequest: GeminiAdapterShape["respondToRequest"] = (
       threadId,
-      requestId,
-      _decision,
+      _requestId,
+      decision,
     ) =>
-      Effect.fail(
-        new ProviderAdapterRequestError({
-          provider: PROVIDER,
-          method: "respondToRequest",
-          detail: `Gemini adapter does not support approval requests (thread '${threadId}', request '${requestId}').`,
-        }),
-      );
+      Effect.gen(function* () {
+        const ctx = yield* requireSession(threadId);
+        if (!ctx.pendingApproval) {
+          return yield* new ProviderAdapterRequestError({
+            provider: PROVIDER,
+            method: "respondToRequest",
+            detail: `No pending approval request for thread '${threadId}'.`,
+          });
+        }
+        yield* Deferred.succeed(ctx.pendingApproval.deferred, decision);
+      });
 
     const respondToUserInput: GeminiAdapterShape["respondToUserInput"] = (
       threadId,
-      requestId,
-      _answers,
+      _requestId,
+      answers,
     ) =>
-      Effect.fail(
-        new ProviderAdapterRequestError({
-          provider: PROVIDER,
-          method: "respondToUserInput",
-          detail: `Gemini adapter does not support user-input responses (thread '${threadId}', request '${requestId}').`,
-        }),
-      );
+      Effect.gen(function* () {
+        const ctx = yield* requireSession(threadId);
+        if (!ctx.pendingUserInput) {
+          return yield* new ProviderAdapterRequestError({
+            provider: PROVIDER,
+            method: "respondToUserInput",
+            detail: `No pending user-input request for thread '${threadId}'.`,
+          });
+        }
+        yield* Deferred.succeed(ctx.pendingUserInput.deferred, answers);
+      });
 
     const stopSession: GeminiAdapterShape["stopSession"] = (threadId) =>
       Effect.gen(function* () {
@@ -897,7 +1070,6 @@ function gatherProjectContext(cwd: string): string {
     sections.push(manifestSummaries.join("\n\n"));
   }
 
-  // Include README snippet if present
   for (const readme of ["README.md", "readme.md", "README.txt"]) {
     const readmePath = path.join(cwd, readme);
     try {
@@ -918,14 +1090,14 @@ function buildSystemInstruction(cwd?: string, projectContext?: string): string |
   if (!cwd || !projectContext) return undefined;
 
   return [
-    "You are an expert coding assistant for the user's current repository.",
-    "The project context below was loaded from disk on the server for this exact workspace.",
-    "Do not say you cannot access the files or codebase when the answer can be derived from that context.",
+    "You are an expert coding agent for the user's current repository.",
+    "You have access to tools that let you read files, search code, list directories, run commands, and apply patches.",
+    "Use these tools to investigate the codebase and make changes when asked.",
+    "The project context below was loaded from disk on the server for initial orientation.",
     `The user's project is located at: ${cwd}`,
-    "Answer questions about the project's stack, architecture, and code using the provided context.",
-    "Ask for more files only if the provided context is genuinely insufficient.",
+    "Use tools to get fresh, detailed information rather than relying solely on the initial context.",
     "",
-    "## Project Context (loaded from disk)",
+    "## Initial Project Context",
     projectContext,
   ].join("\n");
 }
@@ -938,7 +1110,6 @@ function buildUserMessage(
   if (input.input) {
     parts.push(input.input);
   }
-  // Only add text placeholders for attachments that were NOT materialized
   const materializedIds = new Set(materializedImages?.map((img) => img.id) ?? []);
   if (input.attachments && input.attachments.length > 0) {
     for (const attachment of input.attachments) {
@@ -953,48 +1124,15 @@ function buildUserMessage(
 
 function buildProviderMessage(
   userMessage: string,
-  options: {
+  _opts: {
     cwd: string | undefined;
     projectContext: string | undefined;
     materializedImages?: MaterializedImageAttachment[];
   },
-): string | Array<Record<string, unknown>> {
-  const hasImages = options.materializedImages && options.materializedImages.length > 0;
-
-  // Build the text portion (with or without project context wrapping)
-  const textContent =
-    options.cwd && options.projectContext
-      ? [
-          "The following project context was loaded from disk for the current repository.",
-          "Treat it as authoritative local context for this answer.",
-          "If the question can be answered from this context, answer directly.",
-          "Do not claim that you cannot access the files or codebase when this context is sufficient.",
-          "",
-          "<project_context>",
-          options.projectContext,
-          "</project_context>",
-          "",
-          "<user_request>",
-          userMessage,
-          "</user_request>",
-        ].join("\n")
-      : userMessage;
-
-  // If we have materialized images, return structured multimodal parts for Gemini
-  if (hasImages) {
-    const parts: Array<Record<string, unknown>> = [{ text: textContent }];
-    for (const img of options.materializedImages!) {
-      parts.push({
-        inlineData: {
-          mimeType: img.mimeType,
-          data: img.base64,
-        },
-      });
-    }
-    return parts;
-  }
-
-  return textContent;
+): string {
+  // For the agent loop, project context is in systemInstruction.
+  // Images are deferred to the attachment parity phase.
+  return userMessage;
 }
 
 export const GeminiAdapterLive = Layer.effect(GeminiAdapter, makeGeminiAdapter());
