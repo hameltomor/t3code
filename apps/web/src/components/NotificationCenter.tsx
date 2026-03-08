@@ -127,6 +127,11 @@ export function NotificationBell() {
       const result = await api.notifications.list(50, 0);
       setNotifications(result.notifications as AppNotification[]);
       setUnreadCount(result.totalUnread);
+      // Re-apply active thread read marking in case markReadByThread hasn't landed yet
+      const currentThreadId = activeThreadIdRef.current;
+      if (currentThreadId) {
+        markNotificationsReadForThread(currentThreadId, setNotifications, setUnreadCount);
+      }
     } catch {
       // Server not ready yet
     }
