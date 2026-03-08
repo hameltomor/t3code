@@ -1188,6 +1188,27 @@ const makeGitCore = Effect.gen(function* () {
       ),
     );
 
+  /** Roll back already-created worktrees after a partial failure. */
+  const rollbackWorktrees = (
+    entries: WorkspaceWorktreeEntry[],
+    syntheticRoot: string,
+  ): Effect.Effect<void, never> =>
+    Effect.gen(function* () {
+      for (const created of entries) {
+        yield* executeGit(
+          "GitCore.createWorkspaceWorktrees.rollback",
+          created.originalPath,
+          ["worktree", "remove", "--force", created.worktreePath],
+          { timeoutMs: 15_000, fallbackErrorMessage: "rollback worktree remove failed" },
+        ).pipe(Effect.catch(() => Effect.void));
+      }
+      try {
+        rmSync(syntheticRoot, { recursive: true, force: true });
+      } catch {
+        // Best-effort cleanup.
+      }
+    });
+
   const createWorkspaceWorktrees: GitCoreShape["createWorkspaceWorktrees"] = (input) =>
     Effect.gen(function* () {
       const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? "/tmp";
@@ -1199,21 +1220,39 @@ const makeGitCore = Effect.gen(function* () {
 
       const entries: WorkspaceWorktreeEntry[] = [];
 
-      // Create a worktree for each repo.
+      // Create a worktree for each repo, preserving relative directory structure.
       for (const repo of input.repos) {
-        const repoName = path.basename(repo.repoPath);
-        const worktreePath = path.join(syntheticRoot, repoName);
+        const relativePath = path.relative(input.workspaceRoot, repo.repoPath);
+        // Use the relative path as the worktree sub-path so nested repos
+        // (e.g. services/core) keep their directory structure inside the
+        // synthetic root instead of being flattened to just "core".
+        const worktreePath = path.join(syntheticRoot, relativePath);
 
-        yield* executeGit(
+        // Ensure parent directories exist for nested repos.
+        mkdirSync(path.dirname(worktreePath), { recursive: true });
+
+        const result = yield* executeGit(
           "GitCore.createWorkspaceWorktrees",
           repo.repoPath,
           ["worktree", "add", "-b", repo.newBranch, worktreePath, repo.branch],
-          { fallbackErrorMessage: `git worktree add failed for ${repoName}` },
-        );
+          { fallbackErrorMessage: `git worktree add failed for ${path.basename(repo.repoPath)}` },
+        ).pipe(Effect.exit);
 
-        const relativePath = path.relative(input.workspaceRoot, repo.repoPath);
+        if (Exit.isFailure(result)) {
+          // Roll back all previously created worktrees before propagating.
+          yield* rollbackWorktrees(entries, syntheticRoot);
+          return yield* Effect.fail(
+            createGitCommandError(
+              "GitCore.createWorkspaceWorktrees",
+              repo.repoPath,
+              ["worktree", "add"],
+              `git worktree add failed for ${path.basename(repo.repoPath)}, rolled back ${entries.length} previously created worktree(s)`,
+            ),
+          );
+        }
+
         entries.push({
-          name: repoName,
+          name: path.basename(repo.repoPath),
           relativePath: relativePath.startsWith(".") ? relativePath : `./${relativePath}`,
           originalPath: repo.repoPath,
           worktreePath,
@@ -1223,12 +1262,21 @@ const makeGitCore = Effect.gen(function* () {
 
       // Symlink non-git workspace contents (e.g. .planning, config files)
       // into the synthetic root for a complete workspace snapshot.
+      // Build a set of all top-level directory segments occupied by worktrees
+      // so we skip those instead of accidentally symlinking the originals.
+      const occupiedTopLevelNames = new Set(
+        entries.map((e) => {
+          // For "./horizon" → "horizon"; for "./services/core" → "services"
+          const rel = e.relativePath.startsWith("./") ? e.relativePath.slice(2) : e.relativePath;
+          return rel.split("/")[0] ?? rel;
+        }),
+      );
+
       try {
         const topLevelEntries = readdirSync(input.workspaceRoot);
-        const worktreeRepoNames = new Set(entries.map((e) => e.name));
         for (const entry of topLevelEntries) {
           if (entry.startsWith(".") || entry === "node_modules") continue;
-          if (worktreeRepoNames.has(entry)) continue;
+          if (occupiedTopLevelNames.has(entry)) continue;
           const srcPath = path.join(input.workspaceRoot, entry);
           const destPath = path.join(syntheticRoot, entry);
           if (existsSync(destPath)) continue;
