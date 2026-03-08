@@ -10,6 +10,14 @@ import {
   OrchestrationReplayEventsInput,
 } from "./orchestration";
 import {
+  NOTIFICATION_WS_METHODS,
+  NotificationListInput,
+  NotificationMarkOpenedInput,
+  NotificationMarkReadInput,
+  PushSubscriptionInput,
+  PushUnsubscribeInput,
+} from "./notification";
+import {
   GitCheckoutInput,
   GitCreateBranchInput,
   GitCreateWorktreeInput,
@@ -69,6 +77,16 @@ export const WS_METHODS = {
   // Server meta
   serverGetConfig: "server.getConfig",
   serverUpsertKeybinding: "server.upsertKeybinding",
+
+  // Notification methods
+  notificationList: NOTIFICATION_WS_METHODS.list,
+  notificationUnreadCount: NOTIFICATION_WS_METHODS.unreadCount,
+  notificationMarkRead: NOTIFICATION_WS_METHODS.markRead,
+  notificationMarkAllRead: NOTIFICATION_WS_METHODS.markAllRead,
+  notificationMarkOpened: NOTIFICATION_WS_METHODS.markOpened,
+  notificationGetVapidPublicKey: NOTIFICATION_WS_METHODS.getVapidPublicKey,
+  notificationSubscribePush: NOTIFICATION_WS_METHODS.subscribePush,
+  notificationUnsubscribePush: NOTIFICATION_WS_METHODS.unsubscribePush,
 } as const;
 
 // ── Push Event Channels ──────────────────────────────────────────────
@@ -77,6 +95,7 @@ export const WS_CHANNELS = {
   terminalEvent: "terminal.event",
   serverWelcome: "server.welcome",
   serverConfigUpdated: "server.configUpdated",
+  notificationCreated: "notification.created",
 } as const;
 
 // -- Tagged Union of all request body schemas ─────────────────────────
@@ -132,6 +151,16 @@ const WebSocketRequestBody = Schema.Union([
   // Server meta
   tagRequestBody(WS_METHODS.serverGetConfig, Schema.Struct({})),
   tagRequestBody(WS_METHODS.serverUpsertKeybinding, KeybindingRule),
+
+  // Notification methods
+  tagRequestBody(WS_METHODS.notificationList, NotificationListInput),
+  tagRequestBody(WS_METHODS.notificationUnreadCount, Schema.Struct({})),
+  tagRequestBody(WS_METHODS.notificationMarkRead, NotificationMarkReadInput),
+  tagRequestBody(WS_METHODS.notificationMarkAllRead, Schema.Struct({})),
+  tagRequestBody(WS_METHODS.notificationMarkOpened, NotificationMarkOpenedInput),
+  tagRequestBody(WS_METHODS.notificationGetVapidPublicKey, Schema.Struct({})),
+  tagRequestBody(WS_METHODS.notificationSubscribePush, PushSubscriptionInput),
+  tagRequestBody(WS_METHODS.notificationUnsubscribePush, PushUnsubscribeInput),
 ]);
 
 export const WebSocketRequest = Schema.Struct({

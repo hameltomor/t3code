@@ -1,4 +1,5 @@
 import {
+  AppNotification,
   OrchestrationEvent,
   ORCHESTRATION_WS_CHANNELS,
   ORCHESTRATION_WS_METHODS,
@@ -199,6 +200,26 @@ export function createWsNativeApi(): NativeApi {
       onDomainEvent: (callback) =>
         transport.subscribe(ORCHESTRATION_WS_CHANNELS.domainEvent, (data) => {
           const payload = decodeAndWarnOnFailure(OrchestrationEvent, data);
+          if (payload) callback(payload);
+        }),
+    },
+    notifications: {
+      list: (limit, offset) =>
+        transport.request(WS_METHODS.notificationList, { limit: limit ?? 50, offset: offset ?? 0 }),
+      unreadCount: () => transport.request(WS_METHODS.notificationUnreadCount),
+      markRead: (notificationId) =>
+        transport.request(WS_METHODS.notificationMarkRead, { notificationId }),
+      markAllRead: () => transport.request(WS_METHODS.notificationMarkAllRead),
+      markOpened: (notificationId) =>
+        transport.request(WS_METHODS.notificationMarkOpened, { notificationId }),
+      getVapidPublicKey: () => transport.request(WS_METHODS.notificationGetVapidPublicKey),
+      subscribePush: (subscription) =>
+        transport.request(WS_METHODS.notificationSubscribePush, subscription),
+      unsubscribePush: (endpoint) =>
+        transport.request(WS_METHODS.notificationUnsubscribePush, { endpoint }),
+      onNotification: (callback) =>
+        transport.subscribe(WS_CHANNELS.notificationCreated, (data) => {
+          const payload = decodeAndWarnOnFailure(AppNotification, data);
           if (payload) callback(payload);
         }),
     },

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { type ProviderKind } from "@xbetools/contracts";
 import { getModelOptions, normalizeModelSlug } from "@xbetools/shared/model";
 import { ZapIcon } from "lucide-react";
@@ -23,6 +23,13 @@ import { Input } from "../components/ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Switch } from "../components/ui/switch";
 import { cn } from "~/lib/utils";
+import {
+  getNotificationPermission,
+  requestNotificationPermission,
+  subscribeToPush,
+  unsubscribeFromPush,
+} from "~/lib/notifications";
+import { readNativeApi } from "~/nativeApi";
 import { SidebarInset, SidebarTrigger, useSidebar } from "~/components/ui/sidebar";
 
 const THEME_OPTIONS = [
@@ -80,6 +87,9 @@ function SettingsRouteView() {
   const serverConfigQuery = useQuery(serverConfigQueryOptions());
   const [isOpeningKeybindings, setIsOpeningKeybindings] = useState(false);
   const [openKeybindingsError, setOpenKeybindingsError] = useState<string | null>(null);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(
+    () => getNotificationPermission(),
+  );
   const [customModelInputByProvider, setCustomModelInputByProvider] = useState<
     Record<ProviderKind, string>
   >({
@@ -172,6 +182,35 @@ function SettingsRouteView() {
       }));
     },
     [settings, updateSettings],
+  );
+
+  // Refresh permission state when the settings page is visible
+  useEffect(() => {
+    setNotificationPermission(getNotificationPermission());
+  }, []);
+
+  const handleToggleNotifications = useCallback(
+    async (enabled: boolean) => {
+      if (enabled) {
+        const permission = await requestNotificationPermission();
+        setNotificationPermission(permission);
+        if (permission !== "granted") {
+          return;
+        }
+        updateSettings({ enableNotifications: true });
+        const api = readNativeApi();
+        if (api) {
+          await subscribeToPush(api.notifications);
+        }
+      } else {
+        updateSettings({ enableNotifications: false });
+        const api = readNativeApi();
+        if (api) {
+          await unsubscribeFromPush(api.notifications);
+        }
+      }
+    },
+    [updateSettings],
   );
 
   return (
@@ -592,6 +631,54 @@ function SettingsRouteView() {
                   </Button>
                 </div>
               ) : null}
+            </section>
+
+            <section className="rounded-2xl border border-border bg-card p-5">
+              <div className="mb-4">
+                <h2 className="text-sm font-medium text-foreground">Notifications</h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Get notified when sessions complete, need approval, or require input.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Enable notifications</p>
+                    <p className="text-xs text-muted-foreground">
+                      Show browser and push notifications for session events.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={settings.enableNotifications}
+                    onCheckedChange={(checked) => void handleToggleNotifications(Boolean(checked))}
+                    aria-label="Enable notifications"
+                  />
+                </div>
+
+                {notificationPermission === "denied" && (
+                  <p className="text-xs text-destructive">
+                    Notification permission was denied. Please allow notifications in your browser
+                    settings and reload the page.
+                  </p>
+                )}
+
+                <div className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Notification sound</p>
+                    <p className="text-xs text-muted-foreground">
+                      Play a sound when a notification arrives while the app is in the foreground.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={settings.enableNotificationSound}
+                    onCheckedChange={(checked) =>
+                      updateSettings({ enableNotificationSound: Boolean(checked) })
+                    }
+                    aria-label="Notification sound"
+                  />
+                </div>
+              </div>
             </section>
           </div>
         </div>

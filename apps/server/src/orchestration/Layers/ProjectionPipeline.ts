@@ -28,6 +28,8 @@ import {
   ProjectionTurnRepository,
 } from "../../persistence/Services/ProjectionTurns.ts";
 import { ProjectionThreadRepository } from "../../persistence/Services/ProjectionThreads.ts";
+import { ProjectionNotificationRepository } from "../../persistence/Services/ProjectionNotifications.ts";
+import { ProjectionNotificationRepositoryLive } from "../../persistence/Layers/ProjectionNotifications.ts";
 import { ProjectionPendingApprovalRepositoryLive } from "../../persistence/Layers/ProjectionPendingApprovals.ts";
 import { ProjectionProjectRepositoryLive } from "../../persistence/Layers/ProjectionProjects.ts";
 import { ProjectionStateRepositoryLive } from "../../persistence/Layers/ProjectionState.ts";
@@ -59,6 +61,7 @@ export const ORCHESTRATION_PROJECTOR_NAMES = {
   threadTurns: "projection.thread-turns",
   checkpoints: "projection.checkpoints",
   pendingApprovals: "projection.pending-approvals",
+  notifications: "projection.notifications",
 } as const;
 
 type ProjectorName =
@@ -351,6 +354,7 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
   const projectionThreadSessionRepository = yield* ProjectionThreadSessionRepository;
   const projectionTurnRepository = yield* ProjectionTurnRepository;
   const projectionPendingApprovalRepository = yield* ProjectionPendingApprovalRepository;
+  const projectionNotificationRepository = yield* ProjectionNotificationRepository;
 
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -1001,6 +1005,75 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
       }
     });
 
+  const applyNotificationsProjection: ProjectorDefinition["apply"] = (event) =>
+    Effect.gen(function* () {
+      switch (event.type) {
+        case "thread.turn-diff-completed": {
+          const existing = yield* projectionNotificationRepository.getBySourceEventId(
+            event.eventId,
+          );
+          if (existing) return;
+
+          const threadRow = yield* projectionThreadRepository
+            .getById({ threadId: event.payload.threadId })
+            .pipe(Effect.map((row) => (Option.isSome(row) ? row.value : null)));
+          const threadTitle = threadRow?.title ?? event.payload.threadId;
+          yield* projectionNotificationRepository.upsert({
+            notificationId: `notif-${event.eventId}`,
+            sourceEventId: event.eventId,
+            threadId: event.payload.threadId,
+            kind: "turn-completed",
+            title: "Turn completed",
+            body: `AI finished working on "${threadTitle}"`,
+            readAt: null,
+            openedAt: null,
+            createdAt: event.occurredAt,
+          });
+          return;
+        }
+
+        case "thread.activity-appended": {
+          const activityKind = event.payload.activity.kind;
+          if (activityKind !== "approval.requested" && activityKind !== "user-input.requested") {
+            return;
+          }
+          const existing = yield* projectionNotificationRepository.getBySourceEventId(
+            event.eventId,
+          );
+          if (existing) return;
+
+          const threadRow = yield* projectionThreadRepository
+            .getById({ threadId: event.payload.threadId })
+            .pipe(Effect.map((row) => (Option.isSome(row) ? row.value : null)));
+          const threadTitle = threadRow?.title ?? event.payload.threadId;
+
+          const kind = activityKind === "approval.requested" ? "approval-needed" : "input-needed";
+          const title =
+            kind === "approval-needed" ? "Approval needed" : "Input needed";
+          const body =
+            kind === "approval-needed"
+              ? `Action requires approval in "${threadTitle}"`
+              : `AI needs your input in "${threadTitle}"`;
+
+          yield* projectionNotificationRepository.upsert({
+            notificationId: `notif-${event.eventId}`,
+            sourceEventId: event.eventId,
+            threadId: event.payload.threadId,
+            kind,
+            title,
+            body,
+            readAt: null,
+            openedAt: null,
+            createdAt: event.occurredAt,
+          });
+          return;
+        }
+
+        default:
+          return;
+      }
+    });
+
   const applyCheckpointsProjection: ProjectorDefinition["apply"] = () => Effect.void;
 
   const applyPendingApprovalsProjection: ProjectorDefinition["apply"] = (
@@ -1130,6 +1203,10 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
       name: ORCHESTRATION_PROJECTOR_NAMES.threads,
       apply: applyThreadsProjection,
     },
+    {
+      name: ORCHESTRATION_PROJECTOR_NAMES.notifications,
+      apply: applyNotificationsProjection,
+    },
   ];
 
   const runProjectorForEvent = (projector: ProjectorDefinition, event: OrchestrationEvent) =>
@@ -1230,5 +1307,6 @@ export const OrchestrationProjectionPipelineLive = Layer.effect(
   Layer.provideMerge(ProjectionThreadSessionRepositoryLive),
   Layer.provideMerge(ProjectionTurnRepositoryLive),
   Layer.provideMerge(ProjectionPendingApprovalRepositoryLive),
+  Layer.provideMerge(ProjectionNotificationRepositoryLive),
   Layer.provideMerge(ProjectionStateRepositoryLive),
 );

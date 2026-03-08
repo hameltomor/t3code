@@ -42,6 +42,12 @@ import type {
   OrchestrationEvent,
   OrchestrationReadModel,
 } from "./orchestration";
+import type {
+  AppNotification,
+  NotificationListResult,
+  NotificationUnreadCountResult,
+  VapidPublicKeyResult,
+} from "./notification";
 import { EditorId } from "./editor";
 
 export interface ContextMenuItem<T extends string = string> {
@@ -152,5 +158,20 @@ export interface NativeApi {
     ) => Promise<OrchestrationGetFullThreadDiffResult>;
     replayEvents: (fromSequenceExclusive: number) => Promise<OrchestrationEvent[]>;
     onDomainEvent: (callback: (event: OrchestrationEvent) => void) => () => void;
+  };
+  notifications: {
+    list: (limit?: number, offset?: number) => Promise<NotificationListResult>;
+    unreadCount: () => Promise<NotificationUnreadCountResult>;
+    markRead: (notificationId: string) => Promise<void>;
+    markAllRead: () => Promise<void>;
+    markOpened: (notificationId: string) => Promise<void>;
+    getVapidPublicKey: () => Promise<VapidPublicKeyResult>;
+    subscribePush: (subscription: {
+      endpoint: string;
+      p256dhKey: string;
+      authKey: string;
+    }) => Promise<void>;
+    unsubscribePush: (endpoint: string) => Promise<void>;
+    onNotification: (callback: (notification: AppNotification) => void) => () => void;
   };
 }

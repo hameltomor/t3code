@@ -53,6 +53,10 @@ const AppSettingsSchema = Schema.Struct({
   customGeminiModels: Schema.Array(Schema.String).pipe(
     Schema.withConstructorDefault(() => Option.some([])),
   ),
+  enableNotifications: Schema.Boolean.pipe(Schema.withConstructorDefault(() => Option.some(false))),
+  enableNotificationSound: Schema.Boolean.pipe(
+    Schema.withConstructorDefault(() => Option.some(true)),
+  ),
 });
 export type AppSettings = typeof AppSettingsSchema.Type;
 export type ProviderCustomModelsSettings = Pick<

@@ -73,6 +73,9 @@ import {
 } from "./attachmentStore.ts";
 import { parseBase64DataUrl } from "./imageMime.ts";
 import { AnalyticsService } from "./telemetry/Services/AnalyticsService.ts";
+import { ProjectionNotificationRepository } from "./persistence/Services/ProjectionNotifications.ts";
+import { ProjectionPushSubscriptionRepository } from "./persistence/Services/ProjectionPushSubscriptions.ts";
+import { WebPushService } from "./push/WebPushService.ts";
 import { expandHomePath } from "./os-jank.ts";
 
 /**
@@ -225,7 +228,10 @@ export type ServerRuntimeServices =
   | TerminalManager
   | Keybindings
   | Open
-  | AnalyticsService;
+  | AnalyticsService
+  | ProjectionNotificationRepository
+  | ProjectionPushSubscriptionRepository
+  | WebPushService;
 
 export class ServerLifecycleError extends Schema.TaggedErrorClass<ServerLifecycleError>()(
   "ServerLifecycleError",
@@ -623,15 +629,47 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
   const checkpointDiffQuery = yield* CheckpointDiffQuery;
   const orchestrationReactor = yield* OrchestrationReactor;
   const { openInEditor } = yield* Open;
+  const notificationRepository = yield* ProjectionNotificationRepository;
+  const pushSubscriptionRepository = yield* ProjectionPushSubscriptionRepository;
+  const webPushService = yield* WebPushService;
 
   const subscriptionsScope = yield* Scope.make("sequential");
   yield* Effect.addFinalizer(() => Scope.close(subscriptionsScope, Exit.void));
 
   yield* Stream.runForEach(orchestrationEngine.streamDomainEvents, (event) =>
-    broadcastPush({
-      type: "push",
-      channel: ORCHESTRATION_WS_CHANNELS.domainEvent,
-      data: event,
+    Effect.gen(function* () {
+      yield* broadcastPush({
+        type: "push",
+        channel: ORCHESTRATION_WS_CHANNELS.domainEvent,
+        data: event,
+      });
+
+      // Broadcast new notifications and send push for relevant events
+      if (
+        event.type === "thread.turn-diff-completed" ||
+        (event.type === "thread.activity-appended" &&
+          (event.payload.activity.kind === "approval.requested" ||
+            event.payload.activity.kind === "user-input.requested"))
+      ) {
+        const notification = yield* notificationRepository
+          .getBySourceEventId(event.eventId)
+          .pipe(Effect.catch(() => Effect.succeed(null)));
+
+        if (notification) {
+          yield* broadcastPush({
+            type: "push",
+            channel: WS_CHANNELS.notificationCreated,
+            data: notification,
+          });
+
+          yield* webPushService.sendToAll({
+            title: notification.title,
+            body: notification.body,
+            notificationId: notification.notificationId,
+            threadId: notification.threadId,
+          });
+        }
+      }
     }),
   ).pipe(Effect.forkIn(subscriptionsScope));
 
@@ -906,6 +944,69 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
         const body = stripRequestTag(request.body);
         const keybindingsConfig = yield* keybindingsManager.upsertKeybindingRule(body);
         return { keybindings: keybindingsConfig, issues: [] };
+      }
+
+      case WS_METHODS.notificationList: {
+        const { limit, offset } = request.body;
+        const notifications = yield* notificationRepository.listRecent({
+          limit: Math.min(limit ?? 50, 200),
+          offset: offset ?? 0,
+        });
+        const totalUnread = yield* notificationRepository.countUnread();
+        return { notifications, totalUnread };
+      }
+
+      case WS_METHODS.notificationUnreadCount: {
+        const count = yield* notificationRepository.countUnread();
+        return { count };
+      }
+
+      case WS_METHODS.notificationMarkRead: {
+        const { notificationId } = request.body;
+        yield* notificationRepository.markRead({
+          notificationId,
+          readAt: new Date().toISOString(),
+        });
+        return {};
+      }
+
+      case WS_METHODS.notificationMarkAllRead: {
+        yield* notificationRepository.markAllRead({
+          readAt: new Date().toISOString(),
+        });
+        return {};
+      }
+
+      case WS_METHODS.notificationMarkOpened: {
+        const { notificationId } = request.body;
+        yield* notificationRepository.markOpened({
+          notificationId,
+          openedAt: new Date().toISOString(),
+        });
+        return {};
+      }
+
+      case WS_METHODS.notificationGetVapidPublicKey:
+        return { publicKey: webPushService.getVapidPublicKey() };
+
+      case WS_METHODS.notificationSubscribePush: {
+        const { endpoint, p256dhKey, authKey } = request.body;
+        yield* pushSubscriptionRepository.upsert({
+          subscriptionId: `push-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          endpoint,
+          p256dhKey,
+          authKey,
+          userAgent: null,
+          createdAt: new Date().toISOString(),
+          lastUsedAt: null,
+        });
+        return {};
+      }
+
+      case WS_METHODS.notificationUnsubscribePush: {
+        const { endpoint } = request.body;
+        yield* pushSubscriptionRepository.deleteByEndpoint(endpoint);
+        return {};
       }
 
       default: {

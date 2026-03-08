@@ -29,6 +29,9 @@ import { makeEventNdjsonLogger } from "./provider/Layers/EventNdjsonLogger";
 
 import { TerminalManagerLive } from "./terminal/Layers/Manager";
 import { KeybindingsLive } from "./keybindings";
+import { ProjectionNotificationRepositoryLive } from "./persistence/Layers/ProjectionNotifications";
+import { ProjectionPushSubscriptionRepositoryLive } from "./persistence/Layers/ProjectionPushSubscriptions";
+import { WebPushServiceLive } from "./push/WebPushService";
 import { GitManagerLive } from "./git/Layers/GitManager";
 import { GitCoreLive } from "./git/Layers/GitCore";
 import { GitHubCliLive } from "./git/Layers/GitHubCli";
@@ -128,6 +131,10 @@ export function makeServerRuntimeServicesLayer() {
     Layer.provideMerge(gitManagerLayer),
   );
 
+  const notificationLayer = WebPushServiceLive.pipe(
+    Layer.provideMerge(ProjectionPushSubscriptionRepositoryLive),
+  );
+
   return Layer.mergeAll(
     orchestrationReactorLayer,
     gitCoreLayer,
@@ -135,5 +142,7 @@ export function makeServerRuntimeServicesLayer() {
     workspaceRepoScannerLayer,
     terminalLayer,
     KeybindingsLive,
+    ProjectionNotificationRepositoryLive,
+    notificationLayer,
   ).pipe(Layer.provideMerge(NodeServices.layer));
 }
