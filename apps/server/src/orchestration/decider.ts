@@ -79,6 +79,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           workspaceRoot: command.workspaceRoot,
           defaultModel: command.defaultModel ?? null,
           scripts: [],
+          workspaceMembers: command.workspaceMembers ?? [],
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },
@@ -106,6 +107,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           ...(command.workspaceRoot !== undefined ? { workspaceRoot: command.workspaceRoot } : {}),
           ...(command.defaultModel !== undefined ? { defaultModel: command.defaultModel } : {}),
           ...(command.scripts !== undefined ? { scripts: command.scripts } : {}),
+          ...(command.workspaceMembers !== undefined
+            ? { workspaceMembers: command.workspaceMembers }
+            : {}),
           updatedAt: occurredAt,
         },
       };
@@ -161,6 +165,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           interactionMode: command.interactionMode,
           branch: command.branch,
           worktreePath: command.worktreePath,
+          worktreeEntries: command.worktreeEntries ?? [],
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },
@@ -210,6 +215,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           ...(command.model !== undefined ? { model: command.model } : {}),
           ...(command.branch !== undefined ? { branch: command.branch } : {}),
           ...(command.worktreePath !== undefined ? { worktreePath: command.worktreePath } : {}),
+          ...(command.worktreeEntries !== undefined
+            ? { worktreeEntries: command.worktreeEntries }
+            : {}),
           updatedAt: occurredAt,
         },
       };

@@ -13,6 +13,7 @@ import {
   RuntimeMode,
   ThreadId,
   TurnId,
+  WorkspaceWorktreeEntry,
 } from "@xbetools/contracts";
 import { Option, Schema, ServiceMap } from "effect";
 import type { Effect } from "effect";
@@ -28,6 +29,7 @@ export const ProjectionThread = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   branch: Schema.NullOr(Schema.String),
   worktreePath: Schema.NullOr(Schema.String),
+  worktreeEntries: Schema.Array(WorkspaceWorktreeEntry),
   latestTurnId: Schema.NullOr(TurnId),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,

@@ -3,12 +3,15 @@ import type {
   GitCreateBranchInput,
   GitCreateWorktreeInput,
   GitCreateWorktreeResult,
+  GitCreateWorkspaceWorktreesInput,
+  GitCreateWorkspaceWorktreesResult,
   GitInitInput,
   GitListBranchesInput,
   GitListBranchesResult,
   GitPullInput,
   GitPullResult,
   GitRemoveWorktreeInput,
+  GitRemoveWorkspaceWorktreesInput,
   GitRunStackedActionInput,
   GitRunStackedActionResult,
   GitStatusInput,
@@ -138,6 +141,11 @@ export interface NativeApi {
     listWorkspaceRepos: (
       input: GitListWorkspaceReposInput,
     ) => Promise<GitListWorkspaceReposResult>;
+    // Multi-repo workspace worktree API
+    createWorkspaceWorktrees: (
+      input: GitCreateWorkspaceWorktreesInput,
+    ) => Promise<GitCreateWorkspaceWorktreesResult>;
+    removeWorkspaceWorktrees: (input: GitRemoveWorkspaceWorktreesInput) => Promise<void>;
   };
   contextMenu: {
     show: <T extends string>(

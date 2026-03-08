@@ -370,6 +370,7 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
             workspaceRoot: event.payload.workspaceRoot,
             defaultModel: event.payload.defaultModel,
             scripts: event.payload.scripts,
+            workspaceMembers: event.payload.workspaceMembers ?? [],
             createdAt: event.payload.createdAt,
             updatedAt: event.payload.updatedAt,
             deletedAt: null,
@@ -393,6 +394,9 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
               ? { defaultModel: event.payload.defaultModel }
               : {}),
             ...(event.payload.scripts !== undefined ? { scripts: event.payload.scripts } : {}),
+            ...(event.payload.workspaceMembers !== undefined
+              ? { workspaceMembers: event.payload.workspaceMembers }
+              : {}),
             updatedAt: event.payload.updatedAt,
           });
           return;
@@ -431,6 +435,7 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
             interactionMode: event.payload.interactionMode,
             branch: event.payload.branch,
             worktreePath: event.payload.worktreePath,
+            worktreeEntries: event.payload.worktreeEntries ?? [],
             latestTurnId: null,
             createdAt: event.payload.createdAt,
             updatedAt: event.payload.updatedAt,
@@ -452,6 +457,9 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
             ...(event.payload.branch !== undefined ? { branch: event.payload.branch } : {}),
             ...(event.payload.worktreePath !== undefined
               ? { worktreePath: event.payload.worktreePath }
+              : {}),
+            ...(event.payload.worktreeEntries !== undefined
+              ? { worktreeEntries: event.payload.worktreeEntries }
               : {}),
             updatedAt: event.payload.updatedAt,
           });

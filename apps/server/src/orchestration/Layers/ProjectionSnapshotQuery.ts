@@ -7,6 +7,8 @@ import {
   OrchestrationReadModel,
   ProjectScript,
   TurnId,
+  WorkspaceMember,
+  WorkspaceWorktreeEntry,
   type OrchestrationCheckpointSummary,
   type OrchestrationLatestTurn,
   type OrchestrationMessage,
@@ -44,6 +46,7 @@ const decodeReadModel = Schema.decodeUnknownEffect(OrchestrationReadModel);
 const ProjectionProjectDbRowSchema = ProjectionProject.mapFields(
   Struct.assign({
     scripts: Schema.fromJsonString(Schema.Array(ProjectScript)),
+    workspaceMembers: Schema.fromJsonString(Schema.Array(WorkspaceMember)),
   }),
 );
 const ProjectionThreadMessageDbRowSchema = ProjectionThreadMessage.mapFields(
@@ -53,7 +56,11 @@ const ProjectionThreadMessageDbRowSchema = ProjectionThreadMessage.mapFields(
   }),
 );
 const ProjectionThreadProposedPlanDbRowSchema = ProjectionThreadProposedPlan;
-const ProjectionThreadDbRowSchema = ProjectionThread;
+const ProjectionThreadDbRowSchema = ProjectionThread.mapFields(
+  Struct.assign({
+    worktreeEntries: Schema.fromJsonString(Schema.Array(WorkspaceWorktreeEntry)),
+  }),
+);
 const ProjectionThreadActivityDbRowSchema = ProjectionThreadActivity.mapFields(
   Struct.assign({
     payload: Schema.fromJsonString(Schema.Unknown),
@@ -139,6 +146,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           workspace_root AS "workspaceRoot",
           default_model AS "defaultModel",
           scripts_json AS "scripts",
+          workspace_members_json AS "workspaceMembers",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           deleted_at AS "deletedAt"
@@ -161,6 +169,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           interaction_mode AS "interactionMode",
           branch,
           worktree_path AS "worktreePath",
+          worktree_entries_json AS "worktreeEntries",
           latest_turn_id AS "latestTurnId",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
@@ -519,6 +528,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             workspaceRoot: row.workspaceRoot,
             defaultModel: row.defaultModel,
             scripts: row.scripts,
+            workspaceMembers: row.workspaceMembers ?? [],
             createdAt: row.createdAt,
             updatedAt: row.updatedAt,
             deletedAt: row.deletedAt,
@@ -533,6 +543,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             interactionMode: row.interactionMode,
             branch: row.branch,
             worktreePath: row.worktreePath,
+            worktreeEntries: row.worktreeEntries ?? [],
             latestTurn: latestTurnByThread.get(row.threadId) ?? null,
             createdAt: row.createdAt,
             updatedAt: row.updatedAt,

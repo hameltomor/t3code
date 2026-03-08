@@ -14,6 +14,7 @@ import {
   TrimmedNonEmptyString,
   TurnId,
 } from "./baseSchemas";
+import { WorkspaceWorktreeEntry } from "./git";
 
 export const ORCHESTRATION_WS_METHODS = {
   getSnapshot: "orchestration.getSnapshot",
@@ -124,12 +125,23 @@ export const ProjectScript = Schema.Struct({
 });
 export type ProjectScript = typeof ProjectScript.Type;
 
+export const WorkspaceMember = Schema.Struct({
+  /** Display name (e.g. "Horizon") */
+  name: TrimmedNonEmptyString,
+  /** Relative path from workspace root (e.g. "./horizon" or "../sync-hub/sync-hub-server") */
+  relativePath: TrimmedNonEmptyString,
+  /** True when the path points outside the workspace root */
+  isExternal: Schema.Boolean,
+});
+export type WorkspaceMember = typeof WorkspaceMember.Type;
+
 export const OrchestrationProject = Schema.Struct({
   id: ProjectId,
   title: TrimmedNonEmptyString,
   workspaceRoot: TrimmedNonEmptyString,
   defaultModel: Schema.NullOr(TrimmedNonEmptyString),
   scripts: Schema.Array(ProjectScript),
+  workspaceMembers: Schema.Array(WorkspaceMember).pipe(Schema.withDecodingDefault(() => [])),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   deletedAt: Schema.NullOr(IsoDateTime),
@@ -256,6 +268,10 @@ export const OrchestrationThread = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  /** Multi-repo worktree entries. When non-empty, worktreePath is the synthetic workspace root. */
+  worktreeEntries: Schema.Array(WorkspaceWorktreeEntry).pipe(
+    Schema.withDecodingDefault(() => []),
+  ),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -285,6 +301,7 @@ export const ProjectCreateCommand = Schema.Struct({
   title: TrimmedNonEmptyString,
   workspaceRoot: TrimmedNonEmptyString,
   defaultModel: Schema.optional(TrimmedNonEmptyString),
+  workspaceMembers: Schema.optional(Schema.Array(WorkspaceMember)),
   createdAt: IsoDateTime,
 });
 
@@ -296,6 +313,7 @@ const ProjectMetaUpdateCommand = Schema.Struct({
   workspaceRoot: Schema.optional(TrimmedNonEmptyString),
   defaultModel: Schema.optional(TrimmedNonEmptyString),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
+  workspaceMembers: Schema.optional(Schema.Array(WorkspaceMember)),
 });
 
 const ProjectDeleteCommand = Schema.Struct({
@@ -317,6 +335,7 @@ const ThreadCreateCommand = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  worktreeEntries: Schema.optional(Schema.Array(WorkspaceWorktreeEntry)),
   createdAt: IsoDateTime,
 });
 
@@ -334,6 +353,7 @@ const ThreadMetaUpdateCommand = Schema.Struct({
   model: Schema.optional(TrimmedNonEmptyString),
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  worktreeEntries: Schema.optional(Schema.Array(WorkspaceWorktreeEntry)),
 });
 
 const ThreadRuntimeModeSetCommand = Schema.Struct({
@@ -588,6 +608,7 @@ export const ProjectCreatedPayload = Schema.Struct({
   workspaceRoot: TrimmedNonEmptyString,
   defaultModel: Schema.NullOr(TrimmedNonEmptyString),
   scripts: Schema.Array(ProjectScript),
+  workspaceMembers: Schema.Array(WorkspaceMember).pipe(Schema.withDecodingDefault(() => [])),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -598,6 +619,7 @@ export const ProjectMetaUpdatedPayload = Schema.Struct({
   workspaceRoot: Schema.optional(TrimmedNonEmptyString),
   defaultModel: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
+  workspaceMembers: Schema.optional(Schema.Array(WorkspaceMember)),
   updatedAt: IsoDateTime,
 });
 
@@ -617,6 +639,9 @@ export const ThreadCreatedPayload = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  worktreeEntries: Schema.Array(WorkspaceWorktreeEntry).pipe(
+    Schema.withDecodingDefault(() => []),
+  ),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -632,6 +657,7 @@ export const ThreadMetaUpdatedPayload = Schema.Struct({
   model: Schema.optional(TrimmedNonEmptyString),
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  worktreeEntries: Schema.optional(Schema.Array(WorkspaceWorktreeEntry)),
   updatedAt: IsoDateTime,
 });
 

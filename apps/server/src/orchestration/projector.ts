@@ -183,6 +183,7 @@ export function projectEvent(
             workspaceRoot: payload.workspaceRoot,
             defaultModel: payload.defaultModel,
             scripts: payload.scripts,
+            workspaceMembers: payload.workspaceMembers ?? [],
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,
             deletedAt: null,
@@ -215,6 +216,9 @@ export function projectEvent(
                     ? { defaultModel: payload.defaultModel }
                     : {}),
                   ...(payload.scripts !== undefined ? { scripts: payload.scripts } : {}),
+                  ...(payload.workspaceMembers !== undefined
+                    ? { workspaceMembers: payload.workspaceMembers }
+                    : {}),
                   updatedAt: payload.updatedAt,
                 }
               : project,
@@ -298,6 +302,9 @@ export function projectEvent(
             ...(payload.model !== undefined ? { model: payload.model } : {}),
             ...(payload.branch !== undefined ? { branch: payload.branch } : {}),
             ...(payload.worktreePath !== undefined ? { worktreePath: payload.worktreePath } : {}),
+            ...(payload.worktreeEntries !== undefined
+              ? { worktreeEntries: payload.worktreeEntries }
+              : {}),
             updatedAt: payload.updatedAt,
           }),
         })),

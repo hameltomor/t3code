@@ -33,6 +33,7 @@ function makeSnapshot(input: {
         workspaceRoot: input.workspaceRoot,
         defaultModel: null,
         scripts: [],
+        workspaceMembers: [],
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
         deletedAt: null,
@@ -48,6 +49,7 @@ function makeSnapshot(input: {
         runtimeMode: "full-access",
         branch: null,
         worktreePath: input.worktreePath,
+        worktreeEntries: [],
         latestTurn: {
           turnId: TurnId.makeUnsafe("turn-1"),
           state: "completed",

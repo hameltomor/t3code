@@ -29,6 +29,8 @@ import {
   GitRunStackedActionInput,
   GitStatusInput,
   GitListWorkspaceReposInput,
+  GitCreateWorkspaceWorktreesInput,
+  GitRemoveWorkspaceWorktreesInput,
 } from "./git";
 import {
   TerminalClearInput,
@@ -66,6 +68,8 @@ export const WS_METHODS = {
   gitCheckout: "git.checkout",
   gitInit: "git.init",
   gitListWorkspaceRepos: "git.listWorkspaceRepos",
+  gitCreateWorkspaceWorktrees: "git.createWorkspaceWorktrees",
+  gitRemoveWorkspaceWorktrees: "git.removeWorkspaceWorktrees",
 
   // Terminal methods
   terminalOpen: "terminal.open",
@@ -141,6 +145,8 @@ const WebSocketRequestBody = Schema.Union([
   tagRequestBody(WS_METHODS.gitCheckout, GitCheckoutInput),
   tagRequestBody(WS_METHODS.gitInit, GitInitInput),
   tagRequestBody(WS_METHODS.gitListWorkspaceRepos, GitListWorkspaceReposInput),
+  tagRequestBody(WS_METHODS.gitCreateWorkspaceWorktrees, GitCreateWorkspaceWorktreesInput),
+  tagRequestBody(WS_METHODS.gitRemoveWorkspaceWorktrees, GitRemoveWorkspaceWorktreesInput),
 
   // Terminal methods
   tagRequestBody(WS_METHODS.terminalOpen, TerminalOpenInput),

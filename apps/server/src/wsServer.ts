@@ -916,6 +916,16 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
         return yield* workspaceRepoScanner.listWorkspaceRepos(body);
       }
 
+      case WS_METHODS.gitCreateWorkspaceWorktrees: {
+        const body = stripRequestTag(request.body);
+        return yield* git.createWorkspaceWorktrees(body);
+      }
+
+      case WS_METHODS.gitRemoveWorkspaceWorktrees: {
+        const body = stripRequestTag(request.body);
+        return yield* git.removeWorkspaceWorktrees(body);
+      }
+
       case WS_METHODS.terminalOpen: {
         const body = stripRequestTag(request.body);
         return yield* terminalManager.open(body);

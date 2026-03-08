@@ -202,3 +202,60 @@ export const GitListWorkspaceReposResult = Schema.Struct({
   repos: Schema.Array(WorkspaceRepoSummary),
 });
 export type GitListWorkspaceReposResult = typeof GitListWorkspaceReposResult.Type;
+
+// ── Workspace Worktrees ─────────────────────────────────────────────
+
+const WorkspaceWorktreeRepoInput = Schema.Struct({
+  /** Absolute path to the original repo (e.g. /home/user/price-bee-2/horizon) */
+  repoPath: TrimmedNonEmptyStringSchema,
+  /** Base branch to create the worktree from */
+  branch: TrimmedNonEmptyStringSchema,
+  /** New branch name for the worktree */
+  newBranch: TrimmedNonEmptyStringSchema,
+});
+
+export const GitCreateWorkspaceWorktreesInput = Schema.Struct({
+  /** Absolute path to the workspace root (parent of all repos) */
+  workspaceRoot: TrimmedNonEmptyStringSchema,
+  /** Per-repo worktree inputs */
+  repos: Schema.Array(WorkspaceWorktreeRepoInput),
+  /** Slug used to name the synthetic workspace directory */
+  slug: TrimmedNonEmptyStringSchema,
+});
+export type GitCreateWorkspaceWorktreesInput = typeof GitCreateWorkspaceWorktreesInput.Type;
+
+const WorkspaceWorktreeEntry = Schema.Struct({
+  /** Name of the repo (e.g. "horizon") */
+  name: TrimmedNonEmptyStringSchema,
+  /** Relative path within the workspace (e.g. "./horizon") */
+  relativePath: TrimmedNonEmptyStringSchema,
+  /** Absolute path to the original repo */
+  originalPath: TrimmedNonEmptyStringSchema,
+  /** Absolute path to the created worktree */
+  worktreePath: TrimmedNonEmptyStringSchema,
+  /** Branch name in the worktree */
+  branch: TrimmedNonEmptyStringSchema,
+});
+export { WorkspaceWorktreeEntry };
+export type WorkspaceWorktreeEntry = typeof WorkspaceWorktreeEntry.Type;
+
+export const GitCreateWorkspaceWorktreesResult = Schema.Struct({
+  /** Absolute path to the synthetic workspace root */
+  workspaceWorktreePath: TrimmedNonEmptyStringSchema,
+  entries: Schema.Array(WorkspaceWorktreeEntry),
+});
+export type GitCreateWorkspaceWorktreesResult = typeof GitCreateWorkspaceWorktreesResult.Type;
+
+export const GitRemoveWorkspaceWorktreesInput = Schema.Struct({
+  /** Absolute path to the synthetic workspace root to remove */
+  workspaceWorktreePath: TrimmedNonEmptyStringSchema,
+  /** Per-repo cleanup: original repo path + worktree path */
+  entries: Schema.Array(
+    Schema.Struct({
+      repoPath: TrimmedNonEmptyStringSchema,
+      worktreePath: TrimmedNonEmptyStringSchema,
+    }),
+  ),
+  force: Schema.optional(Schema.Boolean),
+});
+export type GitRemoveWorkspaceWorktreesInput = typeof GitRemoveWorkspaceWorktreesInput.Type;

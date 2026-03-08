@@ -20,6 +20,9 @@ import type {
   GitRemoveWorktreeInput,
   GitStatusInput,
   GitStatusResult,
+  GitCreateWorkspaceWorktreesInput,
+  GitCreateWorkspaceWorktreesResult,
+  GitRemoveWorkspaceWorktreesInput,
 } from "@xbetools/contracts";
 
 import type { GitCommandError } from "../Errors.ts";
@@ -162,6 +165,20 @@ export interface GitCoreShape {
    * List local branch names (short format).
    */
   readonly listLocalBranchNames: (cwd: string) => Effect.Effect<string[], GitCommandError>;
+
+  /**
+   * Create worktrees for multiple repos and assemble a synthetic workspace.
+   */
+  readonly createWorkspaceWorktrees: (
+    input: GitCreateWorkspaceWorktreesInput,
+  ) => Effect.Effect<GitCreateWorkspaceWorktreesResult, GitCommandError>;
+
+  /**
+   * Remove all worktrees for a synthetic workspace and clean up.
+   */
+  readonly removeWorkspaceWorktrees: (
+    input: GitRemoveWorkspaceWorktreesInput,
+  ) => Effect.Effect<void, GitCommandError>;
 }
 
 /**

@@ -172,6 +172,10 @@ export function createWsNativeApi(): NativeApi {
       checkout: (input) => transport.request(WS_METHODS.gitCheckout, input),
       init: (input) => transport.request(WS_METHODS.gitInit, input),
       listWorkspaceRepos: (input) => transport.request(WS_METHODS.gitListWorkspaceRepos, input),
+      createWorkspaceWorktrees: (input) =>
+        transport.request(WS_METHODS.gitCreateWorkspaceWorktrees, input),
+      removeWorkspaceWorktrees: (input) =>
+        transport.request(WS_METHODS.gitRemoveWorkspaceWorktrees, input),
     },
     contextMenu: {
       show: async <T extends string>(

@@ -1,4 +1,6 @@
+import { mkdirSync, symlinkSync, existsSync, readdirSync, statSync, rmSync } from "node:fs";
 import { Cache, Data, Duration, Effect, Exit, FileSystem, Layer, Path } from "effect";
+import type { WorkspaceWorktreeEntry } from "@xbetools/contracts";
 
 import { GitCommandError } from "../Errors.ts";
 import { GitService } from "../Services/GitService.ts";
@@ -1186,6 +1188,97 @@ const makeGitCore = Effect.gen(function* () {
       ),
     );
 
+  const createWorkspaceWorktrees: GitCoreShape["createWorkspaceWorktrees"] = (input) =>
+    Effect.gen(function* () {
+      const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? "/tmp";
+      const workspaceName = path.basename(input.workspaceRoot);
+      const syntheticRoot = path.join(homeDir, ".xbe", "worktrees", workspaceName, input.slug);
+
+      // Create the synthetic workspace root directory.
+      mkdirSync(syntheticRoot, { recursive: true });
+
+      const entries: WorkspaceWorktreeEntry[] = [];
+
+      // Create a worktree for each repo.
+      for (const repo of input.repos) {
+        const repoName = path.basename(repo.repoPath);
+        const worktreePath = path.join(syntheticRoot, repoName);
+
+        yield* executeGit(
+          "GitCore.createWorkspaceWorktrees",
+          repo.repoPath,
+          ["worktree", "add", "-b", repo.newBranch, worktreePath, repo.branch],
+          { fallbackErrorMessage: `git worktree add failed for ${repoName}` },
+        );
+
+        const relativePath = path.relative(input.workspaceRoot, repo.repoPath);
+        entries.push({
+          name: repoName,
+          relativePath: relativePath.startsWith(".") ? relativePath : `./${relativePath}`,
+          originalPath: repo.repoPath,
+          worktreePath,
+          branch: repo.newBranch,
+        });
+      }
+
+      // Symlink non-git workspace contents (e.g. .planning, config files)
+      // into the synthetic root for a complete workspace snapshot.
+      try {
+        const topLevelEntries = readdirSync(input.workspaceRoot);
+        const worktreeRepoNames = new Set(entries.map((e) => e.name));
+        for (const entry of topLevelEntries) {
+          if (entry.startsWith(".") || entry === "node_modules") continue;
+          if (worktreeRepoNames.has(entry)) continue;
+          const srcPath = path.join(input.workspaceRoot, entry);
+          const destPath = path.join(syntheticRoot, entry);
+          if (existsSync(destPath)) continue;
+          try {
+            const stat = statSync(srcPath);
+            if (stat.isDirectory() || stat.isFile()) {
+              symlinkSync(srcPath, destPath);
+            }
+          } catch {
+            // Skip entries that can't be symlinked.
+          }
+        }
+      } catch {
+        // Non-critical: workspace shape will be incomplete but functional.
+      }
+
+      return {
+        workspaceWorktreePath: syntheticRoot,
+        entries,
+      };
+    });
+
+  const removeWorkspaceWorktrees: GitCoreShape["removeWorkspaceWorktrees"] = (input) =>
+    Effect.gen(function* () {
+      // Remove each git worktree.
+      for (const entry of input.entries) {
+        yield* executeGit(
+          "GitCore.removeWorkspaceWorktrees",
+          entry.repoPath,
+          [
+            "worktree",
+            "remove",
+            ...(input.force ? ["--force"] : []),
+            entry.worktreePath,
+          ],
+          {
+            timeoutMs: 15_000,
+            fallbackErrorMessage: `git worktree remove failed for ${entry.worktreePath}`,
+          },
+        ).pipe(Effect.catch(() => Effect.void));
+      }
+
+      // Clean up the synthetic workspace root.
+      try {
+        rmSync(input.workspaceWorktreePath, { recursive: true, force: true });
+      } catch {
+        // Best-effort cleanup.
+      }
+    });
+
   return {
     status,
     statusDetails,
@@ -1203,6 +1296,8 @@ const makeGitCore = Effect.gen(function* () {
     checkoutBranch,
     initRepo,
     listLocalBranchNames,
+    createWorkspaceWorktrees,
+    removeWorkspaceWorktrees,
   } satisfies GitCoreShape;
 });
 

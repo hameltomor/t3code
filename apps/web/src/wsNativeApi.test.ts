@@ -250,6 +250,7 @@ describe("wsNativeApi", () => {
         workspaceRoot: "/tmp/workspace",
         defaultModel: null,
         scripts: [],
+        workspaceMembers: [],
         createdAt: "2026-02-24T00:00:00.000Z",
         updatedAt: "2026-02-24T00:00:00.000Z",
       },
@@ -322,6 +323,7 @@ describe("wsNativeApi", () => {
       title: "Project",
       workspaceRoot: "/tmp/project",
       defaultModel: "gpt-5-codex",
+      workspaceMembers: [] as const,
       createdAt: "2026-02-24T00:00:00.000Z",
     } as const;
     await api.orchestration.dispatchCommand(command);

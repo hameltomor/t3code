@@ -173,6 +173,44 @@ export function gitRemoveWorktreeMutationOptions(input: { queryClient: QueryClie
   });
 }
 
+export function gitCreateWorkspaceWorktreesMutationOptions(input: {
+  queryClient: QueryClient;
+}) {
+  return mutationOptions({
+    mutationFn: async (params: {
+      workspaceRoot: string;
+      repos: Array<{ repoPath: string; branch: string; newBranch: string }>;
+      slug: string;
+    }) => {
+      const api = ensureNativeApi();
+      return api.git.createWorkspaceWorktrees(params);
+    },
+    mutationKey: ["git", "mutation", "create-workspace-worktrees"] as const,
+    onSettled: async () => {
+      await invalidateGitQueries(input.queryClient);
+    },
+  });
+}
+
+export function gitRemoveWorkspaceWorktreesMutationOptions(input: {
+  queryClient: QueryClient;
+}) {
+  return mutationOptions({
+    mutationFn: async (params: {
+      workspaceWorktreePath: string;
+      entries: Array<{ repoPath: string; worktreePath: string }>;
+      force?: boolean;
+    }) => {
+      const api = ensureNativeApi();
+      return api.git.removeWorkspaceWorktrees(params);
+    },
+    mutationKey: ["git", "mutation", "remove-workspace-worktrees"] as const,
+    onSettled: async () => {
+      await invalidateGitQueries(input.queryClient);
+    },
+  });
+}
+
 export function gitWorkspaceReposQueryOptions(workspaceRoot: string | null) {
   return queryOptions({
     queryKey: gitQueryKeys.workspaceRepos(workspaceRoot),

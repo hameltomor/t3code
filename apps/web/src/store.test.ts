@@ -29,6 +29,7 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     latestTurn: null,
     branch: null,
     worktreePath: null,
+    worktreeEntries: [],
     ...overrides,
   };
 }
@@ -43,6 +44,7 @@ function makeState(thread: Thread): AppState {
         model: "gpt-5-codex",
         expanded: true,
         scripts: [],
+        workspaceMembers: [],
       },
     ],
     threads: [thread],
@@ -61,6 +63,7 @@ function makeReadModelThread(overrides: Partial<OrchestrationReadModel["threads"
     interactionMode: DEFAULT_INTERACTION_MODE,
     branch: null,
     worktreePath: null,
+    worktreeEntries: [],
     latestTurn: null,
     createdAt: "2026-02-27T00:00:00.000Z",
     updatedAt: "2026-02-27T00:00:00.000Z",
@@ -88,6 +91,7 @@ function makeReadModel(thread: OrchestrationReadModel["threads"][number]): Orche
         updatedAt: "2026-02-27T00:00:00.000Z",
         deletedAt: null,
         scripts: [],
+        workspaceMembers: [],
       },
     ],
     threads: [thread],

@@ -135,6 +135,7 @@ function mapProjectsFromReadModel(
           ? persistedExpandedProjectCwds.has(project.workspaceRoot)
           : true),
       scripts: project.scripts.map((script) => ({ ...script })),
+      workspaceMembers: [...(project.workspaceMembers ?? [])],
     };
   });
 }
@@ -281,6 +282,7 @@ export function syncServerReadModel(state: AppState, readModel: OrchestrationRea
         lastVisitedAt: existing?.lastVisitedAt ?? thread.updatedAt,
         branch: thread.branch,
         worktreePath: thread.worktreePath,
+        worktreeEntries: [...(thread.worktreeEntries ?? [])],
         turnDiffSummaries: thread.checkpoints.map((checkpoint) => ({
           turnId: checkpoint.turnId,
           completedAt: checkpoint.completedAt,

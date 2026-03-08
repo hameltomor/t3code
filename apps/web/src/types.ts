@@ -4,6 +4,8 @@ import type {
   OrchestrationSessionStatus,
   OrchestrationThreadActivity,
   ProjectScript as ContractProjectScript,
+  WorkspaceMember as ContractWorkspaceMember,
+  WorkspaceWorktreeEntry as ContractWorktreeEntry,
   ThreadId,
   ProjectId,
   TurnId,
@@ -22,6 +24,8 @@ export const DEFAULT_THREAD_TERMINAL_HEIGHT = 280;
 export const DEFAULT_THREAD_TERMINAL_ID = "default";
 export const MAX_THREAD_TERMINAL_COUNT = 4;
 export type ProjectScript = ContractProjectScript;
+export type WorkspaceMember = ContractWorkspaceMember;
+export type WorkspaceWorktreeEntry = ContractWorktreeEntry;
 
 export interface ThreadTerminalGroup {
   id: string;
@@ -81,6 +85,7 @@ export interface Project {
   model: string;
   expanded: boolean;
   scripts: ProjectScript[];
+  workspaceMembers: WorkspaceMember[];
 }
 
 export interface Thread {
@@ -100,6 +105,7 @@ export interface Thread {
   lastVisitedAt?: string | undefined;
   branch: string | null;
   worktreePath: string | null;
+  worktreeEntries: WorkspaceWorktreeEntry[];
   turnDiffSummaries: TurnDiffSummary[];
   activities: OrchestrationThreadActivity[];
 }
