@@ -445,7 +445,23 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
 
         // Replay prior turns if resuming to reconstruct conversation context
         const priorTurns = resumeState?.turns;
-        const chat = createChat(ai, model, config, priorTurns);
+
+        // Inject project context as the first exchange in the chat history
+        // so Gemini has awareness of the codebase from the first turn.
+        const contextHistory: Array<{ userMessage: string; assistantText: string }> = [];
+        if (systemInstruction && !priorTurns?.length) {
+          contextHistory.push({
+            userMessage: [
+              "Here is the context about the project you are working on. Use this to answer questions about the codebase.",
+              "",
+              systemInstruction,
+            ].join("\n"),
+            assistantText:
+              "Understood. I have the project context and will use it to answer your questions about this codebase.",
+          });
+        }
+        const fullHistory = [...contextHistory, ...(priorTurns ?? [])];
+        const chat = createChat(ai, model, config, fullHistory.length > 0 ? fullHistory : undefined);
 
         const now = yield* nowIso;
 
