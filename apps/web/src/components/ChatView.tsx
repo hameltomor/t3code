@@ -51,6 +51,7 @@ import {
 import {
   gitBranchesQueryOptions,
   gitCreateWorktreeMutationOptions,
+  gitCreateWorkspaceWorktreesMutationOptions,
   gitWorkspaceReposQueryOptions,
 } from "~/lib/gitReactQuery";
 import { projectSearchEntriesQueryOptions } from "~/lib/projectReactQuery";
@@ -618,6 +619,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const { resolvedTheme } = useTheme();
   const queryClient = useQueryClient();
   const createWorktreeMutation = useMutation(gitCreateWorktreeMutationOptions({ queryClient }));
+  const createWorkspaceWorktreesMutation = useMutation(
+    gitCreateWorkspaceWorktreesMutationOptions({ queryClient }),
+  );
   const composerDraft = useComposerThreadDraft(threadId);
   const prompt = composerDraft.prompt;
   const composerImages = composerDraft.images;
@@ -2521,29 +2525,73 @@ export default function ChatView({ threadId }: ChatViewProps) {
     let turnStartSucceeded = false;
     let nextThreadBranch = activeThread.branch;
     let nextThreadWorktreePath = activeThread.worktreePath;
+    let nextThreadWorktreeEntries: typeof activeThread.worktreeEntries = activeThread.worktreeEntries;
     await (async () => {
       // On first message: lock in branch + create worktree if needed.
       if (baseBranchForWorktree) {
         beginSendPhase("preparing-worktree");
         const newBranch = buildTemporaryWorktreeBranchName();
-        const result = await createWorktreeMutation.mutateAsync({
-          cwd: activeProject.cwd,
-          branch: baseBranchForWorktree,
-          newBranch,
-        });
-        nextThreadBranch = result.worktree.branch;
-        nextThreadWorktreePath = result.worktree.path;
-        if (isServerThread) {
-          await api.orchestration.dispatchCommand({
-            type: "thread.meta.update",
-            commandId: newCommandId(),
-            threadId: threadIdForSend,
-            branch: result.worktree.branch,
-            worktreePath: result.worktree.path,
+
+        // Ensure workspace repo discovery has completed before deciding
+        // single-repo vs multi-repo. Without this, a stale/pending query
+        // would incorrectly fall through to the single-repo path.
+        const reposData = await queryClient.ensureQueryData(
+          gitWorkspaceReposQueryOptions(activeProject.cwd),
+        );
+        const discoveredRepos = reposData.repos ?? [];
+        const multiRepoMembers = discoveredRepos.filter((r) => !r.isRoot);
+        const isMultiRepoWorkspace =
+          discoveredRepos.length > 1 || (discoveredRepos.length === 1 && !discoveredRepos[0]!.isRoot);
+
+        if (isMultiRepoWorkspace && multiRepoMembers.length > 0) {
+          const wsResult = await createWorkspaceWorktreesMutation.mutateAsync({
+            workspaceRoot: activeProject.cwd,
+            repos: multiRepoMembers.map((repo) => ({
+              repoPath: repo.path,
+              branch: repo.branch ?? baseBranchForWorktree,
+              newBranch,
+            })),
+            slug: newBranch.replace(/\//g, "-"),
           });
-          // Keep local thread state in sync immediately so terminal drawer opens
-          // with the worktree cwd/env instead of briefly using the project root.
-          setStoreThreadBranch(threadIdForSend, result.worktree.branch, result.worktree.path);
+          nextThreadBranch = newBranch;
+          nextThreadWorktreePath = wsResult.workspaceWorktreePath;
+          nextThreadWorktreeEntries = [...wsResult.entries];
+          if (isServerThread) {
+            await api.orchestration.dispatchCommand({
+              type: "thread.meta.update",
+              commandId: newCommandId(),
+              threadId: threadIdForSend,
+              branch: newBranch,
+              worktreePath: wsResult.workspaceWorktreePath,
+              worktreeEntries: [...wsResult.entries],
+            });
+            setStoreThreadBranch(
+              threadIdForSend,
+              newBranch,
+              wsResult.workspaceWorktreePath,
+            );
+          }
+        } else {
+          // Single-repo worktree creation (existing flow).
+          const result = await createWorktreeMutation.mutateAsync({
+            cwd: activeProject.cwd,
+            branch: baseBranchForWorktree,
+            newBranch,
+          });
+          nextThreadBranch = result.worktree.branch;
+          nextThreadWorktreePath = result.worktree.path;
+          if (isServerThread) {
+            await api.orchestration.dispatchCommand({
+              type: "thread.meta.update",
+              commandId: newCommandId(),
+              threadId: threadIdForSend,
+              branch: result.worktree.branch,
+              worktreePath: result.worktree.path,
+            });
+            // Keep local thread state in sync immediately so terminal drawer opens
+            // with the worktree cwd/env instead of briefly using the project root.
+            setStoreThreadBranch(threadIdForSend, result.worktree.branch, result.worktree.path);
+          }
         }
       }
 
@@ -2578,6 +2626,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
           interactionMode,
           branch: nextThreadBranch,
           worktreePath: nextThreadWorktreePath,
+          ...(nextThreadWorktreeEntries.length > 0
+            ? { worktreeEntries: nextThreadWorktreeEntries }
+            : {}),
           createdAt: activeThread.createdAt,
         });
         createdServerThreadForLocalDraft = true;
@@ -4126,7 +4177,10 @@ const ChatHeader = memo(function ChatHeader({
   const selectedRepoCwd = useStore(
     (store) => (activeProjectId ? store.selectedRepoCwdByProject[activeProjectId] : null) ?? null,
   );
-  const workspaceReposQuery = useQuery(gitWorkspaceReposQueryOptions(activeProjectCwd));
+  // Query workspace repos from the effective CWD (worktree path if in worktree,
+  // otherwise project root) so git actions target worktree copies, not originals.
+  const workspaceReposQueryCwd = gitCwd ?? activeProjectCwd;
+  const workspaceReposQuery = useQuery(gitWorkspaceReposQueryOptions(workspaceReposQueryCwd));
   const workspaceRepos = workspaceReposQuery.data?.repos ?? [];
   const isMultiRepo =
     workspaceRepos.length > 1 || (workspaceRepos.length === 1 && !workspaceRepos[0]!.isRoot);
@@ -4176,10 +4230,10 @@ const ChatHeader = memo(function ChatHeader({
             openInCwd={openInCwd}
           />
         )}
-        {activeProjectName && isMultiRepo && activeProjectId && activeProjectCwd && (
+        {activeProjectName && isMultiRepo && activeProjectId && workspaceReposQueryCwd && (
           <RepoSwitcher
             projectId={activeProjectId}
-            workspaceRoot={activeProjectCwd}
+            workspaceRoot={workspaceReposQueryCwd}
             onSelectedRepoCwdChange={(repoCwd) => {
               if (activeProjectId) setSelectedRepoCwd(activeProjectId, repoCwd);
             }}

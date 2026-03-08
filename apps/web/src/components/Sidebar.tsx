@@ -26,7 +26,11 @@ import { useStore } from "../store";
 import { isChatNewLocalShortcut, isChatNewShortcut, shortcutLabelForCommand } from "../keybindings";
 import { type Thread } from "../types";
 import { derivePendingApprovals } from "../session-logic";
-import { gitRemoveWorktreeMutationOptions, gitStatusQueryOptions } from "../lib/gitReactQuery";
+import {
+  gitRemoveWorktreeMutationOptions,
+  gitRemoveWorkspaceWorktreesMutationOptions,
+  gitStatusQueryOptions,
+} from "../lib/gitReactQuery";
 import { serverConfigQueryOptions } from "../lib/serverReactQuery";
 import { readNativeApi } from "../nativeApi";
 import { type DraftThreadEnvMode, useComposerDraftStore } from "../composerDraftStore";
@@ -59,7 +63,11 @@ import {
   SidebarSeparator,
   SidebarTrigger,
 } from "./ui/sidebar";
-import { formatWorktreePathForDisplay, getOrphanedWorktreePathForThread } from "../worktreeCleanup";
+import {
+  formatWorktreePathForDisplay,
+  getOrphanedWorktreePathForThread,
+  getOrphanedWorktreeEntriesForThread,
+} from "../worktreeCleanup";
 import { isNonEmpty as isNonEmptyString } from "effect/String";
 
 const EMPTY_KEYBINDINGS: ResolvedKeybindingsConfig = [];
@@ -285,6 +293,9 @@ export default function Sidebar() {
   });
   const queryClient = useQueryClient();
   const removeWorktreeMutation = useMutation(gitRemoveWorktreeMutationOptions({ queryClient }));
+  const removeWorkspaceWorktreesMutation = useMutation(
+    gitRemoveWorkspaceWorktreesMutationOptions({ queryClient }),
+  );
   const [addingProject, setAddingProject] = useState(false);
   const [newCwd, setNewCwd] = useState("");
   const [isPickingFolder, setIsPickingFolder] = useState(false);
@@ -665,7 +676,10 @@ export default function Sidebar() {
         }
       }
       const threadProject = projects.find((project) => project.id === thread.projectId);
-      const orphanedWorktreePath = getOrphanedWorktreePathForThread(threads, threadId);
+      const orphanedWorkspaceEntries = getOrphanedWorktreeEntriesForThread(threads, threadId);
+      const orphanedWorktreePath =
+        orphanedWorkspaceEntries?.worktreePath ??
+        getOrphanedWorktreePathForThread(threads, threadId);
       const displayWorktreePath = orphanedWorktreePath
         ? formatWorktreePathForDisplay(orphanedWorktreePath)
         : null;
@@ -728,11 +742,24 @@ export default function Sidebar() {
       }
 
       try {
-        await removeWorktreeMutation.mutateAsync({
-          cwd: threadProject.cwd,
-          path: orphanedWorktreePath,
-          force: true,
-        });
+        if (orphanedWorkspaceEntries) {
+          // Multi-repo workspace worktree: batch remove all repo worktrees.
+          await removeWorkspaceWorktreesMutation.mutateAsync({
+            workspaceWorktreePath: orphanedWorkspaceEntries.worktreePath,
+            entries: orphanedWorkspaceEntries.entries.map((entry) => ({
+              repoPath: entry.originalPath,
+              worktreePath: entry.worktreePath,
+            })),
+            force: true,
+          });
+        } else {
+          // Single-repo worktree removal.
+          await removeWorktreeMutation.mutateAsync({
+            cwd: threadProject.cwd,
+            path: orphanedWorktreePath,
+            force: true,
+          });
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unknown error removing worktree.";
         console.error("Failed to remove orphaned worktree after thread deletion", {
@@ -757,6 +784,7 @@ export default function Sidebar() {
       navigate,
       projects,
       removeWorktreeMutation,
+      removeWorkspaceWorktreesMutation,
       routeThreadId,
       threads,
     ],
