@@ -21,6 +21,14 @@ module.exports = {
       interpreter: "/bin/bash",
       cwd: __dirname,
       autorestart: false,
+      env: {
+        // Forward provider API keys from the launching shell to the dev server.
+        // PM2 caches env at start time — run `pm2 delete xbecode-dev && pm2 start`
+        // to pick up changes.
+        ...(process.env.GEMINI_API_KEY ? { GEMINI_API_KEY: process.env.GEMINI_API_KEY } : {}),
+        ...(process.env.GOOGLE_API_KEY ? { GOOGLE_API_KEY: process.env.GOOGLE_API_KEY } : {}),
+        ...(process.env.ANTHROPIC_API_KEY ? { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY } : {}),
+      },
     },
   ],
 };

@@ -29,6 +29,7 @@ const MODELS_WITH_FAST_SUPPORT = new Set(["gpt-5.4"]);
 const BUILT_IN_MODEL_SLUGS_BY_PROVIDER: Record<ProviderKind, ReadonlySet<string>> = {
   codex: new Set(getModelOptions("codex").map((option) => option.slug)),
   claudeCode: new Set(getModelOptions("claudeCode").map((option) => option.slug)),
+  gemini: new Set(getModelOptions("gemini").map((option) => option.slug)),
 };
 
 const AppSettingsSchema = Schema.Struct({
@@ -46,8 +47,18 @@ const AppSettingsSchema = Schema.Struct({
   customCodexModels: Schema.Array(Schema.String).pipe(
     Schema.withConstructorDefault(() => Option.some([])),
   ),
+  customClaudeCodeModels: Schema.Array(Schema.String).pipe(
+    Schema.withConstructorDefault(() => Option.some([])),
+  ),
+  customGeminiModels: Schema.Array(Schema.String).pipe(
+    Schema.withConstructorDefault(() => Option.some([])),
+  ),
 });
 export type AppSettings = typeof AppSettingsSchema.Type;
+export type ProviderCustomModelsSettings = Pick<
+  AppSettings,
+  "customCodexModels" | "customClaudeCodeModels" | "customGeminiModels"
+>;
 export interface AppModelOption {
   slug: string;
   name: string;
@@ -109,7 +120,42 @@ function normalizeAppSettings(settings: AppSettings): AppSettings {
   return {
     ...settings,
     customCodexModels: normalizeCustomModelSlugs(settings.customCodexModels, "codex"),
+    customClaudeCodeModels: normalizeCustomModelSlugs(
+      settings.customClaudeCodeModels,
+      "claudeCode",
+    ),
+    customGeminiModels: normalizeCustomModelSlugs(settings.customGeminiModels, "gemini"),
   };
+}
+
+export function getCustomModelsForProvider(
+  settings: ProviderCustomModelsSettings,
+  provider: ProviderKind,
+): readonly string[] {
+  switch (provider) {
+    case "claudeCode":
+      return settings.customClaudeCodeModels;
+    case "gemini":
+      return settings.customGeminiModels;
+    case "codex":
+    default:
+      return settings.customCodexModels;
+  }
+}
+
+export function patchCustomModelsForProvider(
+  provider: ProviderKind,
+  models: string[],
+): Partial<Pick<AppSettings, "customCodexModels" | "customClaudeCodeModels" | "customGeminiModels">> {
+  switch (provider) {
+    case "claudeCode":
+      return { customClaudeCodeModels: models };
+    case "gemini":
+      return { customGeminiModels: models };
+    case "codex":
+    default:
+      return { customCodexModels: models };
+  }
 }
 
 export function getAppModelOptions(

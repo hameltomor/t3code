@@ -178,6 +178,49 @@ describe("commandInvariants", () => {
     ).rejects.toThrow("already exists");
   });
 
+  it("treats soft-deleted threads as absent", async () => {
+    const deletedThread = {
+      ...readModel.threads[0]!,
+      id: ThreadId.makeUnsafe("thread-deleted"),
+      deletedAt: now,
+    };
+    const modelWithDeleted: OrchestrationReadModel = {
+      ...readModel,
+      threads: [...readModel.threads, deletedThread],
+    };
+
+    // findThreadById should not return a soft-deleted thread
+    expect(findThreadById(modelWithDeleted, ThreadId.makeUnsafe("thread-deleted"))).toBeUndefined();
+
+    // requireThreadAbsent should pass for a soft-deleted thread (allows re-creation)
+    await Effect.runPromise(
+      requireThreadAbsent({
+        readModel: modelWithDeleted,
+        command: {
+          type: "thread.create",
+          commandId: CommandId.makeUnsafe("cmd-recreate"),
+          threadId: ThreadId.makeUnsafe("thread-deleted"),
+          projectId: ProjectId.makeUnsafe("project-a"),
+          title: "recreated",
+          model: "gpt-5-codex",
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "full-access",
+          branch: null,
+          worktreePath: null,
+          createdAt: now,
+        },
+        threadId: ThreadId.makeUnsafe("thread-deleted"),
+      }),
+    );
+
+    // listThreadsByProjectId should not include soft-deleted threads
+    expect(
+      listThreadsByProjectId(modelWithDeleted, ProjectId.makeUnsafe("project-a")).map(
+        (thread) => thread.id,
+      ),
+    ).toEqual([ThreadId.makeUnsafe("thread-1")]);
+  });
+
   it("requires non-negative integers", async () => {
     await Effect.runPromise(
       requireNonNegativeInteger({

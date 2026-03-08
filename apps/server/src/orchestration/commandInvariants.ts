@@ -21,7 +21,7 @@ export function findThreadById(
   readModel: OrchestrationReadModel,
   threadId: ThreadId,
 ): OrchestrationThread | undefined {
-  return readModel.threads.find((thread) => thread.id === threadId);
+  return readModel.threads.find((thread) => thread.id === threadId && thread.deletedAt === null);
 }
 
 export function findProjectById(
@@ -35,7 +35,9 @@ export function listThreadsByProjectId(
   readModel: OrchestrationReadModel,
   projectId: ProjectId,
 ): ReadonlyArray<OrchestrationThread> {
-  return readModel.threads.filter((thread) => thread.projectId === projectId);
+  return readModel.threads.filter(
+    (thread) => thread.projectId === projectId && thread.deletedAt === null,
+  );
 }
 
 export function requireProject(input: {

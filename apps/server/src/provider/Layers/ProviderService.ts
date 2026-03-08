@@ -152,8 +152,24 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
       registry.getByProvider(provider),
     );
 
+    const refreshSessionBindingAfterTurn = (event: ProviderRuntimeEvent): Effect.Effect<void> => {
+      if (event.type !== "turn.completed") return Effect.void;
+      return registry
+        .getByProvider(event.provider)
+        .pipe(
+          Effect.flatMap((adapter) => adapter.listSessions()),
+          Effect.flatMap((sessions) => {
+            const session = sessions.find((s) => s.threadId === event.threadId);
+            return session ? upsertSessionBinding(session, event.threadId) : Effect.void;
+          }),
+          Effect.orElseSucceed(() => undefined as void),
+        );
+    };
+
     const processRuntimeEvent = (event: ProviderRuntimeEvent): Effect.Effect<void> =>
-      publishRuntimeEvent(event);
+      publishRuntimeEvent(event).pipe(
+        Effect.tap(() => refreshSessionBindingAfterTurn(event)),
+      );
 
     const worker = Effect.forever(
       Queue.take(runtimeEventQueue).pipe(Effect.flatMap(processRuntimeEvent)),
@@ -469,6 +485,17 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
           allowRecovery: true,
         });
         yield* routed.adapter.rollbackThread(routed.threadId, input.numTurns);
+
+        // Persist the updated resume cursor so server-restart recovery uses the
+        // post-rollback state rather than the stale pre-rollback cursor.
+        const postRollbackSessions = yield* routed.adapter.listSessions();
+        const updatedSession = postRollbackSessions.find(
+          (session) => session.threadId === routed.threadId,
+        );
+        if (updatedSession) {
+          yield* upsertSessionBinding(updatedSession, routed.threadId);
+        }
+
         yield* analytics.record("provider.conversation.rolled_back", {
           provider: routed.adapter.provider,
           turns: input.numTurns,

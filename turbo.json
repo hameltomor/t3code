@@ -11,7 +11,10 @@
     "XBECODE_NO_BROWSER",
     "XBECODE_STATE_DIR",
     "XBECODE_AUTH_TOKEN",
-    "XBECODE_DESKTOP_WS_URL"
+    "XBECODE_DESKTOP_WS_URL",
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
+    "ANTHROPIC_API_KEY"
   ],
   "tasks": {
     "build": {

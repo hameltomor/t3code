@@ -68,6 +68,12 @@ describe("inferProviderForModel", () => {
     expect(inferProviderForModel("opus")).toBe("claudeCode");
   });
 
+  it("detects gemini models", () => {
+    expect(inferProviderForModel("gemini-3.1-pro-preview")).toBe("gemini");
+    expect(inferProviderForModel("gemini-2.5-pro")).toBe("gemini");
+    expect(inferProviderForModel("gemini-3-flash-preview")).toBe("gemini");
+  });
+
   it("returns null for unknown models", () => {
     expect(inferProviderForModel("custom/internal-model")).toBeNull();
   });

@@ -15,9 +15,15 @@ export const ClaudeCodeModelOptions = Schema.Struct({
 });
 export type ClaudeCodeModelOptions = typeof ClaudeCodeModelOptions.Type;
 
+export const GeminiModelOptions = Schema.Struct({
+  thinking: Schema.optional(Schema.Boolean),
+});
+export type GeminiModelOptions = typeof GeminiModelOptions.Type;
+
 export const ProviderModelOptions = Schema.Struct({
   codex: Schema.optional(CodexModelOptions),
   claudeCode: Schema.optional(ClaudeCodeModelOptions),
+  gemini: Schema.optional(GeminiModelOptions),
 });
 export type ProviderModelOptions = typeof ProviderModelOptions.Type;
 
@@ -39,6 +45,14 @@ export const MODEL_OPTIONS_BY_PROVIDER = {
     { slug: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
     { slug: "claude-haiku-4-5", name: "Claude Haiku 4.5" },
   ],
+  gemini: [
+    { slug: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro" },
+    { slug: "gemini-3-flash-preview", name: "Gemini 3 Flash" },
+    { slug: "gemini-3.1-flash-lite-preview", name: "Gemini 3.1 Flash Lite" },
+    { slug: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
+    { slug: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+    { slug: "gemini-2.5-flash-lite", name: "Gemini 2.5 Flash Lite" },
+  ],
 } as const satisfies Record<ProviderKind, readonly ModelOption[]>;
 export type ModelOptionsByProvider = typeof MODEL_OPTIONS_BY_PROVIDER;
 
@@ -48,6 +62,7 @@ export type ModelSlug = BuiltInModelSlug | (string & {});
 export const DEFAULT_MODEL_BY_PROVIDER = {
   codex: "gpt-5.4",
   claudeCode: "claude-sonnet-4-6",
+  gemini: "gemini-3.1-pro-preview",
 } as const satisfies Record<ProviderKind, ModelSlug>;
 
 export const MODEL_SLUG_ALIASES_BY_PROVIDER = {
@@ -66,14 +81,28 @@ export const MODEL_SLUG_ALIASES_BY_PROVIDER = {
     haiku: "claude-haiku-4-5",
     "haiku-4.5": "claude-haiku-4-5",
   },
+  gemini: {
+    pro: "gemini-3.1-pro-preview",
+    "3.1-pro": "gemini-3.1-pro-preview",
+    "3-pro": "gemini-3.1-pro-preview",
+    flash: "gemini-3-flash-preview",
+    "3-flash": "gemini-3-flash-preview",
+    "flash-lite": "gemini-3.1-flash-lite-preview",
+    "3.1-flash-lite": "gemini-3.1-flash-lite-preview",
+    "2.5-pro": "gemini-2.5-pro",
+    "2.5-flash": "gemini-2.5-flash",
+    "2.5-flash-lite": "gemini-2.5-flash-lite",
+  },
 } as const satisfies Record<ProviderKind, Record<string, ModelSlug>>;
 
 export const REASONING_EFFORT_OPTIONS_BY_PROVIDER = {
   codex: CODEX_REASONING_EFFORT_OPTIONS,
   claudeCode: [],
+  gemini: [],
 } as const satisfies Record<ProviderKind, readonly CodexReasoningEffort[]>;
 
 export const DEFAULT_REASONING_EFFORT_BY_PROVIDER = {
   codex: "high",
   claudeCode: null,
+  gemini: null,
 } as const satisfies Record<ProviderKind, CodexReasoningEffort | null>;

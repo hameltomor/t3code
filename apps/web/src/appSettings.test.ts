@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   getAppModelOptions,
+  getCustomModelsForProvider,
   getSlashModelOptions,
   normalizeCustomModelSlugs,
+  patchCustomModelsForProvider,
   resolveAppServiceTier,
   shouldShowFastTierIcon,
   resolveAppModelSelection,
@@ -21,6 +23,15 @@ describe("normalizeCustomModelSlugs", () => {
         null,
       ]),
     ).toEqual(["custom/internal-model"]);
+  });
+
+  it("normalizes Claude aliases without mixing provider catalogs", () => {
+    expect(
+      normalizeCustomModelSlugs(
+        [" claude-preview-model ", "claude-opus-4-6", "opus", "claude-preview-model"],
+        "claudeCode",
+      ),
+    ).toEqual(["claude-preview-model"]);
   });
 });
 
@@ -44,6 +55,16 @@ describe("getAppModelOptions", () => {
     expect(options.at(-1)).toEqual({
       slug: "custom/selected-model",
       name: "custom/selected-model",
+      isCustom: true,
+    });
+  });
+
+  it("supports custom Claude Code models", () => {
+    const options = getAppModelOptions("claudeCode", ["claude-preview-model"]);
+
+    expect(options.at(-1)).toEqual({
+      slug: "claude-preview-model",
+      name: "claude-preview-model",
       isCustom: true,
     });
   });
@@ -93,6 +114,30 @@ describe("resolveAppServiceTier", () => {
   it("preserves explicit service tier overrides", () => {
     expect(resolveAppServiceTier("fast")).toBe("fast");
     expect(resolveAppServiceTier("flex")).toBe("flex");
+  });
+});
+
+describe("provider custom model helpers", () => {
+  it("reads provider-scoped custom models", () => {
+    expect(
+      getCustomModelsForProvider(
+        {
+          customCodexModels: ["gpt-preview-model"],
+          customClaudeCodeModels: ["claude-preview-model"],
+          customGeminiModels: [],
+        },
+        "claudeCode",
+      ),
+    ).toEqual(["claude-preview-model"]);
+  });
+
+  it("builds provider-specific settings patches", () => {
+    expect(patchCustomModelsForProvider("codex", ["gpt-preview-model"])).toEqual({
+      customCodexModels: ["gpt-preview-model"],
+    });
+    expect(patchCustomModelsForProvider("claudeCode", ["claude-preview-model"])).toEqual({
+      customClaudeCodeModels: ["claude-preview-model"],
+    });
   });
 });
 

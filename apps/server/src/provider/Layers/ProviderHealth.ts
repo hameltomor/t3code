@@ -307,14 +307,44 @@ export const checkCodexProviderStatus: Effect.Effect<
   } satisfies ServerProviderStatus;
 });
 
+// ── Gemini health check ──────────────────────────────────────────────
+
+const GEMINI_PROVIDER = "gemini" as const;
+
+export const checkGeminiProviderStatus: Effect.Effect<ServerProviderStatus> = Effect.sync(() => {
+  const checkedAt = new Date().toISOString();
+  const apiKey = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY;
+
+  if (!apiKey) {
+    return {
+      provider: GEMINI_PROVIDER,
+      status: "error" as const,
+      available: false,
+      authStatus: "unauthenticated" as const,
+      checkedAt,
+      message:
+        "No Gemini API key found. Set GEMINI_API_KEY or GOOGLE_API_KEY environment variable.",
+    };
+  }
+
+  return {
+    provider: GEMINI_PROVIDER,
+    status: "ready" as const,
+    available: true,
+    authStatus: "authenticated" as const,
+    checkedAt,
+  };
+});
+
 // ── Layer ───────────────────────────────────────────────────────────
 
 export const ProviderHealthLive = Layer.effect(
   ProviderHealth,
   Effect.gen(function* () {
     const codexStatus = yield* checkCodexProviderStatus;
+    const geminiStatus = yield* checkGeminiProviderStatus;
     return {
-      getStatuses: Effect.succeed([codexStatus]),
+      getStatuses: Effect.succeed([codexStatus, geminiStatus]),
     } satisfies ProviderHealthShape;
   }),
 );

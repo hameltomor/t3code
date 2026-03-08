@@ -59,9 +59,14 @@ const ClaudeCodeProviderStartOptions = Schema.Struct({
   maxThinkingTokens: Schema.optional(Schema.Int),
 });
 
+const GeminiProviderStartOptions = Schema.Struct({
+  apiKey: Schema.optional(TrimmedNonEmptyStringSchema),
+});
+
 const ProviderStartOptions = Schema.Struct({
   codex: Schema.optional(CodexProviderStartOptions),
   claudeCode: Schema.optional(ClaudeCodeProviderStartOptions),
+  gemini: Schema.optional(GeminiProviderStartOptions),
 });
 
 export const ProviderSessionStartInput = Schema.Struct({

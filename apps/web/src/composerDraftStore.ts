@@ -208,7 +208,10 @@ function shouldRemoveDraft(draft: ComposerThreadDraftState): boolean {
 }
 
 function normalizeProviderKind(value: unknown): ProviderKind | null {
-  return value === "codex" ? value : null;
+  if (value === "codex" || value === "claudeCode" || value === "gemini") {
+    return value;
+  }
+  return null;
 }
 
 function revokeObjectPreviewUrl(previewUrl: string): void {

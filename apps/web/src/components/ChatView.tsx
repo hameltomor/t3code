@@ -207,7 +207,9 @@ import { SidebarTrigger, useSidebar } from "./ui/sidebar";
 import { newCommandId, newMessageId, newThreadId } from "~/lib/utils";
 import { readNativeApi } from "~/nativeApi";
 import {
+  type AppSettings,
   getAppModelOptions,
+  getCustomModelsForProvider,
   resolveAppModelSelection,
   resolveAppServiceTier,
   shouldShowFastTierIcon,
@@ -819,7 +821,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     selectedProvider,
     activeThread?.model ?? activeProject?.model ?? getDefaultModel(selectedProvider),
   );
-  const customModelsForSelectedProvider = settings.customCodexModels;
+  const customModelsForSelectedProvider = getCustomModelsForProvider(settings, selectedProvider);
   const selectedModel = useMemo(() => {
     const draftModel = composerDraft.model;
     if (!draftModel) {
@@ -3154,7 +3156,11 @@ export default function ChatView({ threadId }: ChatViewProps) {
         scheduleComposerFocus();
         return;
       }
-      const resolvedModel = resolveAppModelSelection(provider, settings.customCodexModels, model);
+      const resolvedModel = resolveAppModelSelection(
+        provider,
+        getCustomModelsForProvider(settings, provider),
+        model,
+      );
       setComposerDraftProvider(activeThread.id, provider);
       setComposerDraftModel(activeThread.id, resolvedModel);
       if (activeProject) {
@@ -3170,7 +3176,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       setComposerDraftModel,
       setComposerDraftProvider,
       setStoreProjectModel,
-      settings.customCodexModels,
+      settings,
     ],
   );
   const onEffortSelect = useCallback(
@@ -5607,21 +5613,27 @@ const AVAILABLE_PROVIDER_OPTIONS = PROVIDER_OPTIONS.filter(isAvailableProviderOp
 const UNAVAILABLE_PROVIDER_OPTIONS = PROVIDER_OPTIONS.filter((option) => !option.available);
 const COMING_SOON_PROVIDER_OPTIONS = [
   { id: "opencode", label: "OpenCode", icon: OpenCodeIcon },
-  { id: "gemini", label: "Gemini", icon: Gemini },
 ] as const;
 
 function getCustomModelOptionsByProvider(settings: {
-  customCodexModels: readonly string[];
+  customCodexModels: AppSettings["customCodexModels"];
+  customClaudeCodeModels: AppSettings["customClaudeCodeModels"];
+  customGeminiModels: AppSettings["customGeminiModels"];
 }): Record<ProviderKind, ReadonlyArray<{ slug: string; name: string }>> {
   return {
-    codex: getAppModelOptions("codex", settings.customCodexModels),
-    claudeCode: getAppModelOptions("claudeCode", []),
+    codex: getAppModelOptions("codex", getCustomModelsForProvider(settings, "codex")),
+    claudeCode: getAppModelOptions(
+      "claudeCode",
+      getCustomModelsForProvider(settings, "claudeCode"),
+    ),
+    gemini: getAppModelOptions("gemini", getCustomModelsForProvider(settings, "gemini")),
   };
 }
 
 const PROVIDER_ICON_BY_PROVIDER: Record<ProviderPickerKind, Icon> = {
   codex: OpenAI,
   claudeCode: ClaudeAI,
+  gemini: Gemini,
   cursor: CursorIcon,
 };
 
