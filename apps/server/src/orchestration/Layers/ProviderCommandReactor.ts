@@ -14,7 +14,7 @@ import {
 } from "@xbetools/contracts";
 import { Cache, Cause, Duration, Effect, Layer, Option, Queue, Schema, Stream } from "effect";
 
-import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
+import { resolveThreadProviderCwd } from "../../checkpointing/Utils.ts";
 import { GitCore } from "../../git/Services/GitCore.ts";
 import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
 import { TextGeneration } from "../../git/Services/TextGeneration.ts";
@@ -220,7 +220,7 @@ const make = Effect.gen(function* () {
         : undefined;
     const preferredProvider: ProviderKind | undefined = options?.provider ?? currentProvider;
     const desiredModel = options?.model ?? thread.model;
-    const effectiveCwd = resolveThreadWorkspaceCwd({
+    const effectiveCwd = resolveThreadProviderCwd({
       thread,
       projects: readModel.projects,
     });
@@ -369,6 +369,7 @@ const make = Effect.gen(function* () {
     readonly threadId: ThreadId;
     readonly branch: string | null;
     readonly worktreePath: string | null;
+    readonly worktreeEntries?: ReadonlyArray<{ readonly worktreePath: string }>;
     readonly messageId: string;
     readonly messageText: string;
     readonly attachments?: ReadonlyArray<ChatAttachment>;
@@ -391,7 +392,11 @@ const make = Effect.gen(function* () {
     }
 
     const oldBranch = input.branch;
-    const cwd = input.worktreePath;
+    const entries = input.worktreeEntries ?? [];
+    const isMultiRepo = entries.length > 0;
+    // For multi-repo, use the first worktree entry (a real git repo) for branch
+    // name generation. The synthetic root is not a git repo.
+    const cwd = isMultiRepo ? entries[0]!.worktreePath : input.worktreePath;
     const attachments = input.attachments ?? [];
     yield* textGeneration
       .generateBranchName({
@@ -411,6 +416,28 @@ const make = Effect.gen(function* () {
 
           const targetBranch = buildGeneratedWorktreeBranchName(generated.branch);
           if (targetBranch === oldBranch) return Effect.void;
+
+          if (isMultiRepo) {
+            // Multi-repo: rename branch in each worktree entry (each is a
+            // separate git repo that was created with the same temp branch).
+            return Effect.flatMap(
+              Effect.all(
+                entries.map((entry) =>
+                  git
+                    .renameBranch({ cwd: entry.worktreePath, oldBranch, newBranch: targetBranch })
+                    .pipe(Effect.catch(() => Effect.void)),
+                ),
+              ),
+              () =>
+                orchestrationEngine.dispatch({
+                  type: "thread.meta.update",
+                  commandId: serverCommandId("worktree-branch-rename"),
+                  threadId: input.threadId,
+                  branch: targetBranch,
+                  worktreePath: input.worktreePath,
+                }),
+            );
+          }
 
           return Effect.flatMap(
             git.renameBranch({ cwd, oldBranch, newBranch: targetBranch }),
@@ -463,6 +490,7 @@ const make = Effect.gen(function* () {
       threadId: event.payload.threadId,
       branch: thread.branch,
       worktreePath: thread.worktreePath,
+      worktreeEntries: thread.worktreeEntries,
       messageId: message.id,
       messageText: message.text,
       ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),

@@ -1202,11 +1202,10 @@ const makeGitCore = Effect.gen(function* () {
           { timeoutMs: 15_000, fallbackErrorMessage: "rollback worktree remove failed" },
         ).pipe(Effect.catch(() => Effect.void));
       }
-      try {
-        rmSync(syntheticRoot, { recursive: true, force: true });
-      } catch {
-        // Best-effort cleanup.
-      }
+      yield* Effect.try({
+        try: () => rmSync(syntheticRoot, { recursive: true, force: true }),
+        catch: () => undefined,
+      }).pipe(Effect.catch(() => Effect.void));
     });
 
   const createWorkspaceWorktrees: GitCoreShape["createWorkspaceWorktrees"] = (input) =>
@@ -1241,13 +1240,11 @@ const makeGitCore = Effect.gen(function* () {
         if (Exit.isFailure(result)) {
           // Roll back all previously created worktrees before propagating.
           yield* rollbackWorktrees(entries, syntheticRoot);
-          return yield* Effect.fail(
-            createGitCommandError(
-              "GitCore.createWorkspaceWorktrees",
-              repo.repoPath,
-              ["worktree", "add"],
-              `git worktree add failed for ${path.basename(repo.repoPath)}, rolled back ${entries.length} previously created worktree(s)`,
-            ),
+          return yield* createGitCommandError(
+            "GitCore.createWorkspaceWorktrees",
+            repo.repoPath,
+            ["worktree", "add"],
+            `git worktree add failed for ${path.basename(repo.repoPath)}, rolled back ${entries.length} previously created worktree(s)`,
           );
         }
 
@@ -1272,26 +1269,23 @@ const makeGitCore = Effect.gen(function* () {
         }),
       );
 
-      try {
-        const topLevelEntries = readdirSync(input.workspaceRoot);
-        for (const entry of topLevelEntries) {
-          if (entry.startsWith(".") || entry === "node_modules") continue;
-          if (occupiedTopLevelNames.has(entry)) continue;
-          const srcPath = path.join(input.workspaceRoot, entry);
-          const destPath = path.join(syntheticRoot, entry);
-          if (existsSync(destPath)) continue;
-          try {
+      yield* Effect.try({
+        try: () => {
+          const topLevelEntries = readdirSync(input.workspaceRoot);
+          for (const entry of topLevelEntries) {
+            if (entry.startsWith(".") || entry === "node_modules") continue;
+            if (occupiedTopLevelNames.has(entry)) continue;
+            const srcPath = path.join(input.workspaceRoot, entry);
+            const destPath = path.join(syntheticRoot, entry);
+            if (existsSync(destPath)) continue;
             const stat = statSync(srcPath);
             if (stat.isDirectory() || stat.isFile()) {
               symlinkSync(srcPath, destPath);
             }
-          } catch {
-            // Skip entries that can't be symlinked.
           }
-        }
-      } catch {
-        // Non-critical: workspace shape will be incomplete but functional.
-      }
+        },
+        catch: () => undefined,
+      }).pipe(Effect.catch(() => Effect.void));
 
       return {
         workspaceWorktreePath: syntheticRoot,
@@ -1320,11 +1314,10 @@ const makeGitCore = Effect.gen(function* () {
       }
 
       // Clean up the synthetic workspace root.
-      try {
-        rmSync(input.workspaceWorktreePath, { recursive: true, force: true });
-      } catch {
-        // Best-effort cleanup.
-      }
+      yield* Effect.try({
+        try: () => rmSync(input.workspaceWorktreePath, { recursive: true, force: true }),
+        catch: () => undefined,
+      }).pipe(Effect.catch(() => Effect.void));
     });
 
   return {
