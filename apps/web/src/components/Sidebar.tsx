@@ -1362,7 +1362,7 @@ export default function Sidebar() {
         ) : (
           <button
             type="button"
-            className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-border py-2 text-xs text-muted-foreground/70 transition-colors duration-150 hover:border-ring hover:text-muted-foreground"
+            className="flex w-full cursor-pointer items-center justify-center gap-1 rounded-md border border-dashed border-border py-2 text-xs text-muted-foreground/70 transition-colors duration-150 hover:border-ring hover:text-muted-foreground"
             onClick={() => setAddingProject(true)}
           >
             + Add project
