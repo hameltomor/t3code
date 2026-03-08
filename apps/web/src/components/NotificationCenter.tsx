@@ -249,7 +249,7 @@ export function NotificationBell() {
                 <button
                   type="button"
                   aria-label={unreadCount > 0 ? `${unreadCount} unread notifications` : "Notifications"}
-                  className="relative inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  className="relative inline-flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
                   <BellIcon className="size-4" />
                   {unreadCount > 0 && (
