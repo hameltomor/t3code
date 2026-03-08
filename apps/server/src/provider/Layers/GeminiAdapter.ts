@@ -436,7 +436,10 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
         const model =
           input.model ?? resumeState?.model ?? DEFAULT_MODEL_BY_PROVIDER.gemini;
 
-        const config: GenerateContentConfig = {};
+        const systemInstruction = buildSystemInstruction(input.cwd);
+        const config: GenerateContentConfig = systemInstruction
+          ? { systemInstruction }
+          : {};
 
         const ai = new GoogleGenAI({ apiKey });
 
@@ -756,6 +759,53 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
       streamEvents: Stream.fromQueue(runtimeEventQueue),
     } satisfies GeminiAdapterShape;
   });
+}
+
+function listProjectFiles(cwd: string): string | undefined {
+  try {
+    const fs = require("node:fs") as typeof import("node:fs");
+    const path = require("node:path") as typeof import("node:path");
+
+    const entries = fs.readdirSync(cwd, { withFileTypes: true });
+    const items = entries
+      .filter((e) => !e.name.startsWith(".") && e.name !== "node_modules")
+      .map((e) => (e.isDirectory() ? `${e.name}/` : e.name))
+      .sort();
+
+    // Read package.json if it exists for tech stack context
+    const pkgPath = path.join(cwd, "package.json");
+    let pkgSnippet = "";
+    if (fs.existsSync(pkgPath)) {
+      try {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+        const deps = {
+          ...(pkg.dependencies ?? {}),
+          ...(pkg.devDependencies ?? {}),
+        };
+        const depNames = Object.keys(deps).slice(0, 40).join(", ");
+        pkgSnippet = `\n\npackage.json name: ${pkg.name ?? "unknown"}\nKey dependencies: ${depNames}`;
+      } catch {
+        // ignore parse errors
+      }
+    }
+
+    return `Project files at ${cwd}:\n${items.join("\n")}${pkgSnippet}`;
+  } catch {
+    return undefined;
+  }
+}
+
+function buildSystemInstruction(cwd?: string): string | undefined {
+  if (!cwd) return undefined;
+
+  const projectListing = listProjectFiles(cwd);
+
+  return [
+    `You are an expert coding assistant working on a project located at: ${cwd}`,
+    "You have deep knowledge of software engineering, debugging, architecture, and best practices.",
+    "Be concise and direct. Prefer code examples over lengthy explanations.",
+    ...(projectListing ? ["", "## Project Context", projectListing] : []),
+  ].join("\n");
 }
 
 function buildUserMessage(input: ProviderSendTurnInput): string {
