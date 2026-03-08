@@ -182,7 +182,11 @@ export function NotificationBell() {
 
     const api = readNativeApi();
     if (api) {
-      void api.notifications.markReadByThread(activeThreadId);
+      void api.notifications.markReadByThread(activeThreadId).then(() =>
+        api.notifications.unreadCount().then((result) => {
+          setUnreadCount(result.count);
+        }),
+      );
     }
     markNotificationsReadForThread(activeThreadId, setNotifications, setUnreadCount);
   }, [activeThreadId]);
