@@ -299,6 +299,7 @@ function buildUserMessage(
   }
 
   // Add real image content blocks for materialized attachments
+  const materializedIds = new Set(materializedImages?.map((img) => img.id) ?? []);
   if (materializedImages && materializedImages.length > 0) {
     for (const img of materializedImages) {
       content.push({
@@ -309,6 +310,19 @@ function buildUserMessage(
           data: img.base64,
         },
       });
+    }
+  }
+
+  // Text fallback for attachments that could not be materialized
+  if (input.attachments && input.attachments.length > 0) {
+    for (const attachment of input.attachments) {
+      if (materializedIds.has(attachment.id)) continue;
+      if (attachment.name) {
+        content.push({
+          type: "text",
+          text: `[Attachment: ${attachment.name} (${attachment.mimeType})]`,
+        });
+      }
     }
   }
 

@@ -1063,11 +1063,12 @@ describe("ClaudeCodeAdapterLive", () => {
       const userMessage = firstMessage.value as SDKUserMessage;
       const content = (userMessage.message as { content: Array<Record<string, unknown>> }).content;
 
-      // Without stateDir, should have only a text block (no image block)
-      assert.equal(content.length, 1);
+      // Without stateDir, should have user text + a text fallback for the unmaterialized attachment
+      assert.equal(content.length, 2);
       assert.equal(content[0]!.type, "text");
-      // Text should just be the user input (no image bytes available)
       assert.equal(content[0]!.text, "Check this");
+      assert.equal(content[1]!.type, "text");
+      assert.equal(content[1]!.text, "[Attachment: test.png (image/png)]");
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),
