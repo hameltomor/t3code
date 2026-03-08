@@ -210,6 +210,8 @@ export function createWsNativeApi(): NativeApi {
       markRead: (notificationId) =>
         transport.request(WS_METHODS.notificationMarkRead, { notificationId }),
       markAllRead: () => transport.request(WS_METHODS.notificationMarkAllRead),
+      markReadByThread: (threadId) =>
+        transport.request(WS_METHODS.notificationMarkReadByThread, { threadId }),
       markOpened: (notificationId) =>
         transport.request(WS_METHODS.notificationMarkOpened, { notificationId }),
       getVapidPublicKey: () => transport.request(WS_METHODS.notificationGetVapidPublicKey),

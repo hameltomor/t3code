@@ -6,6 +6,7 @@ export const NOTIFICATION_WS_METHODS = {
   unreadCount: "notification.unreadCount",
   markRead: "notification.markRead",
   markAllRead: "notification.markAllRead",
+  markReadByThread: "notification.markReadByThread",
   markOpened: "notification.markOpened",
   getVapidPublicKey: "notification.getVapidPublicKey",
   subscribePush: "notification.subscribePush",
@@ -57,6 +58,11 @@ export const NotificationMarkReadInput = Schema.Struct({
   notificationId: Schema.String,
 });
 export type NotificationMarkReadInput = typeof NotificationMarkReadInput.Type;
+
+export const NotificationMarkReadByThreadInput = Schema.Struct({
+  threadId: ThreadId,
+});
+export type NotificationMarkReadByThreadInput = typeof NotificationMarkReadByThreadInput.Type;
 
 export const NotificationMarkOpenedInput = Schema.Struct({
   notificationId: Schema.String,

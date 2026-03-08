@@ -164,6 +164,7 @@ export interface NativeApi {
     unreadCount: () => Promise<NotificationUnreadCountResult>;
     markRead: (notificationId: string) => Promise<void>;
     markAllRead: () => Promise<void>;
+    markReadByThread: (threadId: string) => Promise<void>;
     markOpened: (notificationId: string) => Promise<void>;
     getVapidPublicKey: () => Promise<VapidPublicKeyResult>;
     subscribePush: (subscription: {

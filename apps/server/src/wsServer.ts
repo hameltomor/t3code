@@ -994,6 +994,15 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
         return {};
       }
 
+      case WS_METHODS.notificationMarkReadByThread: {
+        const { threadId } = request.body;
+        yield* notificationRepository.markReadByThread({
+          threadId,
+          readAt: new Date().toISOString(),
+        });
+        return {};
+      }
+
       case WS_METHODS.notificationMarkOpened: {
         const { notificationId } = request.body;
         yield* notificationRepository.markOpened({

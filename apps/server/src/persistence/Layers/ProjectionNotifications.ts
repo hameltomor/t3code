@@ -8,6 +8,7 @@ import {
   ListProjectionNotificationsInput,
   MarkAllReadInput,
   MarkOpenedInput,
+  MarkReadByThreadInput,
   MarkReadInput,
   ProjectionNotification,
   ProjectionNotificationRepository,
@@ -103,6 +104,17 @@ const makeProjectionNotificationRepository = Effect.gen(function* () {
       `,
   });
 
+  const markReadByThreadRow = SqlSchema.void({
+    Request: MarkReadByThreadInput,
+    execute: ({ threadId, readAt }) =>
+      sql`
+        UPDATE projection_notifications
+        SET read_at = ${readAt}
+        WHERE thread_id = ${threadId}
+          AND read_at IS NULL
+      `,
+  });
+
   const markAllReadRow = SqlSchema.void({
     Request: MarkAllReadInput,
     execute: ({ readAt }) =>
@@ -181,6 +193,13 @@ const makeProjectionNotificationRepository = Effect.gen(function* () {
       ),
     );
 
+  const markReadByThread: ProjectionNotificationRepositoryShape["markReadByThread"] = (input) =>
+    markReadByThreadRow(input).pipe(
+      Effect.mapError(
+        toPersistenceSqlError("ProjectionNotificationRepository.markReadByThread:query"),
+      ),
+    );
+
   const markAllRead: ProjectionNotificationRepositoryShape["markAllRead"] = (input) =>
     markAllReadRow(input).pipe(
       Effect.mapError(
@@ -213,6 +232,7 @@ const makeProjectionNotificationRepository = Effect.gen(function* () {
     listRecent,
     countUnread,
     markRead,
+    markReadByThread,
     markAllRead,
     markOpened,
     getBySourceEventId,

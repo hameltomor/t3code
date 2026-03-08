@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useParams } from "@tanstack/react-router";
 import { BellIcon, CheckCheckIcon, InboxIcon } from "lucide-react";
 import type { AppNotification } from "@xbetools/contracts";
 
@@ -85,12 +85,40 @@ function NotificationItem({
   );
 }
 
+function markNotificationsReadForThread(
+  threadId: string,
+  setNotifications: React.Dispatch<React.SetStateAction<AppNotification[]>>,
+  setUnreadCount: React.Dispatch<React.SetStateAction<number>>,
+): void {
+  const now = new Date().toISOString();
+  let markedCount = 0;
+  setNotifications((prev) =>
+    prev.map((n) => {
+      if (n.threadId === threadId && n.readAt === null) {
+        markedCount++;
+        return { ...n, readAt: now };
+      }
+      return n;
+    }),
+  );
+  if (markedCount > 0) {
+    setUnreadCount((prev) => Math.max(0, prev - markedCount));
+  }
+}
+
 export function NotificationBell() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
   const hasLoadedRef = useRef(false);
+
+  const activeThreadId = useParams({
+    strict: false,
+    select: (params) => params.threadId ?? null,
+  });
+  const activeThreadIdRef = useRef(activeThreadId);
+  activeThreadIdRef.current = activeThreadId;
 
   const fetchNotifications = useCallback(async () => {
     const api = readNativeApi();
@@ -124,17 +152,35 @@ export function NotificationBell() {
     void fetchUnreadCount();
 
     const unsub = api.notifications.onNotification((notification) => {
-      console.log("[NotificationCenter] received notification push", notification);
-      setNotifications((prev) => [notification, ...prev].slice(0, 200));
-      setUnreadCount((prev) => prev + 1);
+      const isActiveThread = activeThreadIdRef.current === notification.threadId;
 
-      // Play sound and show native notification
-      playNotificationSound();
-      void showNativeNotification(notification);
+      if (isActiveThread) {
+        // User is viewing this thread — mark as read immediately, no sound/alert
+        const now = new Date().toISOString();
+        const readNotification = { ...notification, readAt: now };
+        setNotifications((prev) => [readNotification, ...prev].slice(0, 200));
+        void api.notifications.markRead(notification.notificationId);
+      } else {
+        setNotifications((prev) => [notification, ...prev].slice(0, 200));
+        setUnreadCount((prev) => prev + 1);
+        playNotificationSound();
+        void showNativeNotification(notification);
+      }
     });
 
     return unsub;
   }, [fetchUnreadCount]);
+
+  // Auto-mark notifications as read when navigating to a thread
+  useEffect(() => {
+    if (!activeThreadId) return;
+
+    const api = readNativeApi();
+    if (api) {
+      void api.notifications.markReadByThread(activeThreadId);
+    }
+    markNotificationsReadForThread(activeThreadId, setNotifications, setUnreadCount);
+  }, [activeThreadId]);
 
   // Fetch full list when sheet opens
   useEffect(() => {

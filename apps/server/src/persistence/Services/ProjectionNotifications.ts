@@ -35,6 +35,12 @@ export const MarkOpenedInput = Schema.Struct({
 });
 export type MarkOpenedInput = typeof MarkOpenedInput.Type;
 
+export const MarkReadByThreadInput = Schema.Struct({
+  threadId: ThreadId,
+  readAt: IsoDateTime,
+});
+export type MarkReadByThreadInput = typeof MarkReadByThreadInput.Type;
+
 export const MarkAllReadInput = Schema.Struct({
   readAt: IsoDateTime,
 });
@@ -53,6 +59,10 @@ export interface ProjectionNotificationRepositoryShape {
 
   readonly markRead: (
     input: MarkReadInput,
+  ) => Effect.Effect<void, ProjectionRepositoryError>;
+
+  readonly markReadByThread: (
+    input: MarkReadByThreadInput,
   ) => Effect.Effect<void, ProjectionRepositoryError>;
 
   readonly markAllRead: (
