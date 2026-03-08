@@ -653,9 +653,21 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
       ) {
         const notification = yield* notificationRepository
           .getBySourceEventId(event.eventId)
-          .pipe(Effect.catch(() => Effect.succeed(null)));
+          .pipe(
+            Effect.catch((error) =>
+              Effect.log("notification lookup failed for event", {
+                eventId: event.eventId,
+                eventType: event.type,
+                error: String(error),
+              }).pipe(Effect.map(() => null)),
+            ),
+          );
 
         if (notification) {
+          yield* Effect.log("broadcasting notification", {
+            notificationId: notification.notificationId,
+            channel: WS_CHANNELS.notificationCreated,
+          });
           yield* broadcastPush({
             type: "push",
             channel: WS_CHANNELS.notificationCreated,
@@ -667,6 +679,11 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
             body: notification.body,
             notificationId: notification.notificationId,
             threadId: notification.threadId,
+          });
+        } else {
+          yield* Effect.log("no notification found for event", {
+            eventId: event.eventId,
+            eventType: event.type,
           });
         }
       }

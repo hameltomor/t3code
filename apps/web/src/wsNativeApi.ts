@@ -219,6 +219,7 @@ export function createWsNativeApi(): NativeApi {
         transport.request(WS_METHODS.notificationUnsubscribePush, { endpoint }),
       onNotification: (callback) =>
         transport.subscribe(WS_CHANNELS.notificationCreated, (data) => {
+          console.log("[wsNativeApi] notification.created raw push data", data);
           const payload = decodeAndWarnOnFailure(AppNotification, data);
           if (payload) callback(payload);
         }),

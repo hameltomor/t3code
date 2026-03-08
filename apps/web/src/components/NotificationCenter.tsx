@@ -124,6 +124,7 @@ export function NotificationBell() {
     void fetchUnreadCount();
 
     const unsub = api.notifications.onNotification((notification) => {
+      console.log("[NotificationCenter] received notification push", notification);
       setNotifications((prev) => [notification, ...prev].slice(0, 200));
       setUnreadCount((prev) => prev + 1);
 
