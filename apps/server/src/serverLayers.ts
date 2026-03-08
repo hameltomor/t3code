@@ -19,8 +19,8 @@ import { OrchestrationProjectionSnapshotQueryLive } from "./orchestration/Layers
 import { ProviderRuntimeIngestionLive } from "./orchestration/Layers/ProviderRuntimeIngestion";
 import { ProviderUnsupportedError } from "./provider/Errors";
 import { makeCodexAdapterLive } from "./provider/Layers/CodexAdapter";
-import { ClaudeCodeAdapterLive } from "./provider/Layers/ClaudeCodeAdapter";
-import { GeminiAdapterLive } from "./provider/Layers/GeminiAdapter";
+import { makeClaudeCodeAdapterLive } from "./provider/Layers/ClaudeCodeAdapter";
+import { makeGeminiAdapterLive } from "./provider/Layers/GeminiAdapter";
 import { ProviderAdapterRegistryLive } from "./provider/Layers/ProviderAdapterRegistry";
 import { makeProviderServiceLive } from "./provider/Layers/ProviderService";
 import { ProviderSessionDirectoryLive } from "./provider/Layers/ProviderSessionDirectory";
@@ -63,10 +63,12 @@ export function makeServerProviderLayer(): Layer.Layer<
     const codexAdapterLayer = makeCodexAdapterLive(
       nativeEventLogger ? { nativeEventLogger } : undefined,
     );
+    const claudeCodeAdapterLayer = makeClaudeCodeAdapterLive({ stateDir });
+    const geminiAdapterLayer = makeGeminiAdapterLive({ stateDir });
     const adapterRegistryLayer = ProviderAdapterRegistryLive.pipe(
       Layer.provide(codexAdapterLayer),
-      Layer.provide(ClaudeCodeAdapterLive),
-      Layer.provide(GeminiAdapterLive),
+      Layer.provide(claudeCodeAdapterLayer),
+      Layer.provide(geminiAdapterLayer),
       Layer.provideMerge(providerSessionDirectoryLayer),
     );
     return makeProviderServiceLive(

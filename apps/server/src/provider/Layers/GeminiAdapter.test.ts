@@ -1,4 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { randomUUID } from "node:crypto";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Effect, Scope } from "effect";
 import type { ThreadId } from "@xbetools/contracts";
 
@@ -466,4 +470,108 @@ describe("GeminiAdapterLive", () => {
         expect(cursor?.turns?.[0]?.providerMessage).toContain("<project_context>");
       }),
     ));
+
+  describe("image attachment materialization", () => {
+    let stateDir: string;
+
+    beforeEach(() => {
+      stateDir = join(tmpdir(), `xbe-gemini-test-${randomUUID()}`);
+      mkdirSync(join(stateDir, "attachments"), { recursive: true });
+    });
+
+    afterEach(() => {
+      rmSync(stateDir, { recursive: true, force: true });
+    });
+
+    function persistAttachment(id: string, extension: string, bytes: Buffer) {
+      const filePath = join(stateDir, "attachments", `${id}${extension}`);
+      writeFileSync(filePath, bytes);
+    }
+
+    it("sends real multimodal parts for image attachments instead of text placeholders", () =>
+      run(
+        Effect.gen(function* () {
+          const imageBytes = Buffer.from("fake-png-data-for-gemini-test");
+          const attachmentId = `thread-gemini-1-${randomUUID()}`;
+          persistAttachment(attachmentId, ".png", imageBytes);
+
+          const adapter = yield* makeGeminiAdapter({
+            apiKey: TEST_API_KEY,
+            stateDir,
+          });
+          yield* adapter.startSession({
+            threadId: TEST_THREAD_ID,
+            runtimeMode: "full-access",
+          });
+
+          yield* adapter.sendTurn({
+            threadId: TEST_THREAD_ID,
+            input: "Describe this image",
+            attachments: [
+              {
+                type: "image" as const,
+                id: attachmentId as any,
+                name: "screenshot.png" as any,
+                mimeType: "image/png" as any,
+                sizeBytes: imageBytes.byteLength as any,
+              },
+            ],
+          });
+          yield* Effect.sleep(200);
+
+          const sendCall = mockSendCalls.at(-1);
+          // Provider message should be multimodal parts (an array), not a plain string
+          expect(Array.isArray(sendCall?.message)).toBe(true);
+          const parts = sendCall?.message as Array<Record<string, unknown>>;
+
+          // First part should be text
+          expect(parts[0]).toHaveProperty("text");
+          expect(parts[0]!.text).toContain("Describe this image");
+
+          // Second part should be inline image data
+          expect(parts[1]).toHaveProperty("inlineData");
+          const inlineData = parts[1]!.inlineData as {
+            mimeType: string;
+            data: string;
+          };
+          expect(inlineData.mimeType).toBe("image/png");
+          expect(inlineData.data).toBe(imageBytes.toString("base64"));
+
+          // User message text should NOT contain attachment text placeholder
+          const thread = yield* adapter.readThread(TEST_THREAD_ID);
+          expect(thread.turns).toHaveLength(1);
+        }),
+      ));
+
+    it("falls back to text-only when stateDir is not provided", () =>
+      run(
+        Effect.gen(function* () {
+          const adapter = yield* makeGeminiAdapter({ apiKey: TEST_API_KEY });
+          yield* adapter.startSession({
+            threadId: TEST_THREAD_ID,
+            runtimeMode: "full-access",
+          });
+
+          yield* adapter.sendTurn({
+            threadId: TEST_THREAD_ID,
+            input: "Check this",
+            attachments: [
+              {
+                type: "image" as const,
+                id: "no-state-dir-att" as any,
+                name: "test.png" as any,
+                mimeType: "image/png" as any,
+                sizeBytes: 100 as any,
+              },
+            ],
+          });
+          yield* Effect.sleep(200);
+
+          // Without stateDir, message should be a plain string with text placeholder
+          const sendCall = mockSendCalls.at(-1);
+          expect(typeof sendCall?.message).toBe("string");
+          expect(sendCall?.message).toContain("[Attachment: test.png (image/png)]");
+        }),
+      ));
+  });
 });

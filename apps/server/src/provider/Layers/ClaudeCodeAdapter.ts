@@ -46,6 +46,10 @@ import {
 } from "../Errors.ts";
 import { ClaudeCodeAdapter, type ClaudeCodeAdapterShape } from "../Services/ClaudeCodeAdapter.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
+import {
+  materializeImageAttachments,
+  type MaterializedImageAttachment,
+} from "../attachmentMaterializer.ts";
 
 const PROVIDER = "claudeCode" as const;
 const CLAUDE_SETTING_SOURCES = ["user", "project", "local"] as const;
@@ -127,6 +131,7 @@ export interface ClaudeCodeAdapterLiveOptions {
   }) => ClaudeQueryRuntime;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
+  readonly stateDir?: string;
 }
 
 function isUuid(value: string): boolean {
@@ -282,22 +287,35 @@ function parseAccumulatedToolInput(parts: string[]): Record<string, unknown> {
   }
 }
 
-function buildUserMessage(input: ProviderSendTurnInput): SDKUserMessage {
-  const fragments: string[] = [];
+function buildUserMessage(
+  input: ProviderSendTurnInput,
+  materializedImages?: MaterializedImageAttachment[],
+): SDKUserMessage {
+  const content: Array<Record<string, unknown>> = [];
 
-  if (input.input && input.input.trim().length > 0) {
-    fragments.push(input.input.trim());
+  const text = input.input?.trim() ?? "";
+  if (text.length > 0) {
+    content.push({ type: "text", text });
   }
 
-  for (const attachment of input.attachments ?? []) {
-    if (attachment.type === "image") {
-      fragments.push(
-        `Attached image: ${attachment.name} (${attachment.mimeType}, ${attachment.sizeBytes} bytes).`,
-      );
+  // Add real image content blocks for materialized attachments
+  if (materializedImages && materializedImages.length > 0) {
+    for (const img of materializedImages) {
+      content.push({
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: img.mimeType,
+          data: img.base64,
+        },
+      });
     }
   }
 
-  const text = fragments.join("\n\n");
+  // Fallback: if no content was produced, send a minimal text block
+  if (content.length === 0) {
+    content.push({ type: "text", text: "Continue." });
+  }
 
   return {
     type: "user",
@@ -305,7 +323,7 @@ function buildUserMessage(input: ProviderSendTurnInput): SDKUserMessage {
     parent_tool_use_id: null,
     message: {
       role: "user",
-      content: [{ type: "text", text }],
+      content,
     },
   } as SDKUserMessage;
 }
@@ -1761,7 +1779,15 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
           },
         });
 
-        const message = buildUserMessage(input);
+        const materializedImages =
+          options?.stateDir && input.attachments && input.attachments.length > 0
+            ? materializeImageAttachments({
+                stateDir: options.stateDir,
+                attachments: input.attachments,
+              })
+            : undefined;
+
+        const message = buildUserMessage(input, materializedImages);
 
         yield* Queue.offer(context.promptQueue, {
           type: "message",

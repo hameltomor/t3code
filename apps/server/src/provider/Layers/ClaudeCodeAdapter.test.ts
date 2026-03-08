@@ -1,3 +1,7 @@
+import { mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { randomUUID } from "node:crypto";
 import type {
   Options as ClaudeQueryOptions,
   PermissionMode,
@@ -112,6 +116,7 @@ interface Harness {
 function makeHarness(config?: {
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: ClaudeCodeAdapterLiveOptions["nativeEventLogger"];
+  readonly stateDir?: string;
 }): Harness {
   const query = new FakeClaudeQuery();
   let createInput:
@@ -134,6 +139,11 @@ function makeHarness(config?: {
     ...(config?.nativeEventLogPath
       ? {
           nativeEventLogPath: config.nativeEventLogPath,
+        }
+      : {}),
+    ...(config?.stateDir
+      ? {
+          stateDir: config.stateDir,
         }
       : {}),
   };
@@ -950,6 +960,114 @@ describe("ClaudeCodeAdapterLive", () => {
         ),
         true,
       );
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("sends real image content blocks when stateDir is provided", () => {
+    const stateDir = join(tmpdir(), `xbe-claude-test-${randomUUID()}`);
+    mkdirSync(join(stateDir, "attachments"), { recursive: true });
+    const imageBytes = Buffer.from("fake-png-data-for-claude-test");
+    const attachmentId = `thread-claude-1-${randomUUID()}`;
+    writeFileSync(join(stateDir, "attachments", `${attachmentId}.png`), imageBytes);
+
+    const harness = makeHarness({ stateDir });
+
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeCodeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: "claudeCode",
+        runtimeMode: "full-access",
+      });
+
+      yield* adapter.sendTurn({
+        threadId: THREAD_ID,
+        input: "Describe this image",
+        attachments: [
+          {
+            type: "image" as const,
+            id: attachmentId as any,
+            name: "screenshot.png" as any,
+            mimeType: "image/png" as any,
+            sizeBytes: imageBytes.byteLength as any,
+          },
+        ],
+      });
+
+      // Consume the first user message from the prompt iterator
+      const createInput = harness.getLastCreateQueryInput();
+      assert.notEqual(createInput, undefined);
+      const promptIterator = createInput!.prompt[Symbol.asyncIterator]();
+      const firstMessage = yield* Effect.promise(() => promptIterator.next());
+      assert.equal(firstMessage.done, false);
+
+      const userMessage = firstMessage.value as SDKUserMessage;
+      const content = (userMessage.message as { content: Array<Record<string, unknown>> }).content;
+
+      // Should have a text block and an image block
+      assert.equal(content.length, 2);
+      assert.equal(content[0]!.type, "text");
+      assert.equal(content[0]!.text, "Describe this image");
+      assert.equal(content[1]!.type, "image");
+
+      const imageSource = content[1]!.source as {
+        type: string;
+        media_type: string;
+        data: string;
+      };
+      assert.equal(imageSource.type, "base64");
+      assert.equal(imageSource.media_type, "image/png");
+      assert.equal(imageSource.data, imageBytes.toString("base64"));
+    })
+      .pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+        Effect.ensuring(Effect.sync(() => rmSync(stateDir, { recursive: true, force: true }))),
+      );
+  });
+
+  it.effect("sends text-only content when stateDir is not provided (no image materialization)", () => {
+    const harness = makeHarness();
+
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeCodeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: "claudeCode",
+        runtimeMode: "full-access",
+      });
+
+      yield* adapter.sendTurn({
+        threadId: THREAD_ID,
+        input: "Check this",
+        attachments: [
+          {
+            type: "image" as const,
+            id: "no-state-dir-att" as any,
+            name: "test.png" as any,
+            mimeType: "image/png" as any,
+            sizeBytes: 100 as any,
+          },
+        ],
+      });
+
+      const createInput = harness.getLastCreateQueryInput();
+      assert.notEqual(createInput, undefined);
+      const promptIterator = createInput!.prompt[Symbol.asyncIterator]();
+      const firstMessage = yield* Effect.promise(() => promptIterator.next());
+      assert.equal(firstMessage.done, false);
+
+      const userMessage = firstMessage.value as SDKUserMessage;
+      const content = (userMessage.message as { content: Array<Record<string, unknown>> }).content;
+
+      // Without stateDir, should have only a text block (no image block)
+      assert.equal(content.length, 1);
+      assert.equal(content[0]!.type, "text");
+      // Text should just be the user input (no image bytes available)
+      assert.equal(content[0]!.text, "Check this");
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),

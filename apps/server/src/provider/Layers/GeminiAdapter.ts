@@ -30,6 +30,10 @@ import {
   type ProviderAdapterError,
 } from "../Errors.ts";
 import { GeminiAdapter, type GeminiAdapterShape } from "../Services/GeminiAdapter.ts";
+import {
+  materializeImageAttachments,
+  type MaterializedImageAttachment,
+} from "../attachmentMaterializer.ts";
 
 const PROVIDER = "gemini" as const;
 
@@ -87,6 +91,7 @@ interface GeminiSessionContext {
 
 export interface GeminiAdapterLiveOptions {
   readonly apiKey?: string;
+  readonly stateDir?: string;
 }
 
 function toMessage(cause: unknown, fallback: string): string {
@@ -337,7 +342,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
     const streamGeminiResponse = (
       ctx: GeminiSessionContext,
       userMessage: string,
-      providerMessage: string,
+      providerMessage: string | Array<Record<string, unknown>>,
     ): Effect.Effect<void, ProviderAdapterRequestError> =>
       Effect.gen(function* () {
         const ts = ctx.turnState;
@@ -351,7 +356,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
         const response = yield* Effect.tryPromise({
           try: () =>
             ctx.chat.sendMessageStream({
-              message: providerMessage,
+              message: providerMessage as any,
               config: {
                 ...ctx.config,
                 abortSignal: abortController.signal,
@@ -424,11 +429,17 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
         cleanup();
 
         if (!ctx.stopped) {
-          // Record turn in transcript before completing
+          // Record turn in transcript before completing.
+          // Persist only the text version for session recovery (images are
+          // not re-uploaded on resume).
+          const persistedProviderMessage =
+            typeof providerMessage === "string"
+              ? providerMessage
+              : (providerMessage.find((p) => typeof p.text === "string") as { text: string })?.text;
           ctx.turns.push({
             id: ts.turnId,
             userMessage,
-            providerMessage,
+            providerMessage: persistedProviderMessage,
             assistantText: ts.accumulatedText,
           });
           yield* completeTurn(ctx, "completed");
@@ -612,10 +623,20 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
           });
         }
 
-        const userMessage = buildUserMessage(input);
+        // Materialize image attachments when stateDir is available
+        const materializedImages =
+          options?.stateDir && input.attachments && input.attachments.length > 0
+            ? materializeImageAttachments({
+                stateDir: options.stateDir,
+                attachments: input.attachments,
+              })
+            : undefined;
+
+        const userMessage = buildUserMessage(input, materializedImages);
         const providerMessage = buildProviderMessage(userMessage, {
           cwd: ctx.session.cwd,
           projectContext: ctx.projectContext,
+          ...(materializedImages ? { materializedImages } : {}),
         });
         const threadId = input.threadId;
 
@@ -909,13 +930,19 @@ function buildSystemInstruction(cwd?: string, projectContext?: string): string |
   ].join("\n");
 }
 
-function buildUserMessage(input: ProviderSendTurnInput): string {
+function buildUserMessage(
+  input: ProviderSendTurnInput,
+  materializedImages?: MaterializedImageAttachment[],
+): string {
   const parts: string[] = [];
   if (input.input) {
     parts.push(input.input);
   }
+  // Only add text placeholders for attachments that were NOT materialized
+  const materializedIds = new Set(materializedImages?.map((img) => img.id) ?? []);
   if (input.attachments && input.attachments.length > 0) {
     for (const attachment of input.attachments) {
+      if (materializedIds.has(attachment.id)) continue;
       if (attachment.name) {
         parts.push(`[Attachment: ${attachment.name} (${attachment.mimeType})]`);
       }
@@ -929,26 +956,45 @@ function buildProviderMessage(
   options: {
     cwd: string | undefined;
     projectContext: string | undefined;
+    materializedImages?: MaterializedImageAttachment[];
   },
-): string {
-  if (!options.cwd || !options.projectContext) {
-    return userMessage;
+): string | Array<Record<string, unknown>> {
+  const hasImages = options.materializedImages && options.materializedImages.length > 0;
+
+  // Build the text portion (with or without project context wrapping)
+  const textContent =
+    options.cwd && options.projectContext
+      ? [
+          "The following project context was loaded from disk for the current repository.",
+          "Treat it as authoritative local context for this answer.",
+          "If the question can be answered from this context, answer directly.",
+          "Do not claim that you cannot access the files or codebase when this context is sufficient.",
+          "",
+          "<project_context>",
+          options.projectContext,
+          "</project_context>",
+          "",
+          "<user_request>",
+          userMessage,
+          "</user_request>",
+        ].join("\n")
+      : userMessage;
+
+  // If we have materialized images, return structured multimodal parts for Gemini
+  if (hasImages) {
+    const parts: Array<Record<string, unknown>> = [{ text: textContent }];
+    for (const img of options.materializedImages!) {
+      parts.push({
+        inlineData: {
+          mimeType: img.mimeType,
+          data: img.base64,
+        },
+      });
+    }
+    return parts;
   }
 
-  return [
-    "The following project context was loaded from disk for the current repository.",
-    "Treat it as authoritative local context for this answer.",
-    "If the question can be answered from this context, answer directly.",
-    "Do not claim that you cannot access the files or codebase when this context is sufficient.",
-    "",
-    "<project_context>",
-    options.projectContext,
-    "</project_context>",
-    "",
-    "<user_request>",
-    userMessage,
-    "</user_request>",
-  ].join("\n");
+  return textContent;
 }
 
 export const GeminiAdapterLive = Layer.effect(GeminiAdapter, makeGeminiAdapter());
