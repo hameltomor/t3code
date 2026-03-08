@@ -2,15 +2,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-
-cd "$PROJECT_DIR"
-
-# Ensure Node 24 is active for the build and native addon compatibility
-export NVM_DIR="$HOME/.nvm"
 # shellcheck source=/dev/null
-[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-nvm use 24 --silent
+source "$SCRIPT_DIR/load-project-node.sh"
+
+cd "$XBECODE_PROJECT_DIR"
 
 echo "==> Rebuilding native addons for Node $(node --version)..."
 npx --yes node-gyp rebuild \

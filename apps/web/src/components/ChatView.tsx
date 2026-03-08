@@ -26,6 +26,7 @@ import {
   getDefaultModel,
   getDefaultReasoningEffort,
   getReasoningEffortOptions,
+  inferProviderForModel,
   normalizeModelSlug,
   resolveModelSlugForProvider,
 } from "@xbetools/shared/model";
@@ -605,6 +606,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const syncServerReadModel = useStore((store) => store.syncServerReadModel);
   const setStoreThreadError = useStore((store) => store.setError);
   const setStoreThreadBranch = useStore((store) => store.setThreadBranch);
+  const setStoreProjectModel = useStore((store) => store.setProjectModel);
   const { settings } = useAppSettings();
   const navigate = useNavigate();
   const rawSearch = useSearch({
@@ -806,10 +808,13 @@ export default function ChatView({ threadId }: ChatViewProps) {
   );
   const selectedServiceTierSetting = settings.codexServiceTier;
   const selectedServiceTier = resolveAppServiceTier(selectedServiceTierSetting);
+  const inferredProvider =
+    inferProviderForModel(activeThread?.model ?? activeProject?.model ?? null) ?? null;
   const lockedProvider: ProviderKind | null = hasThreadStarted
-    ? (sessionProvider ?? selectedProviderByThreadId ?? null)
+    ? (sessionProvider ?? selectedProviderByThreadId ?? inferredProvider)
     : null;
-  const selectedProvider: ProviderKind = lockedProvider ?? selectedProviderByThreadId ?? "codex";
+  const selectedProvider: ProviderKind =
+    lockedProvider ?? selectedProviderByThreadId ?? inferredProvider ?? "codex";
   const baseThreadModel = resolveModelSlugForProvider(
     selectedProvider,
     activeThread?.model ?? activeProject?.model ?? getDefaultModel(selectedProvider),
@@ -1284,7 +1289,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const keybindings = serverConfigQuery.data?.keybindings ?? EMPTY_KEYBINDINGS;
   const availableEditors = serverConfigQuery.data?.availableEditors ?? EMPTY_AVAILABLE_EDITORS;
   const providerStatuses = serverConfigQuery.data?.providers ?? EMPTY_PROVIDER_STATUSES;
-  const activeProvider = activeThread?.session?.provider ?? "codex";
+  const activeProvider =
+    activeThread?.session?.provider ??
+    inferProviderForModel(activeThread?.model ?? activeProject?.model ?? null) ??
+    "codex";
   const activeProviderStatus = useMemo(
     () => providerStatuses.find((status) => status.provider === activeProvider) ?? null,
     [activeProvider, providerStatuses],
@@ -3146,19 +3154,22 @@ export default function ChatView({ threadId }: ChatViewProps) {
         scheduleComposerFocus();
         return;
       }
+      const resolvedModel = resolveAppModelSelection(provider, settings.customCodexModels, model);
       setComposerDraftProvider(activeThread.id, provider);
-      setComposerDraftModel(
-        activeThread.id,
-        resolveAppModelSelection(provider, settings.customCodexModels, model),
-      );
+      setComposerDraftModel(activeThread.id, resolvedModel);
+      if (activeProject) {
+        setStoreProjectModel(activeProject.id, resolvedModel);
+      }
       scheduleComposerFocus();
     },
     [
+      activeProject,
       activeThread,
       lockedProvider,
       scheduleComposerFocus,
       setComposerDraftModel,
       setComposerDraftProvider,
+      setStoreProjectModel,
       settings.customCodexModels,
     ],
   );
@@ -5589,7 +5600,7 @@ function isAvailableProviderOption(option: (typeof PROVIDER_OPTIONS)[number]): o
   label: string;
   available: true;
 } {
-  return option.available && option.value !== "claudeCode";
+  return option.available;
 }
 
 const AVAILABLE_PROVIDER_OPTIONS = PROVIDER_OPTIONS.filter(isAvailableProviderOption);

@@ -6,6 +6,7 @@ import {
   getDefaultReasoningEffort,
   getModelOptions,
   getReasoningEffortOptions,
+  inferProviderForModel,
   normalizeModelSlug,
   resolveModelSlug,
 } from "./model";
@@ -53,6 +54,22 @@ describe("resolveModelSlug", () => {
   it("keeps codex defaults for backward compatibility", () => {
     expect(getDefaultModel()).toBe(DEFAULT_MODEL_BY_PROVIDER.codex);
     expect(getModelOptions()).toEqual(MODEL_OPTIONS_BY_PROVIDER.codex);
+  });
+});
+
+describe("inferProviderForModel", () => {
+  it("detects codex models", () => {
+    expect(inferProviderForModel("gpt-5.3-codex")).toBe("codex");
+    expect(inferProviderForModel("5.3")).toBe("codex");
+  });
+
+  it("detects claude code models", () => {
+    expect(inferProviderForModel("claude-opus-4-6")).toBe("claudeCode");
+    expect(inferProviderForModel("opus")).toBe("claudeCode");
+  });
+
+  it("returns null for unknown models", () => {
+    expect(inferProviderForModel("custom/internal-model")).toBeNull();
   });
 });
 

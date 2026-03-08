@@ -469,11 +469,18 @@ function extractToolCommand(payload: Record<string, unknown> | null): string | n
   const item = asRecord(data?.item);
   const itemResult = asRecord(item?.result);
   const itemInput = asRecord(item?.input);
+  // Claude Code adapter emits data as { toolName, input: { command?, file_path?, ... } }
+  const dataInput = asRecord(data?.input);
   const candidates = [
     normalizeCommandValue(item?.command),
     normalizeCommandValue(itemInput?.command),
     normalizeCommandValue(itemResult?.command),
     normalizeCommandValue(data?.command),
+    // Claude Code tool input paths
+    normalizeCommandValue(dataInput?.command),
+    normalizeCommandValue(dataInput?.file_path),
+    normalizeCommandValue(dataInput?.pattern),
+    normalizeCommandValue(dataInput?.old_string),
   ];
   return candidates.find((candidate) => candidate !== null) ?? null;
 }

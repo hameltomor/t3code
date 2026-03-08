@@ -235,6 +235,34 @@ describe("ClaudeCodeAdapterLive", () => {
     );
   });
 
+  it.effect("loads Claude Code presets while isolating ambient MCP configuration", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeCodeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: "claudeCode",
+        runtimeMode: "full-access",
+      });
+
+      const createInput = harness.getLastCreateQueryInput();
+      assert.deepEqual(createInput?.options.settingSources, ["user", "project", "local"]);
+      assert.equal(createInput?.options.strictMcpConfig, true);
+      assert.deepEqual(createInput?.options.mcpServers, {});
+      assert.deepEqual(createInput?.options.tools, {
+        type: "preset",
+        preset: "claude_code",
+      });
+      assert.deepEqual(createInput?.options.systemPrompt, {
+        type: "preset",
+        preset: "claude_code",
+      });
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("maps Claude stream/runtime messages to canonical provider runtime events", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {

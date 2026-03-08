@@ -7,8 +7,7 @@ import {
   type OrchestrationSessionStatus,
 } from "@xbetools/contracts";
 import {
-  getModelOptions,
-  normalizeModelSlug,
+  inferProviderForModel,
   resolveModelSlug,
   resolveModelSlugForProvider,
 } from "@xbetools/shared/model";
@@ -44,6 +43,7 @@ const initialState: AppState = {
   selectedRepoCwdByProject: {},
 };
 const persistedExpandedProjectCwds = new Set<string>();
+const persistedModelByProjectCwd = new Map<string, string>();
 
 // ── Persist helpers ──────────────────────────────────────────────────
 
@@ -52,11 +52,20 @@ function readPersistedState(): AppState {
   try {
     const raw = window.localStorage.getItem(PERSISTED_STATE_KEY);
     if (!raw) return initialState;
-    const parsed = JSON.parse(raw) as { expandedProjectCwds?: string[] };
+    const parsed = JSON.parse(raw) as {
+      expandedProjectCwds?: string[];
+      modelByProjectCwd?: Record<string, string>;
+    };
     persistedExpandedProjectCwds.clear();
     for (const cwd of parsed.expandedProjectCwds ?? []) {
       if (typeof cwd === "string" && cwd.length > 0) {
         persistedExpandedProjectCwds.add(cwd);
+      }
+    }
+    persistedModelByProjectCwd.clear();
+    for (const [cwd, model] of Object.entries(parsed.modelByProjectCwd ?? {})) {
+      if (typeof cwd === "string" && cwd.length > 0 && typeof model === "string" && model.length > 0) {
+        persistedModelByProjectCwd.set(cwd, model);
       }
     }
     return { ...initialState };
@@ -74,6 +83,9 @@ function persistState(state: AppState): void {
         expandedProjectCwds: state.projects
           .filter((project) => project.expanded)
           .map((project) => project.cwd),
+        modelByProjectCwd: Object.fromEntries(
+          state.projects.map((project) => [project.cwd, project.model]),
+        ),
       }),
     );
     for (const legacyKey of LEGACY_PERSISTED_STATE_KEYS) {
@@ -115,6 +127,7 @@ function mapProjectsFromReadModel(
       cwd: project.workspaceRoot,
       model:
         existing?.model ??
+        persistedModelByProjectCwd.get(project.workspaceRoot) ??
         resolveModelSlug(project.defaultModel ?? DEFAULT_MODEL_BY_PROVIDER.codex),
       expanded:
         existing?.expanded ??
@@ -146,26 +159,20 @@ function toLegacySessionStatus(
 }
 
 function toLegacyProvider(providerName: string | null): ProviderKind {
-  if (providerName === "codex") {
+  if (providerName === "codex" || providerName === "claudeCode") {
     return providerName;
   }
   return "codex";
 }
 
-const CODEX_MODEL_SLUGS = new Set<string>(getModelOptions("codex").map((option) => option.slug));
-
 function inferProviderForThreadModel(input: {
   readonly model: string;
   readonly sessionProviderName: string | null;
 }): ProviderKind {
-  if (input.sessionProviderName === "codex") {
+  if (input.sessionProviderName === "codex" || input.sessionProviderName === "claudeCode") {
     return input.sessionProviderName;
   }
-  const normalizedCodex = normalizeModelSlug(input.model, "codex");
-  if (normalizedCodex && CODEX_MODEL_SLUGS.has(normalizedCodex)) {
-    return "codex";
-  }
-  return "codex";
+  return inferProviderForModel(input.model) ?? "codex";
 }
 
 function resolveWsHttpOrigin(): string {
@@ -352,6 +359,20 @@ export function setError(state: AppState, threadId: ThreadId, error: string | nu
   return threads === state.threads ? state : { ...state, threads };
 }
 
+export function setProjectModel(
+  state: AppState,
+  projectId: Project["id"],
+  model: string,
+): AppState {
+  let changed = false;
+  const projects = state.projects.map((p) => {
+    if (p.id !== projectId || p.model === model) return p;
+    changed = true;
+    return { ...p, model };
+  });
+  return changed ? { ...state, projects } : state;
+}
+
 export function setSelectedRepoCwd(
   state: AppState,
   projectId: Project["id"],
@@ -397,6 +418,7 @@ interface AppStore extends AppState {
   markThreadUnread: (threadId: ThreadId) => void;
   toggleProject: (projectId: Project["id"]) => void;
   setProjectExpanded: (projectId: Project["id"], expanded: boolean) => void;
+  setProjectModel: (projectId: Project["id"], model: string) => void;
   setError: (threadId: ThreadId, error: string | null) => void;
   setThreadBranch: (threadId: ThreadId, branch: string | null, worktreePath: string | null) => void;
   setSelectedRepoCwd: (projectId: Project["id"], repoCwd: string | null) => void;
@@ -411,6 +433,8 @@ export const useStore = create<AppStore>((set) => ({
   toggleProject: (projectId) => set((state) => toggleProject(state, projectId)),
   setProjectExpanded: (projectId, expanded) =>
     set((state) => setProjectExpanded(state, projectId, expanded)),
+  setProjectModel: (projectId, model) =>
+    set((state) => setProjectModel(state, projectId, model)),
   setError: (threadId, error) => set((state) => setError(state, threadId, error)),
   setThreadBranch: (threadId, branch, worktreePath) =>
     set((state) => setThreadBranch(state, threadId, branch, worktreePath)),

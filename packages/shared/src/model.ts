@@ -9,6 +9,7 @@ import {
 } from "@xbetools/contracts";
 
 type CatalogProvider = keyof typeof MODEL_OPTIONS_BY_PROVIDER;
+const PROVIDERS: ProviderKind[] = ["codex", "claudeCode"];
 
 const MODEL_SLUG_SET_BY_PROVIDER: Record<CatalogProvider, ReadonlySet<ModelSlug>> = {
   codex: new Set(MODEL_OPTIONS_BY_PROVIDER.codex.map((option) => option.slug)),
@@ -60,6 +61,19 @@ export function resolveModelSlugForProvider(
   model: string | null | undefined,
 ): ModelSlug {
   return resolveModelSlug(model, provider);
+}
+
+export function inferProviderForModel(
+  model: string | null | undefined,
+): ProviderKind | null {
+  for (const provider of PROVIDERS) {
+    const normalized = normalizeModelSlug(model, provider);
+    if (normalized && MODEL_SLUG_SET_BY_PROVIDER[provider].has(normalized)) {
+      return provider;
+    }
+  }
+
+  return null;
 }
 
 export function getReasoningEffortOptions(

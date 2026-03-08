@@ -136,11 +136,24 @@ describe("store pure functions", () => {
 });
 
 describe("store read model sync", () => {
-  it("falls back to the codex default for unsupported provider models without an active session", () => {
+  it("infers claudeCode provider and preserves model for claude models without an active session", () => {
     const initialState = makeState(makeThread());
     const readModel = makeReadModel(
       makeReadModelThread({
         model: "claude-opus-4-6",
+      }),
+    );
+
+    const next = syncServerReadModel(initialState, readModel);
+
+    expect(next.threads[0]?.model).toBe("claude-opus-4-6");
+  });
+
+  it("falls back to the codex default for unknown models without an active session", () => {
+    const initialState = makeState(makeThread());
+    const readModel = makeReadModel(
+      makeReadModelThread({
+        model: "some-unknown-model",
       }),
     );
 

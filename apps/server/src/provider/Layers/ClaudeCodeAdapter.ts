@@ -48,6 +48,8 @@ import { ClaudeCodeAdapter, type ClaudeCodeAdapterShape } from "../Services/Clau
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 
 const PROVIDER = "claudeCode" as const;
+const CLAUDE_SETTING_SOURCES = ["user", "project", "local"] as const;
+const CLAUDE_CODE_PRESET = { type: "preset", preset: "claude_code" } as const;
 
 type PromptQueueItem =
   | {
@@ -88,6 +90,8 @@ interface ToolInFlight {
   readonly toolName: string;
   readonly title: string;
   readonly detail?: string;
+  /** Accumulated JSON fragments from `input_json_delta` events. */
+  inputJsonParts: string[];
 }
 
 interface ClaudeSessionContext {
@@ -266,6 +270,15 @@ function titleForTool(itemType: CanonicalItemType): string {
       return "Tool call";
     default:
       return "Item";
+  }
+}
+
+function parseAccumulatedToolInput(parts: string[]): Record<string, unknown> {
+  if (parts.length === 0) return {};
+  try {
+    return JSON.parse(parts.join("")) as Record<string, unknown>;
+  } catch {
+    return {};
   }
 }
 
@@ -781,6 +794,19 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
         const { event } = message;
 
         if (event.type === "content_block_delta") {
+          // Accumulate tool input JSON fragments from streaming deltas.
+          if (
+            event.delta.type === "input_json_delta" &&
+            typeof (event.delta as { partial_json?: string }).partial_json === "string"
+          ) {
+            const tool = context.inFlightTools.get(event.index);
+            if (tool) {
+              tool.inputJsonParts.push(
+                (event.delta as { partial_json: string }).partial_json,
+              );
+            }
+          }
+
           if (
             event.delta.type === "text_delta" &&
             event.delta.text.length > 0 &&
@@ -845,6 +871,7 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
             toolName,
             title: titleForTool(itemType),
             detail,
+            inputJsonParts: [],
           };
           context.inFlightTools.set(index, tool);
 
@@ -889,6 +916,13 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
           }
           context.inFlightTools.delete(index);
 
+          // Rebuild tool input from accumulated JSON delta fragments.
+          const resolvedInput = parseAccumulatedToolInput(tool.inputJsonParts);
+          const resolvedDetail =
+            Object.keys(resolvedInput).length > 0
+              ? summarizeToolRequest(tool.toolName, resolvedInput)
+              : tool.detail;
+
           const stamp = yield* makeEventStamp();
           yield* offerRuntimeEvent({
             type: "item.completed",
@@ -902,7 +936,11 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
               itemType: tool.itemType,
               status: "completed",
               title: tool.title,
-              ...(tool.detail ? { detail: tool.detail } : {}),
+              ...(resolvedDetail ? { detail: resolvedDetail } : {}),
+              data: {
+                toolName: tool.toolName,
+                input: resolvedInput,
+              },
             },
             providerRefs: {
               ...providerThreadRef(context),
@@ -1558,6 +1596,11 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
           ...(resumeState?.resumeSessionAt ? { resumeSessionAt: resumeState.resumeSessionAt } : {}),
           includePartialMessages: true,
           canUseTool,
+          settingSources: [...CLAUDE_SETTING_SOURCES],
+          strictMcpConfig: true,
+          mcpServers: {},
+          tools: CLAUDE_CODE_PRESET,
+          systemPrompt: CLAUDE_CODE_PRESET,
           env: process.env,
           ...(input.cwd ? { additionalDirectories: [input.cwd] } : {}),
         };

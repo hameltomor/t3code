@@ -15,6 +15,33 @@ npx xbe
 
 You can also just install the desktop app. It's cooler.
 
+## Runtime setup
+
+XBE Code expects the exact Node version from `.nvmrc`. `pm2`, local scripts, and the server should all run under that same version so globally installed CLIs like `codex` resolve from the same PATH.
+
+One-time machine setup:
+
+```bash
+nvm install "$(cat .nvmrc)"
+nvm alias default "$(cat .nvmrc)"
+nvm use "$(cat .nvmrc)"
+```
+
+If `codex` was installed under another Node version, reinstall it after switching to the project version:
+
+```bash
+which node
+node -v
+which codex
+codex --version
+```
+
+When you restart the app with `pm2`, refresh the environment so it picks up the same NVM-backed PATH:
+
+```bash
+pm2 restart ecosystem.config.cjs --update-env
+```
+
 ## Some notes
 
 We are very very early in this project. Expect bugs.
