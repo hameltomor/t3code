@@ -761,50 +761,69 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
   });
 }
 
-function listProjectFiles(cwd: string): string | undefined {
-  try {
-    const fs = require("node:fs") as typeof import("node:fs");
-    const path = require("node:path") as typeof import("node:path");
+function gatherProjectContext(cwd: string): string {
+  const fs = require("node:fs") as typeof import("node:fs");
+  const path = require("node:path") as typeof import("node:path");
+  const sections: string[] = [];
 
+  try {
     const entries = fs.readdirSync(cwd, { withFileTypes: true });
     const items = entries
       .filter((e) => !e.name.startsWith(".") && e.name !== "node_modules")
       .map((e) => (e.isDirectory() ? `${e.name}/` : e.name))
       .sort();
-
-    // Read package.json if it exists for tech stack context
-    const pkgPath = path.join(cwd, "package.json");
-    let pkgSnippet = "";
-    if (fs.existsSync(pkgPath)) {
-      try {
-        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
-        const deps = {
-          ...(pkg.dependencies ?? {}),
-          ...(pkg.devDependencies ?? {}),
-        };
-        const depNames = Object.keys(deps).slice(0, 40).join(", ");
-        pkgSnippet = `\n\npackage.json name: ${pkg.name ?? "unknown"}\nKey dependencies: ${depNames}`;
-      } catch {
-        // ignore parse errors
-      }
-    }
-
-    return `Project files at ${cwd}:\n${items.join("\n")}${pkgSnippet}`;
+    sections.push(`Directory listing of ${cwd}:\n${items.join("\n")}`);
   } catch {
-    return undefined;
+    // ignore
   }
+
+  // Include package.json contents for dependency/stack context
+  const pkgPath = path.join(cwd, "package.json");
+  try {
+    if (fs.existsSync(pkgPath)) {
+      const raw = fs.readFileSync(pkgPath, "utf-8");
+      sections.push(`Contents of package.json:\n${raw.slice(0, 4000)}`);
+    }
+  } catch {
+    // ignore
+  }
+
+  // Include README snippet if present
+  for (const readme of ["README.md", "readme.md", "README.txt"]) {
+    const readmePath = path.join(cwd, readme);
+    try {
+      if (fs.existsSync(readmePath)) {
+        const content = fs.readFileSync(readmePath, "utf-8").slice(0, 2000);
+        sections.push(`Contents of ${readme} (truncated):\n${content}`);
+        break;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return sections.join("\n\n");
 }
 
 function buildSystemInstruction(cwd?: string): string | undefined {
   if (!cwd) return undefined;
 
-  const projectListing = listProjectFiles(cwd);
+  let projectContext = "";
+  try {
+    projectContext = gatherProjectContext(cwd);
+  } catch {
+    // ignore
+  }
 
   return [
-    `You are an expert coding assistant working on a project located at: ${cwd}`,
-    "You have deep knowledge of software engineering, debugging, architecture, and best practices.",
+    "You are an expert coding assistant. You DO have access to the user's project context below.",
+    "IMPORTANT: Do NOT say you cannot see files or the codebase. The project information below was loaded from disk for you.",
+    `The user's project is located at: ${cwd}`,
+    "Answer questions about the project, its tech stack, architecture, and code based on the context provided.",
     "Be concise and direct. Prefer code examples over lengthy explanations.",
-    ...(projectListing ? ["", "## Project Context", projectListing] : []),
+    "",
+    "## Project Context (loaded from disk)",
+    projectContext,
   ].join("\n");
 }
 
