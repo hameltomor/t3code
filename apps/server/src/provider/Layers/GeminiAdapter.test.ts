@@ -8,6 +8,7 @@ import { makeGeminiAdapter } from "./GeminiAdapter.ts";
 
 let mockStreamChunks: Array<{ text: string }> = [{ text: "Hello from Gemini!" }];
 let mockCreateCalls: Array<{ model: string; config: unknown; history?: unknown }> = [];
+let mockSendCalls: Array<{ message: unknown; config?: unknown }> = [];
 
 vi.mock("@google/genai", () => ({
   GoogleGenAI: class {
@@ -15,7 +16,8 @@ vi.mock("@google/genai", () => ({
       create: (opts: { model: string; config: unknown; history?: unknown }) => {
         mockCreateCalls.push(opts);
         return {
-          sendMessageStream: async (_input: { message: string; config?: unknown }) => {
+          sendMessageStream: async (input: { message: string; config?: unknown }) => {
+            mockSendCalls.push(input);
             const chunks = [...mockStreamChunks];
             return {
               [Symbol.asyncIterator]() {
@@ -50,6 +52,7 @@ function run<A, E>(effect: Effect.Effect<A, E, Scope.Scope>) {
 beforeEach(() => {
   mockStreamChunks = [{ text: "Hello from Gemini!" }];
   mockCreateCalls = [];
+  mockSendCalls = [];
 });
 
 // ── Tests ──────────────────────────────────────────────────────────────
@@ -277,6 +280,8 @@ describe("GeminiAdapterLive", () => {
             turns: [
               {
                 userMessage: "What is TypeScript?",
+                providerMessage:
+                  "<project_context>\nTypeScript docs\n</project_context>\n<user_request>\nWhat is TypeScript?\n</user_request>",
                 assistantText: "A typed superset of JavaScript.",
               },
               {
@@ -298,6 +303,8 @@ describe("GeminiAdapterLive", () => {
         const lastCreate = mockCreateCalls.at(-1);
         expect(lastCreate?.history).toBeDefined();
         expect(lastCreate?.history).toHaveLength(4); // 2 turns × 2 messages
+        const history = (lastCreate?.history ?? []) as Array<any>;
+        expect(history[0]?.parts?.[0]?.text).toContain("<project_context>");
       }),
     ));
 
@@ -409,12 +416,54 @@ describe("GeminiAdapterLive", () => {
         const sessions = yield* adapter.listSessions();
         const updated = sessions.find((s) => s.threadId === TEST_THREAD_ID);
         const cursor = updated?.resumeCursor as {
-          turns?: Array<{ userMessage: string; assistantText: string }>;
+          turns?: Array<{
+            userMessage: string;
+            providerMessage?: string;
+            assistantText: string;
+          }>;
         };
 
         expect(cursor?.turns).toHaveLength(1);
         expect(cursor?.turns?.[0]?.userMessage).toBe("Hello");
         expect(cursor?.turns?.[0]?.assistantText).toBe("Hello from Gemini!");
+      }),
+    ));
+
+  it("injects project context into the live provider message when cwd is available", () =>
+    run(
+      Effect.gen(function* () {
+        const adapter = yield* makeGeminiAdapter({ apiKey: TEST_API_KEY });
+        yield* adapter.startSession({
+          threadId: TEST_THREAD_ID,
+          runtimeMode: "full-access",
+          cwd: process.cwd(),
+        });
+
+        yield* adapter.sendTurn({
+          threadId: TEST_THREAD_ID,
+          input: "What the stack of project we have here?",
+        });
+        yield* Effect.sleep(200);
+
+        const sendCall = mockSendCalls.at(-1);
+        expect(typeof sendCall?.message).toBe("string");
+        expect(sendCall?.message).toContain("<project_context>");
+        expect(sendCall?.message).toContain("Manifest: package.json");
+        expect(sendCall?.message).toContain("<user_request>");
+        expect(sendCall?.message).toContain("What the stack of project we have here?");
+
+        const sessions = yield* adapter.listSessions();
+        const updated = sessions.find((entry) => entry.threadId === TEST_THREAD_ID);
+        const cursor = updated?.resumeCursor as {
+          turns?: Array<{
+            userMessage: string;
+            providerMessage?: string;
+            assistantText: string;
+          }>;
+        };
+
+        expect(cursor?.turns?.[0]?.userMessage).toBe("What the stack of project we have here?");
+        expect(cursor?.turns?.[0]?.providerMessage).toContain("<project_context>");
       }),
     ));
 });

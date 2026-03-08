@@ -67,6 +67,7 @@ function toProviderSession(s: MutableSession): ProviderSession {
 interface PersistedTurn {
   id: TurnId;
   userMessage: string;
+  providerMessage: string | undefined;
   assistantText: string;
 }
 
@@ -76,6 +77,7 @@ interface GeminiSessionContext {
   readonly ai: GoogleGenAI;
   readonly model: string;
   readonly config: GenerateContentConfig;
+  readonly projectContext: string | undefined;
   readonly startedAt: string;
   readonly turns: PersistedTurn[];
   readonly abortControllers: Set<AbortController>;
@@ -105,7 +107,11 @@ interface GeminiResumeState {
   threadId?: string;
   model?: string;
   turnCount?: number;
-  turns?: ReadonlyArray<{ userMessage: string; assistantText: string }>;
+  turns?: ReadonlyArray<{
+    userMessage: string;
+    providerMessage?: string;
+    assistantText: string;
+  }>;
 }
 
 function readGeminiResumeState(resumeCursor: unknown): GeminiResumeState | undefined {
@@ -119,10 +125,18 @@ function readGeminiResumeState(resumeCursor: unknown): GeminiResumeState | undef
   if (typeof cursor.turnCount === "number") out.turnCount = cursor.turnCount;
   if (Array.isArray(cursor.turns)) {
     out.turns = cursor.turns.filter(
-      (t): t is { userMessage: string; assistantText: string } =>
+      (
+        t,
+      ): t is {
+        userMessage: string;
+        providerMessage?: string;
+        assistantText: string;
+      } =>
         t !== null &&
         typeof t === "object" &&
         typeof (t as Record<string, unknown>).userMessage === "string" &&
+        (!("providerMessage" in (t as Record<string, unknown>)) ||
+          typeof (t as Record<string, unknown>).providerMessage === "string") &&
         typeof (t as Record<string, unknown>).assistantText === "string",
     );
   }
@@ -145,6 +159,7 @@ function buildResumeCursor(ctx: GeminiSessionContext) {
     turnCount: ctx.turns.length,
     turns: ctx.turns.map((t) => ({
       userMessage: t.userMessage,
+      ...(t.providerMessage ? { providerMessage: t.providerMessage } : {}),
       assistantText: t.assistantText,
     })),
   };
@@ -158,12 +173,19 @@ function createChat(
   ai: GoogleGenAI,
   model: string,
   config: GenerateContentConfig,
-  history?: ReadonlyArray<{ userMessage: string; assistantText: string }>,
+  history?: ReadonlyArray<{
+    userMessage: string;
+    providerMessage?: string;
+    assistantText: string;
+  }>,
 ): Chat {
   const chatHistory =
     history && history.length > 0
       ? history.flatMap((turn) => [
-          { role: "user" as const, parts: [{ text: turn.userMessage }] },
+          {
+            role: "user" as const,
+            parts: [{ text: turn.providerMessage ?? turn.userMessage }],
+          },
           { role: "model" as const, parts: [{ text: turn.assistantText }] },
         ])
       : undefined;
@@ -315,6 +337,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
     const streamGeminiResponse = (
       ctx: GeminiSessionContext,
       userMessage: string,
+      providerMessage: string,
     ): Effect.Effect<void, ProviderAdapterRequestError> =>
       Effect.gen(function* () {
         const ts = ctx.turnState;
@@ -328,8 +351,11 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
         const response = yield* Effect.tryPromise({
           try: () =>
             ctx.chat.sendMessageStream({
-              message: userMessage,
-              config: { abortSignal: abortController.signal },
+              message: providerMessage,
+              config: {
+                ...ctx.config,
+                abortSignal: abortController.signal,
+              },
             }),
           catch: (cause) => {
             cleanup();
@@ -402,6 +428,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
           ctx.turns.push({
             id: ts.turnId,
             userMessage,
+            providerMessage,
             assistantText: ts.accumulatedText,
           });
           yield* completeTurn(ctx, "completed");
@@ -436,7 +463,8 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
         const model =
           input.model ?? resumeState?.model ?? DEFAULT_MODEL_BY_PROVIDER.gemini;
 
-        const systemInstruction = buildSystemInstruction(input.cwd);
+        const projectContext = input.cwd ? gatherProjectContext(input.cwd) : undefined;
+        const systemInstruction = buildSystemInstruction(input.cwd, projectContext);
         const config: GenerateContentConfig = systemInstruction
           ? { systemInstruction }
           : {};
@@ -445,23 +473,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
 
         // Replay prior turns if resuming to reconstruct conversation context
         const priorTurns = resumeState?.turns;
-
-        // Inject project context as the first exchange in the chat history
-        // so Gemini has awareness of the codebase from the first turn.
-        const contextHistory: Array<{ userMessage: string; assistantText: string }> = [];
-        if (systemInstruction && !priorTurns?.length) {
-          contextHistory.push({
-            userMessage: [
-              "Here is the context about the project you are working on. Use this to answer questions about the codebase.",
-              "",
-              systemInstruction,
-            ].join("\n"),
-            assistantText:
-              "Understood. I have the project context and will use it to answer your questions about this codebase.",
-          });
-        }
-        const fullHistory = [...contextHistory, ...(priorTurns ?? [])];
-        const chat = createChat(ai, model, config, fullHistory.length > 0 ? fullHistory : undefined);
+        const chat = createChat(ai, model, config, priorTurns);
 
         const now = yield* nowIso;
 
@@ -469,6 +481,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
         const restoredTurns: PersistedTurn[] = (priorTurns ?? []).map((t, i) => ({
           id: TurnId.makeUnsafe(`restored-${i}`),
           userMessage: t.userMessage,
+          providerMessage: t.providerMessage,
           assistantText: t.assistantText,
         }));
 
@@ -485,6 +498,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
             turnCount: restoredTurns.length,
             turns: restoredTurns.map((t) => ({
               userMessage: t.userMessage,
+              ...(t.providerMessage ? { providerMessage: t.providerMessage } : {}),
               assistantText: t.assistantText,
             })),
           },
@@ -499,6 +513,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
           ai,
           model,
           config,
+          projectContext,
           startedAt: now,
           turns: restoredTurns,
           abortControllers: new Set(),
@@ -598,11 +613,15 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
         }
 
         const userMessage = buildUserMessage(input);
+        const providerMessage = buildProviderMessage(userMessage, {
+          cwd: ctx.session.cwd,
+          projectContext: ctx.projectContext,
+        });
         const threadId = input.threadId;
 
         // Stream response in background (non-blocking), matching ClaudeCodeAdapter pattern
         Effect.runFork(
-          streamGeminiResponse(ctx, userMessage).pipe(
+          streamGeminiResponse(ctx, userMessage, providerMessage).pipe(
             Effect.catchCause((cause) =>
               Effect.gen(function* () {
                 if (Cause.hasInterruptsOnly(cause) || ctx.stopped) return;
@@ -685,6 +704,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
           ctx.config,
           ctx.turns.map((t) => ({
             userMessage: t.userMessage,
+            ...(t.providerMessage ? { providerMessage: t.providerMessage } : {}),
             assistantText: t.assistantText,
           })),
         );
@@ -781,27 +801,79 @@ function gatherProjectContext(cwd: string): string {
   const fs = require("node:fs") as typeof import("node:fs");
   const path = require("node:path") as typeof import("node:path");
   const sections: string[] = [];
+  const summarizePackageManifest = (packageJsonPath: string): string | undefined => {
+    try {
+      if (!fs.existsSync(packageJsonPath)) return undefined;
+      const raw = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8")) as {
+        name?: unknown;
+        scripts?: Record<string, string>;
+        dependencies?: Record<string, string>;
+        devDependencies?: Record<string, string>;
+        packageManager?: unknown;
+      };
+      const relativePath = path.relative(cwd, packageJsonPath) || "package.json";
+      const scripts = Object.keys(raw.scripts ?? {}).slice(0, 8);
+      const dependencies = Object.keys({
+        ...raw.dependencies,
+        ...raw.devDependencies,
+      }).slice(0, 18);
+
+      return [
+        `Manifest: ${relativePath}`,
+        ...(typeof raw.name === "string" ? [`name: ${raw.name}`] : []),
+        ...(typeof raw.packageManager === "string"
+          ? [`packageManager: ${raw.packageManager}`]
+          : []),
+        ...(scripts.length > 0 ? [`scripts: ${scripts.join(", ")}`] : []),
+        ...(dependencies.length > 0 ? [`key deps: ${dependencies.join(", ")}`] : []),
+      ].join("\n");
+    } catch {
+      return undefined;
+    }
+  };
 
   try {
     const entries = fs.readdirSync(cwd, { withFileTypes: true });
     const items = entries
       .filter((e) => !e.name.startsWith(".") && e.name !== "node_modules")
       .map((e) => (e.isDirectory() ? `${e.name}/` : e.name))
-      .sort();
+      .toSorted();
     sections.push(`Directory listing of ${cwd}:\n${items.join("\n")}`);
   } catch {
     // ignore
   }
 
-  // Include package.json contents for dependency/stack context
-  const pkgPath = path.join(cwd, "package.json");
-  try {
-    if (fs.existsSync(pkgPath)) {
-      const raw = fs.readFileSync(pkgPath, "utf-8");
-      sections.push(`Contents of package.json:\n${raw.slice(0, 4000)}`);
+  const manifestSummaries: string[] = [];
+  const rootManifest = summarizePackageManifest(path.join(cwd, "package.json"));
+  if (rootManifest) {
+    manifestSummaries.push(rootManifest);
+  }
+
+  for (const workspaceDir of ["apps", "packages"]) {
+    const workspaceRoot = path.join(cwd, workspaceDir);
+    try {
+      if (!fs.existsSync(workspaceRoot)) continue;
+      const entries = fs
+        .readdirSync(workspaceRoot, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .toSorted();
+
+      for (const entry of entries) {
+        const summary = summarizePackageManifest(
+          path.join(workspaceRoot, entry, "package.json"),
+        );
+        if (summary) {
+          manifestSummaries.push(summary);
+        }
+      }
+    } catch {
+      // ignore
     }
-  } catch {
-    // ignore
+  }
+
+  if (manifestSummaries.length > 0) {
+    sections.push(manifestSummaries.join("\n\n"));
   }
 
   // Include README snippet if present
@@ -821,22 +893,16 @@ function gatherProjectContext(cwd: string): string {
   return sections.join("\n\n");
 }
 
-function buildSystemInstruction(cwd?: string): string | undefined {
-  if (!cwd) return undefined;
-
-  let projectContext = "";
-  try {
-    projectContext = gatherProjectContext(cwd);
-  } catch {
-    // ignore
-  }
+function buildSystemInstruction(cwd?: string, projectContext?: string): string | undefined {
+  if (!cwd || !projectContext) return undefined;
 
   return [
-    "You are an expert coding assistant. You DO have access to the user's project context below.",
-    "IMPORTANT: Do NOT say you cannot see files or the codebase. The project information below was loaded from disk for you.",
+    "You are an expert coding assistant for the user's current repository.",
+    "The project context below was loaded from disk on the server for this exact workspace.",
+    "Do not say you cannot access the files or codebase when the answer can be derived from that context.",
     `The user's project is located at: ${cwd}`,
-    "Answer questions about the project, its tech stack, architecture, and code based on the context provided.",
-    "Be concise and direct. Prefer code examples over lengthy explanations.",
+    "Answer questions about the project's stack, architecture, and code using the provided context.",
+    "Ask for more files only if the provided context is genuinely insufficient.",
     "",
     "## Project Context (loaded from disk)",
     projectContext,
@@ -856,6 +922,33 @@ function buildUserMessage(input: ProviderSendTurnInput): string {
     }
   }
   return parts.join("\n\n") || "Continue.";
+}
+
+function buildProviderMessage(
+  userMessage: string,
+  options: {
+    cwd: string | undefined;
+    projectContext: string | undefined;
+  },
+): string {
+  if (!options.cwd || !options.projectContext) {
+    return userMessage;
+  }
+
+  return [
+    "The following project context was loaded from disk for the current repository.",
+    "Treat it as authoritative local context for this answer.",
+    "If the question can be answered from this context, answer directly.",
+    "Do not claim that you cannot access the files or codebase when this context is sufficient.",
+    "",
+    "<project_context>",
+    options.projectContext,
+    "</project_context>",
+    "",
+    "<user_request>",
+    userMessage,
+    "</user_request>",
+  ].join("\n");
 }
 
 export const GeminiAdapterLive = Layer.effect(GeminiAdapter, makeGeminiAdapter());
