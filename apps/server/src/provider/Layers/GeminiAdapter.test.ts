@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { Effect, Scope } from "effect";
-import type { ThreadId } from "@xbetools/contracts";
+import { Effect, Scope, Stream } from "effect";
+import type { ProviderRuntimeEvent, ThreadId } from "@xbetools/contracts";
 
 import { makeGeminiAdapter } from "./GeminiAdapter.ts";
 
@@ -83,6 +83,29 @@ const TEST_THREAD_ID = "thread-gemini-1" as ThreadId;
 /** Run an effect that requires Scope by providing a fresh scope and closing it. */
 function run<A, E>(effect: Effect.Effect<A, E, Scope.Scope>) {
   return Effect.runPromise(Effect.scoped(effect));
+}
+
+/** Collect events from the adapter's stream into an array, running in the background. */
+function collectEvents(
+  stream: Stream.Stream<ProviderRuntimeEvent>,
+): Effect.Effect<{ events: ProviderRuntimeEvent[] }, never, Scope.Scope> {
+  const events: ProviderRuntimeEvent[] = [];
+  return Stream.runForEach(stream, (ev) =>
+    Effect.sync(() => { events.push(ev); }),
+  ).pipe(
+    Effect.forkScoped,
+    Effect.map(() => ({ events })),
+  );
+}
+
+/** Find the requestId from a request.opened event in a collected event array. */
+function findRequestId(events: ProviderRuntimeEvent[]): string | undefined {
+  for (const ev of events) {
+    if (ev.type === "request.opened" && "requestId" in ev) {
+      return String(ev.requestId);
+    }
+  }
+  return undefined;
 }
 
 beforeEach(() => {
@@ -256,6 +279,7 @@ describe("GeminiAdapterLive", () => {
         };
 
         const adapter = yield* makeGeminiAdapter({ apiKey: TEST_API_KEY });
+        const { events } = yield* collectEvents(adapter.streamEvents);
         yield* adapter.startSession({
           threadId: TEST_THREAD_ID,
           runtimeMode: "full-access",
@@ -272,9 +296,13 @@ describe("GeminiAdapterLive", () => {
         // After the first call returns function calls, change the mock to return text
         mockGenerateContentResult = { text: "Done running command" };
 
+        // Find the actual request ID from emitted events
+        const requestId = findRequestId(events);
+        expect(requestId).toBeDefined();
+
         // Respond to the approval
         const result = yield* adapter
-          .respondToRequest(TEST_THREAD_ID, "any-id" as any, "accept" as any)
+          .respondToRequest(TEST_THREAD_ID, requestId! as any, "accept" as any)
           .pipe(Effect.result);
 
         expect(result._tag).toBe("Success");
@@ -521,6 +549,7 @@ describe("GeminiAdapterLive", () => {
           };
 
           const adapter = yield* makeGeminiAdapter({ apiKey: TEST_API_KEY });
+          const { events } = yield* collectEvents(adapter.streamEvents);
           yield* adapter.startSession({
             threadId: TEST_THREAD_ID,
             runtimeMode: "full-access",
@@ -537,10 +566,12 @@ describe("GeminiAdapterLive", () => {
           // Switch to text response for after approval
           mockGenerateContentResult = { text: "Command completed" };
 
-          // Approve the request
+          // Find the actual request ID and approve
+          const requestId = findRequestId(events);
+          expect(requestId).toBeDefined();
           yield* adapter.respondToRequest(
             TEST_THREAD_ID,
-            "any" as any,
+            requestId! as any,
             "accept" as any,
           );
 
@@ -562,6 +593,7 @@ describe("GeminiAdapterLive", () => {
           };
 
           const adapter = yield* makeGeminiAdapter({ apiKey: TEST_API_KEY });
+          const { events } = yield* collectEvents(adapter.streamEvents);
           yield* adapter.startSession({
             threadId: TEST_THREAD_ID,
             runtimeMode: "full-access",
@@ -577,10 +609,12 @@ describe("GeminiAdapterLive", () => {
           // Switch to text response for after denial
           mockGenerateContentResult = { text: "I cannot do that" };
 
-          // Deny the request
+          // Find the actual request ID and deny
+          const requestId = findRequestId(events);
+          expect(requestId).toBeDefined();
           yield* adapter.respondToRequest(
             TEST_THREAD_ID,
-            "any" as any,
+            requestId! as any,
             "decline" as any,
           );
 
@@ -723,7 +757,7 @@ describe("GeminiAdapterLive", () => {
 
           yield* Effect.sleep(200);
 
-          // Session should still be valid
+          // Session should still be valid (interrupt cancels the turn, not the session)
           expect(yield* adapter.hasSession(TEST_THREAD_ID)).toBe(true);
         }),
       ));

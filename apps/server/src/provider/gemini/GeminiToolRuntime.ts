@@ -84,8 +84,10 @@ async function executeReadFile(
     }
 
     const resolved = path.resolve(cwd, filePath);
-    // Security: ensure the file is within the workspace
-    if (!resolved.startsWith(path.resolve(cwd))) {
+    // Security: ensure the file is within the workspace.
+    // Append path.sep to avoid prefix confusion (e.g. /tmp/a matching /tmp/ab).
+    const cwdPrefix = path.resolve(cwd) + path.sep;
+    if (!resolved.startsWith(cwdPrefix) && resolved !== path.resolve(cwd)) {
       return {
         output: { error: "Path is outside the workspace" },
         error: "Path is outside the workspace",

@@ -298,7 +298,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
 
         // Reject pending approval/user-input
         if (ctx.pendingApproval) {
-          yield* Deferred.succeed(ctx.pendingApproval.deferred, "deny" as ProviderApprovalDecision);
+          yield* Deferred.succeed(ctx.pendingApproval.deferred, "cancel" as ProviderApprovalDecision);
           ctx.pendingApproval = undefined;
         }
         if (ctx.pendingUserInput) {
@@ -534,7 +534,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
           const toolInteractions: TranscriptTurn["toolInteractions"][number][] = [];
           let iterations = 0;
 
-          while (iterations < MAX_TOOL_LOOP_ITERATIONS && !ctx.stopped) {
+          while (iterations < MAX_TOOL_LOOP_ITERATIONS && !ctx.stopped && !abortController.signal.aborted) {
             iterations++;
 
             const response = yield* callGemini(ctx, currentContents, abortController.signal);
@@ -578,13 +578,13 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
             // Execute each call sequentially (respecting approval flow)
             const results: TranscriptFunctionResult[] = [];
             for (const call of calls) {
-              if (ctx.stopped) break;
+              if (ctx.stopped || abortController.signal.aborted) break;
               const result = yield* executeToolCall(ctx, call, ts.turnId);
               results.push(result);
               toolInteractions.push({ call, result });
             }
 
-            if (ctx.stopped) break;
+            if (ctx.stopped || abortController.signal.aborted) break;
 
             // Add function results to contents
             currentContents.push({
@@ -854,14 +854,15 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
     const interruptTurn: GeminiAdapterShape["interruptTurn"] = (threadId) =>
       Effect.gen(function* () {
         const ctx = yield* requireSession(threadId);
+        // Abort all in-flight API calls — the tool loop checks abortController.signal.aborted
         for (const controller of ctx.abortControllers) {
           controller.abort();
         }
-        ctx.abortControllers.clear();
+        // Don't clear controllers here; the loop cleanup will handle that
 
-        // Also resolve any pending approval/user-input as deny
+        // Resolve any pending approval/user-input as cancel so the loop unblocks and exits
         if (ctx.pendingApproval) {
-          yield* Deferred.succeed(ctx.pendingApproval.deferred, "deny" as ProviderApprovalDecision);
+          yield* Deferred.succeed(ctx.pendingApproval.deferred, "cancel" as ProviderApprovalDecision);
           ctx.pendingApproval = undefined;
         }
         if (ctx.pendingUserInput) {
@@ -908,7 +909,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
 
     const respondToRequest: GeminiAdapterShape["respondToRequest"] = (
       threadId,
-      _requestId,
+      requestId,
       decision,
     ) =>
       Effect.gen(function* () {
@@ -920,12 +921,19 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
             detail: `No pending approval request for thread '${threadId}'.`,
           });
         }
+        if (ctx.pendingApproval.requestId !== requestId) {
+          return yield* new ProviderAdapterRequestError({
+            provider: PROVIDER,
+            method: "respondToRequest",
+            detail: `Request ID mismatch: expected '${ctx.pendingApproval.requestId}', got '${requestId}'.`,
+          });
+        }
         yield* Deferred.succeed(ctx.pendingApproval.deferred, decision);
       });
 
     const respondToUserInput: GeminiAdapterShape["respondToUserInput"] = (
       threadId,
-      _requestId,
+      requestId,
       answers,
     ) =>
       Effect.gen(function* () {
@@ -935,6 +943,13 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
             provider: PROVIDER,
             method: "respondToUserInput",
             detail: `No pending user-input request for thread '${threadId}'.`,
+          });
+        }
+        if (ctx.pendingUserInput.requestId !== requestId) {
+          return yield* new ProviderAdapterRequestError({
+            provider: PROVIDER,
+            method: "respondToUserInput",
+            detail: `Request ID mismatch: expected '${ctx.pendingUserInput.requestId}', got '${requestId}'.`,
           });
         }
         yield* Deferred.succeed(ctx.pendingUserInput.deferred, answers);
