@@ -3546,8 +3546,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
       {/* Top bar */}
       <header
         className={cn(
-          "border-b border-border",
-          isElectron ? "drag-region flex h-[52px] items-center" : "px-3 py-2 sm:px-5 sm:py-3",
+          "flex items-center border-b border-border",
+          isElectron ? "drag-region h-[52px]" : "px-3 py-2 sm:px-5 sm:py-3",
           isElectron && (sidebarOpen ? "px-3 sm:px-5" : "pl-[82px] pr-3 sm:pr-5"),
         )}
       >
@@ -3574,6 +3574,16 @@ export default function ChatView({ threadId }: ChatViewProps) {
           onAddProjectScript={saveProjectScript}
           onUpdateProjectScript={updateProjectScript}
           onToggleDiff={onToggleDiff}
+          branchToolbar={
+            isGitRepo ? (
+              <BranchToolbar
+                threadId={activeThread.id}
+                onEnvModeChange={onEnvModeChange}
+                envLocked={envLocked}
+                onComposerFocusRequest={scheduleComposerFocus}
+              />
+            ) : undefined
+          }
         />
       </header>
 
@@ -3632,7 +3642,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       </div>
 
       {/* Input bar */}
-      <div className={cn("px-3 pt-1.5 sm:px-5 sm:pt-2", isGitRepo ? "pb-1" : "pb-3 sm:pb-4")}>
+      <div className="px-3 pt-1.5 sm:px-5 sm:pt-2">
         <form
           ref={composerFormRef}
           onSubmit={onSend}
@@ -3640,7 +3650,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
           data-chat-composer-form="true"
         >
           <div
-            className={`group rounded-[20px] border bg-card transition-colors duration-200 focus-within:border-ring/45 ${
+            className={`group rounded-t-[20px] rounded-b-none border border-b-0 bg-card transition-colors duration-200 focus-within:border-ring/45 ${
               isDragOverComposer ? "border-primary/70 bg-accent/30" : "border-border"
             }`}
             onDragEnter={onComposerDragEnter}
@@ -4053,15 +4063,6 @@ export default function ChatView({ threadId }: ChatViewProps) {
         </form>
       </div>
 
-      {isGitRepo && (
-        <BranchToolbar
-          threadId={activeThread.id}
-          onEnvModeChange={onEnvModeChange}
-          envLocked={envLocked}
-          onComposerFocusRequest={scheduleComposerFocus}
-        />
-      )}
-
       {(() => {
         if (!terminalState.terminalOpen || !activeProject) {
           return null;
@@ -4180,6 +4181,7 @@ interface ChatHeaderProps {
   onAddProjectScript: (input: NewProjectScriptInput) => Promise<void>;
   onUpdateProjectScript: (scriptId: string, input: NewProjectScriptInput) => Promise<void>;
   onToggleDiff: () => void;
+  branchToolbar?: React.ReactNode;
 }
 
 const MAX_HEADER_PROJECT_NAME_LENGTH = 24;
@@ -4203,6 +4205,7 @@ const ChatHeader = memo(function ChatHeader({
   onAddProjectScript,
   onUpdateProjectScript,
   onToggleDiff,
+  branchToolbar,
 }: ChatHeaderProps) {
   const truncatedProjectName = activeProjectName
     ? truncateTitle(activeProjectName, MAX_HEADER_PROJECT_NAME_LENGTH)
@@ -4304,6 +4307,7 @@ const ChatHeader = memo(function ChatHeader({
                 : "Toggle diff panel"}
           </TooltipPopup>
         </Tooltip>
+        {branchToolbar}
         <div className="shrink-0">
           <NotificationBell />
         </div>
