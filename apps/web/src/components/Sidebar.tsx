@@ -3,8 +3,10 @@ import {
   FolderIcon,
   GitPullRequestIcon,
   RocketIcon,
+  SearchIcon,
   SquarePenIcon,
   TerminalIcon,
+  XIcon,
 } from "lucide-react";
 import { NotificationBell } from "./NotificationCenter";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -69,6 +71,7 @@ import {
   getOrphanedWorktreeEntriesForThread,
 } from "../worktreeCleanup";
 import { isNonEmpty as isNonEmptyString } from "effect/String";
+import { useThreadSearch, getProjectThreadsForSearch } from "../hooks/useThreadSearch";
 
 const EMPTY_KEYBINDINGS: ResolvedKeybindingsConfig = [];
 const THREAD_PREVIEW_LIMIT = 6;
@@ -309,6 +312,9 @@ export default function Sidebar() {
   const renamingCommittedRef = useRef(false);
   const renamingInputRef = useRef<HTMLInputElement | null>(null);
   const [desktopUpdateState, setDesktopUpdateState] = useState<DesktopUpdateState | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const { query: searchQuery, setQuery: setSearchQuery, filteredThreadIdSet, isSearching } =
+    useThreadSearch(threads, projects);
   const pendingApprovalByThreadId = useMemo(() => {
     const map = new Map<ThreadId, boolean>();
     for (const thread of threads) {
@@ -884,6 +890,19 @@ export default function Sidebar() {
   }, [getDraftThread, handleNewThread, keybindings, projects, routeThreadId, threads]);
 
   useEffect(() => {
+    const onSearchShortcut = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === "k") {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onSearchShortcut);
+    return () => {
+      window.removeEventListener("keydown", onSearchShortcut);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!isElectron) return;
     const bridge = window.desktopBridge;
     if (
@@ -1072,18 +1091,54 @@ export default function Sidebar() {
       )}
 
       <SidebarContent className="gap-0">
+        <div className="px-2 pt-2 pb-1">
+          <div className="relative">
+            <SearchIcon className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/50" />
+            <input
+              ref={searchInputRef}
+              type="search"
+              placeholder="Search threads..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  if (searchQuery) {
+                    e.preventDefault();
+                    setSearchQuery("");
+                  } else {
+                    searchInputRef.current?.blur();
+                  }
+                }
+              }}
+              className="h-7 w-full rounded-md border border-input bg-background pl-7 pr-7 text-xs text-foreground placeholder:text-muted-foreground/50 outline-none ring-ring/24 transition-shadow focus:border-ring focus:ring-[3px] dark:bg-input/32 [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery("");
+                  searchInputRef.current?.focus();
+                }}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground/50 hover:text-foreground"
+              >
+                <XIcon className="size-3" />
+              </button>
+            )}
+          </div>
+        </div>
+
         <SidebarGroup className="px-2 py-2">
           <SidebarMenu>
             {sortedProjects.map((project) => {
-              const projectThreads = threads
-                .filter((thread) => thread.projectId === project.id)
-                .toSorted((a, b) => {
-                  const byDate = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-                  if (byDate !== 0) return byDate;
-                  return b.id.localeCompare(a.id);
-                });
-              const isThreadListExpanded = expandedThreadListsByProject.has(project.id);
-              const hasHiddenThreads = projectThreads.length > THREAD_PREVIEW_LIMIT;
+              const projectThreads = getProjectThreadsForSearch(
+                threads,
+                project.id,
+                filteredThreadIdSet,
+              );
+              if (isSearching && projectThreads.length === 0) return null;
+              const isThreadListExpanded =
+                isSearching || expandedThreadListsByProject.has(project.id);
+              const hasHiddenThreads = !isSearching && projectThreads.length > THREAD_PREVIEW_LIMIT;
               const visibleThreads =
                 hasHiddenThreads && !isThreadListExpanded
                   ? projectThreads.slice(0, THREAD_PREVIEW_LIMIT)
@@ -1335,7 +1390,13 @@ export default function Sidebar() {
             })}
           </SidebarMenu>
 
-          {projects.length === 0 && !addingProject && (
+          {isSearching && threads.length > 0 && filteredThreadIdSet?.size === 0 && (
+            <div className="px-2 pt-4 text-center text-xs text-muted-foreground/60">
+              No threads matching &ldquo;{searchQuery.trim()}&rdquo;
+            </div>
+          )}
+
+          {projects.length === 0 && !addingProject && !isSearching && (
             <div className="px-2 pt-4 text-center text-xs text-muted-foreground/60">
               No projects yet.
               <br />
