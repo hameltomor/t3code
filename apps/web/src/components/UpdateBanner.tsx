@@ -92,10 +92,10 @@ export function UpdateBanner({ update }: { update: AppUpdateInfo }) {
         {/* Action button — sharp corners per XBE styleguide */}
         <button
           className={cn(
-            "inline-flex shrink-0 items-center justify-center rounded-none border border-primary bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors",
+            "inline-flex shrink-0 cursor-pointer items-center justify-center rounded-none border border-primary bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors",
             "md:px-2.5 md:py-1 md:text-xs",
             isDownloading
-              ? "pointer-events-none opacity-60"
+              ? "pointer-events-none cursor-default opacity-60"
               : "hover:bg-primary/90 active:bg-primary/80",
           )}
           disabled={isDownloading}
@@ -109,7 +109,7 @@ export function UpdateBanner({ update }: { update: AppUpdateInfo }) {
         {!isDownloading && (
           <button
             aria-label="Dismiss update notification"
-            className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground md:size-6"
+            className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground md:size-6"
             onClick={update.dismiss}
             type="button"
           >
