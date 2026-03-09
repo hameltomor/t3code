@@ -8,7 +8,15 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(OFFLINE_CACHE).then((cache) => cache.add(new Request(OFFLINE_URL, { cache: "reload" }))),
   );
-  self.skipWaiting();
+  // Do NOT call self.skipWaiting() here — the app controls activation
+  // via a SKIP_WAITING message so it can prompt the user first.
+});
+
+// Allow the app to trigger activation after the user confirms the update.
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener("activate", (event) => {

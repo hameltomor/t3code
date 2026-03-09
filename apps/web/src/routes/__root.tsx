@@ -11,7 +11,9 @@ import { QueryClient, useQueryClient } from "@tanstack/react-query";
 
 import { APP_DISPLAY_NAME } from "../branding";
 import { Button } from "../components/ui/button";
+import { UpdateBanner } from "../components/UpdateBanner";
 import { AnchoredToastProvider, ToastProvider, toastManager } from "../components/ui/toast";
+import { useAppUpdate } from "../hooks/useAppUpdate";
 import { serverConfigQueryOptions, serverQueryKeys } from "../lib/serverReactQuery";
 import { readNativeApi } from "../nativeApi";
 import { hydrateDraftsFromServer, useComposerDraftStore } from "../composerDraftStore";
@@ -46,12 +48,15 @@ function RootRouteView() {
     );
   }
 
+  const appUpdate = useAppUpdate();
+
   return (
     <ToastProvider>
       <AnchoredToastProvider>
         <EventRouter />
         <DesktopProjectBootstrap />
         <Outlet />
+        <UpdateBanner update={appUpdate} />
       </AnchoredToastProvider>
     </ToastProvider>
   );

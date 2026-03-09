@@ -99,8 +99,8 @@ export default function BranchToolbar({
   if (!activeThreadId || !activeProject) return null;
 
   return (
-    <div className="flex items-center gap-1 sm:gap-2 border-l border-border pl-2 sm:pl-3 ml-1 sm:ml-2">
-      <div className="flex items-center gap-2">
+    <div className="flex min-w-0 items-center gap-1 sm:gap-2 border-l border-border pl-2 sm:pl-3 ml-1 sm:ml-2">
+      <div className="flex shrink-0 items-center gap-2">
         {envLocked || activeWorktreePath ? (
           <span className="border border-transparent px-[calc(--spacing(2)-1px)] text-sm font-medium text-muted-foreground/70 sm:text-xs">
             {activeWorktreePath ? "Worktree" : "Local"}

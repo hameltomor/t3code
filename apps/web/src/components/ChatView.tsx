@@ -4291,9 +4291,9 @@ const ChatHeader = memo(function ChatHeader({
           </Badge>
         )}
       </div>
-      <div className="@container/header-actions flex min-w-0 flex-1 items-center justify-end gap-1 sm:gap-2 @sm/header-actions:gap-3">
+      <div className="@container/header-actions flex min-w-0 flex-1 items-center justify-end gap-1 overflow-hidden sm:gap-2 @sm/header-actions:gap-3">
         {activeProjectScripts && (
-          <div className="hidden sm:contents">
+          <div className="hidden @lg/header-actions:contents">
             <ProjectScriptsControl
               scripts={activeProjectScripts}
               keybindings={keybindings}
@@ -4305,7 +4305,7 @@ const ChatHeader = memo(function ChatHeader({
           </div>
         )}
         {activeProjectName && (
-          <div className="hidden sm:contents">
+          <div className="hidden @lg/header-actions:contents">
             <OpenInPicker
               keybindings={keybindings}
               availableEditors={availableEditors}
@@ -4314,7 +4314,7 @@ const ChatHeader = memo(function ChatHeader({
           </div>
         )}
         {activeProjectName && isMultiRepo && activeProjectId && workspaceReposQueryCwd && (
-          <div className="min-w-0 [&_button]:max-w-24 [&_button]:sm:max-w-48">
+          <div className="min-w-0 [&_button]:max-w-24 [&_button]:@sm/header-actions:max-w-48">
             <RepoSwitcher
               projectId={activeProjectId}
               workspaceRoot={workspaceReposQueryCwd}

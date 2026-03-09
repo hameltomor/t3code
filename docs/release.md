@@ -176,10 +176,21 @@ Setup:
 - Runtime updater: `electron-updater` in `apps/desktop/src/main.ts`.
 - Background checks run on startup delay + interval. No automatic download or install.
 - The desktop UI shows a rocket update button when an update is available; click once to download, click again to restart/install.
-- Provider: GitHub Releases (`provider: github`) configured at build time.
-- Repository slug: `XBECODE_DESKTOP_UPDATE_REPOSITORY` (format `owner/repo`), falls back to `GITHUB_REPOSITORY`.
-- Private repo auth: set `XBECODE_DESKTOP_UPDATE_GITHUB_TOKEN` (or `GH_TOKEN`) in the desktop app runtime environment.
+- Provider: generic (`provider: generic`) pointing at `https://synkr-server.price-bee.com/xbecode/`.
+- The update server is a NestJS app (`synkr-server`) that serves `latest*.yml` manifests and binary downloads from GCS bucket `xbecode-releases`.
+- No GitHub token or authentication required — the GCS bucket is publicly readable.
+- The CI `upload_gcs` job automatically uploads manifests to the bucket root and binaries to `{version}/` on every release.
+- Override the update URL at runtime: set `XBECODE_DESKTOP_UPDATE_URL` env var (build-time) or modify `app-update.yml`.
 - Required release assets for updater to work: platform installers, `latest*.yml` metadata, `*.blockmap` files.
+
+## browser/PWA update notification
+
+- The service worker (`apps/web/public/sw.js`) uses message-based activation — new versions wait until the app sends a `SKIP_WAITING` message.
+- `useServiceWorkerUpdate` hook detects a waiting service worker and polls for updates every 4 hours.
+- `useAppUpdate` hook unifies browser SW updates and desktop electron-updater into a single `AppUpdateInfo` interface.
+- `UpdateBanner` component renders a top-center notification banner when an update is available.
+- In Electron, the banner shows desktop update status (available → downloading → ready to restart).
+- In browsers, the banner prompts the user to refresh and activates the new service worker on click.
 
 ## npm cli publishing
 

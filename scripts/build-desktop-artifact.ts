@@ -415,29 +415,13 @@ function resolveDesktopRuntimeDependencies(
   return resolveCatalogDependencies(runtimeDependencies, catalog, "apps/desktop");
 }
 
-function resolveGitHubPublishConfig():
-  | {
-      readonly provider: "github";
-      readonly owner: string;
-      readonly repo: string;
-      readonly releaseType: "release";
-    }
+function resolvePublishConfig():
+  | { readonly provider: "generic"; readonly url: string }
   | undefined {
-  const rawRepo =
-    process.env.XBECODE_DESKTOP_UPDATE_REPOSITORY?.trim() ||
-    process.env.GITHUB_REPOSITORY?.trim() ||
-    "";
-  if (!rawRepo) return undefined;
-
-  const [owner, repo, ...rest] = rawRepo.split("/");
-  if (!owner || !repo || rest.length > 0) return undefined;
-
-  return {
-    provider: "github",
-    owner,
-    repo,
-    releaseType: "release",
-  };
+  const url =
+    process.env.XBECODE_DESKTOP_UPDATE_URL?.trim() ||
+    "https://synkr-server.price-bee.com/xbecode";
+  return { provider: "generic", url };
 }
 
 const createBuildConfig = Effect.fn("createBuildConfig")(function* (
@@ -454,7 +438,7 @@ const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       buildResources: "apps/desktop/resources",
     },
   };
-  const publishConfig = resolveGitHubPublishConfig();
+  const publishConfig = resolvePublishConfig();
   if (publishConfig) {
     buildConfig.publish = [publishConfig];
   }
