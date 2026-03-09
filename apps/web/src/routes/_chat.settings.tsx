@@ -24,6 +24,7 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../
 import { Switch } from "../components/ui/switch";
 import { cn } from "~/lib/utils";
 import {
+  getDeniedPermissionInstructions,
   getNotificationPermission,
   requestNotificationPermission,
   subscribeToPush,
@@ -657,10 +658,19 @@ function SettingsRouteView() {
                 </div>
 
                 {notificationPermission === "denied" && (
-                  <p className="text-xs text-destructive">
-                    Notification permission was denied. Please allow notifications in your browser
-                    settings and reload the page.
-                  </p>
+                  <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2">
+                    <p className="text-xs font-medium text-destructive">Notifications blocked</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {getDeniedPermissionInstructions()}
+                    </p>
+                    <button
+                      type="button"
+                      className="mt-1 text-xs font-medium text-primary hover:underline"
+                      onClick={() => setNotificationPermission(getNotificationPermission())}
+                    >
+                      Re-check permission
+                    </button>
+                  </div>
                 )}
 
                 <div className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2">

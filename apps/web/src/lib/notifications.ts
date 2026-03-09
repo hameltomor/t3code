@@ -1,7 +1,68 @@
 import type { AppNotification } from "@xbetools/contracts";
 import { getAppSettingsSnapshot } from "../appSettings";
 
+// ---------------------------------------------------------------------------
+// Platform detection
+// ---------------------------------------------------------------------------
+
+const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+
+export const isIOS = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && "ontouchend" in document);
+export const isAndroid = /Android/.test(ua);
+export const isSafari = /^((?!chrome|android).)*safari/i.test(ua);
+export const isFirefox = /Firefox\//i.test(ua);
+
+/** Running as an installed PWA (Add-to-Home-Screen / standalone). */
+export const isStandalonePWA =
+  typeof window !== "undefined" &&
+  (window.matchMedia("(display-mode: standalone)").matches ||
+    (navigator as unknown as { standalone?: boolean }).standalone === true);
+
+/** iOS Safari in-browser (not installed as PWA) — push not available here. */
+export const isIOSSafariBrowser = isIOS && isSafari && !isStandalonePWA;
+
+/** Whether the browser supports the Notification API at all. */
+export function supportsNotifications(): boolean {
+  return typeof window !== "undefined" && "Notification" in window;
+}
+
+/** Whether push notifications can work on this platform/context. */
+export function supportsPush(): boolean {
+  if (isIOSSafariBrowser) return false;
+  return (
+    typeof navigator !== "undefined" &&
+    "serviceWorker" in navigator &&
+    typeof PushManager !== "undefined"
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Permission denied instructions (platform-specific)
+// ---------------------------------------------------------------------------
+
+export function getDeniedPermissionInstructions(): string {
+  if (isIOS) {
+    return "Open Settings \u2192 Apps \u2192 Safari (or your browser) \u2192 Notifications, then allow notifications and reload this page.";
+  }
+  if (isAndroid) {
+    return "Tap the lock icon in the address bar \u2192 Permissions \u2192 Notifications \u2192 Allow, then reload this page.";
+  }
+  if (isSafari) {
+    return "Open Safari \u2192 Settings for this website \u2192 Allow notifications, then reload this page.";
+  }
+  if (isFirefox) {
+    return "Click the lock icon in the address bar \u2192 Clear notification permission, then reload and try again.";
+  }
+  // Chrome / Edge / generic
+  return "Click the lock icon in the address bar \u2192 Site settings \u2192 Notifications \u2192 Allow, then reload this page.";
+}
+
+// ---------------------------------------------------------------------------
+// Audio with unlock
+// ---------------------------------------------------------------------------
+
 let notificationSound: HTMLAudioElement | null = null;
+let audioUnlocked = false;
 
 function getNotificationSound(): HTMLAudioElement {
   if (!notificationSound) {
@@ -9,6 +70,53 @@ function getNotificationSound(): HTMLAudioElement {
     notificationSound.volume = 0.5;
   }
   return notificationSound;
+}
+
+/**
+ * Warm up the audio element on first user gesture so subsequent
+ * programmatic plays are not blocked by autoplay policies.
+ * Call this once from a top-level interaction listener.
+ */
+export function unlockAudio(): void {
+  if (audioUnlocked) return;
+  audioUnlocked = true;
+
+  try {
+    const audio = getNotificationSound();
+    // Play + immediately pause to unlock the audio context.
+    // The promise rejection is expected when there is nothing to play yet.
+    const p = audio.play();
+    if (p) {
+      void p
+        .then(() => {
+          audio.pause();
+          audio.currentTime = 0;
+        })
+        .catch(() => {
+          // Expected — still counts as unlock attempt on most browsers.
+        });
+    }
+  } catch {
+    // Audio not available
+  }
+}
+
+/** Auto-register one-time unlock on first user gesture. */
+export function installAudioUnlockListener(): () => void {
+  if (typeof window === "undefined") return () => {};
+
+  const handler = () => {
+    unlockAudio();
+    window.removeEventListener("click", handler, true);
+    window.removeEventListener("touchstart", handler, true);
+    window.removeEventListener("keydown", handler, true);
+  };
+
+  window.addEventListener("click", handler, true);
+  window.addEventListener("touchstart", handler, true);
+  window.addEventListener("keydown", handler, true);
+
+  return handler as () => void;
 }
 
 export function playNotificationSound(): void {

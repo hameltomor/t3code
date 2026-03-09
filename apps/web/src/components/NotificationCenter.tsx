@@ -1,10 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { BellIcon, CheckCheckIcon, InboxIcon } from "lucide-react";
+import { BellIcon, BellRingIcon, CheckCheckIcon, InboxIcon, ShareIcon } from "lucide-react";
 import type { AppNotification } from "@xbetools/contracts";
 
 import { readNativeApi } from "../nativeApi";
-import { playNotificationSound, showNativeNotification } from "../lib/notifications";
+import {
+  getDeniedPermissionInstructions,
+  getNotificationPermission,
+  isIOSSafariBrowser,
+  playNotificationSound,
+  requestNotificationPermission,
+  showNativeNotification,
+  subscribeToPush,
+  supportsNotifications,
+  supportsPush,
+} from "../lib/notifications";
+import { useAppSettings } from "../appSettings";
 import { cn } from "~/lib/utils";
 import {
   Sheet,
@@ -55,29 +66,29 @@ function NotificationItem({
     <button
       type="button"
       className={cn(
-        "flex w-full gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-muted/50",
+        "flex w-full gap-3 md:gap-3 rounded-lg px-4 md:px-3 py-4 md:py-2.5 text-left transition-colors hover:bg-muted/50 active:bg-muted/70",
         isUnread && "bg-muted/30",
       )}
       onClick={() => onNavigate(notification.threadId, notification.notificationId)}
     >
-      <div className="mt-0.5 flex-shrink-0">
+      <div className="mt-1 md:mt-0.5 flex-shrink-0">
         <div
           className={cn(
-            "size-2 rounded-full",
+            "size-2.5 md:size-2 rounded-full",
             isUnread ? "bg-primary" : "bg-transparent",
           )}
         />
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
-          <span className={cn("text-xs font-medium", isUnread ? "text-primary" : "text-muted-foreground")}>
+          <span className={cn("text-sm md:text-xs font-medium", isUnread ? "text-primary" : "text-muted-foreground")}>
             {NOTIFICATION_KIND_LABELS[notification.kind] ?? notification.kind}
           </span>
-          <span className="text-xs text-muted-foreground flex-shrink-0">
+          <span className="text-sm md:text-xs text-muted-foreground flex-shrink-0">
             {formatNotificationTime(notification.createdAt)}
           </span>
         </div>
-        <p className={cn("text-sm mt-0.5 line-clamp-2", isUnread ? "text-foreground" : "text-muted-foreground")}>
+        <p className={cn("text-base md:text-sm mt-1 md:mt-0.5 line-clamp-2", isUnread ? "text-foreground" : "text-muted-foreground")}>
           {notification.body}
         </p>
       </div>
@@ -104,6 +115,125 @@ function markNotificationsReadForThread(
   if (markedCount > 0) {
     setUnreadCount((prev) => Math.max(0, prev - markedCount));
   }
+}
+
+// ---------------------------------------------------------------------------
+// Permission CTA banner shown inside the notification sheet
+// ---------------------------------------------------------------------------
+
+function NotificationPermissionBanner({
+  onPermissionChange,
+}: {
+  onPermissionChange: () => void;
+}) {
+  const { settings, updateSettings } = useAppSettings();
+  const [permission, setPermission] = useState<NotificationPermission>(() =>
+    getNotificationPermission(),
+  );
+  const [requesting, setRequesting] = useState(false);
+
+  // Re-check permission whenever the sheet opens (user may have changed browser settings)
+  useEffect(() => {
+    setPermission(getNotificationPermission());
+  }, []);
+
+  // Already enabled — nothing to show
+  if (settings.enableNotifications && permission === "granted") {
+    return null;
+  }
+
+  // iOS Safari in-browser — push not supported without installing PWA
+  if (isIOSSafariBrowser) {
+    return (
+      <div className="mx-2 mt-2 rounded-lg border border-border bg-muted/50 p-3 md:p-2.5">
+        <div className="flex items-start gap-2.5">
+          <ShareIcon className="mt-0.5 size-4 shrink-0 text-primary" />
+          <div className="min-w-0">
+            <p className="text-sm md:text-xs font-medium text-foreground">
+              Install for notifications
+            </p>
+            <p className="mt-0.5 text-sm md:text-xs text-muted-foreground">
+              Tap{" "}
+              <span className="inline-flex items-baseline gap-0.5">
+                <ShareIcon className="inline size-3" />
+                <span>Share</span>
+              </span>
+              {" \u2192 "}
+              <span className="font-medium">&ldquo;Add to Home Screen&rdquo;</span> to enable push
+              notifications on iOS.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Browser doesn't support notifications at all
+  if (!supportsNotifications()) {
+    return null;
+  }
+
+  // Permission was denied — show platform-specific recovery instructions
+  if (permission === "denied") {
+    return (
+      <div className="mx-2 mt-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 md:p-2.5">
+        <p className="text-sm md:text-xs font-medium text-destructive">Notifications blocked</p>
+        <p className="mt-0.5 text-sm md:text-xs text-muted-foreground">
+          {getDeniedPermissionInstructions()}
+        </p>
+        <button
+          type="button"
+          className="mt-1.5 text-sm md:text-xs font-medium text-primary hover:underline"
+          onClick={() => setPermission(getNotificationPermission())}
+        >
+          Re-check permission
+        </button>
+      </div>
+    );
+  }
+
+  // Permission is "default" (never asked) or notifications are disabled in app settings
+  const handleEnable = async () => {
+    setRequesting(true);
+    try {
+      const result = await requestNotificationPermission();
+      setPermission(result);
+      if (result === "granted") {
+        updateSettings({ enableNotifications: true });
+        const api = readNativeApi();
+        if (api && supportsPush()) {
+          await subscribeToPush(api.notifications);
+        }
+        onPermissionChange();
+      }
+    } finally {
+      setRequesting(false);
+    }
+  };
+
+  return (
+    <div className="mx-2 mt-2 rounded-lg border border-primary/20 bg-primary/5 p-3 md:p-2.5">
+      <div className="flex items-start gap-2.5">
+        <BellRingIcon className="mt-0.5 size-4 shrink-0 text-primary" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm md:text-xs font-medium text-foreground">
+            Stay in the loop
+          </p>
+          <p className="mt-0.5 text-sm md:text-xs text-muted-foreground">
+            Get notified when tasks complete, need approval, or require your input.
+          </p>
+          <Button
+            size="sm"
+            className="mt-2 h-8 md:h-7 text-sm md:text-xs"
+            disabled={requesting}
+            onClick={() => void handleEnable()}
+          >
+            {requesting ? "Requesting..." : "Enable notifications"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function NotificationBell() {
@@ -264,28 +394,29 @@ export function NotificationBell() {
         />
         <TooltipPopup side="bottom">Notifications</TooltipPopup>
       </Tooltip>
-      <SheetPopup side="right" className="w-80 sm:w-96">
-          <SheetHeader className="flex-row items-center justify-between gap-2 border-b border-border px-4 py-3">
-            <SheetTitle className="text-base">Notifications</SheetTitle>
+      <SheetPopup side="right" className="w-full max-w-none md:w-96 md:max-w-md">
+          <SheetHeader className="flex-row items-center justify-between gap-2 border-b border-border px-5 md:px-4 py-4 md:py-3">
+            <SheetTitle className="text-lg md:text-base">Notifications</SheetTitle>
             <SheetDescription className="sr-only">Notification history</SheetDescription>
             {unreadCount > 0 && (
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-7 gap-1.5 text-xs"
+                className="h-10 md:h-7 gap-2 md:gap-1.5 text-sm md:text-xs"
                 onClick={handleMarkAllRead}
               >
-                <CheckCheckIcon className="size-3.5" />
+                <CheckCheckIcon className="size-4 md:size-3.5" />
                 Mark all read
               </Button>
             )}
           </SheetHeader>
+          <NotificationPermissionBanner onPermissionChange={fetchUnreadCount} />
           <ScrollArea className="flex-1">
-            <div className="flex flex-col gap-0.5 p-2">
+            <div className="flex flex-col divide-y divide-border/50 md:divide-y-0 md:gap-0.5 p-2">
               {notifications.length === 0 ? (
-                <div className="flex flex-col items-center justify-center gap-2 py-12 text-muted-foreground">
-                  <InboxIcon className="size-8" />
-                  <p className="text-sm">No notifications yet</p>
+                <div className="flex flex-col items-center justify-center gap-3 md:gap-2 py-16 md:py-12 text-muted-foreground">
+                  <InboxIcon className="size-12 md:size-8" />
+                  <p className="text-base md:text-sm">No notifications yet</p>
                 </div>
               ) : (
                 notifications.map((notification) => (
