@@ -270,6 +270,7 @@ code,
 textarea,
 input {
   font-family: "SF Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: max(16px, 1em); /* Prevent iOS auto-zoom on focus */
 }
 
 /* Window drag region (frameless titlebar) */
