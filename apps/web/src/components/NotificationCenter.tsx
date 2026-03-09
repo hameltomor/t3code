@@ -66,7 +66,7 @@ function NotificationItem({
     <button
       type="button"
       className={cn(
-        "flex w-full gap-3 md:gap-3 rounded-lg px-4 md:px-3 py-4 md:py-2.5 text-left transition-colors hover:bg-muted/50 active:bg-muted/70",
+        "flex w-full cursor-pointer gap-3 md:gap-3 rounded-lg px-4 md:px-3 py-4 md:py-2.5 text-left transition-colors hover:bg-muted/50 active:bg-muted/70",
         isUnread && "bg-muted/30",
       )}
       onClick={() => onNavigate(notification.threadId, notification.notificationId)}
