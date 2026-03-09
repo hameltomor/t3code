@@ -31,6 +31,7 @@ import { TerminalManagerLive } from "./terminal/Layers/Manager";
 import { KeybindingsLive } from "./keybindings";
 import { ProjectionNotificationRepositoryLive } from "./persistence/Layers/ProjectionNotifications";
 import { ProjectionPushSubscriptionRepositoryLive } from "./persistence/Layers/ProjectionPushSubscriptions";
+import { ProjectionDraftRepositoryLive } from "./persistence/Layers/ProjectionDrafts";
 import { WebPushServiceLive } from "./push/WebPushService";
 import { GitManagerLive } from "./git/Layers/GitManager";
 import { GitCoreLive } from "./git/Layers/GitCore";
@@ -150,6 +151,7 @@ export function makeServerRuntimeServicesLayer() {
     terminalLayer,
     KeybindingsLive,
     ProjectionNotificationRepositoryLive,
+    ProjectionDraftRepositoryLive,
     notificationLayer,
   ).pipe(Layer.provideMerge(NodeServices.layer));
 }

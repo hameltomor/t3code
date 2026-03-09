@@ -75,6 +75,7 @@ import { parseBase64DataUrl } from "./imageMime.ts";
 import { AnalyticsService } from "./telemetry/Services/AnalyticsService.ts";
 import { ProjectionNotificationRepository } from "./persistence/Services/ProjectionNotifications.ts";
 import { ProjectionPushSubscriptionRepository } from "./persistence/Services/ProjectionPushSubscriptions.ts";
+import { ProjectionDraftRepository } from "./persistence/Services/ProjectionDrafts.ts";
 import { WebPushService } from "./push/WebPushService.ts";
 import { expandHomePath } from "./os-jank.ts";
 
@@ -231,6 +232,7 @@ export type ServerRuntimeServices =
   | AnalyticsService
   | ProjectionNotificationRepository
   | ProjectionPushSubscriptionRepository
+  | ProjectionDraftRepository
   | WebPushService;
 
 export class ServerLifecycleError extends Schema.TaggedErrorClass<ServerLifecycleError>()(
@@ -632,6 +634,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
   const notificationRepository = yield* ProjectionNotificationRepository;
   const pushSubscriptionRepository = yield* ProjectionPushSubscriptionRepository;
   const webPushService = yield* WebPushService;
+  const draftRepository = yield* ProjectionDraftRepository;
 
   const subscriptionsScope = yield* Scope.make("sequential");
   yield* Effect.addFinalizer(() => Scope.close(subscriptionsScope, Exit.void));
@@ -1042,6 +1045,36 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
       case WS_METHODS.notificationUnsubscribePush: {
         const { endpoint } = request.body;
         yield* pushSubscriptionRepository.deleteByEndpoint(endpoint);
+        return {};
+      }
+
+      case WS_METHODS.draftsSave: {
+        const { threadId, projectId, prompt, provider, model, runtimeMode, interactionMode, effort, codexFastMode, attachmentsJson, updatedAt } = request.body;
+        yield* draftRepository.upsert({
+          threadId,
+          projectId,
+          prompt,
+          provider: provider ?? null,
+          model: model ?? null,
+          runtimeMode: runtimeMode ?? null,
+          interactionMode: interactionMode ?? null,
+          effort: effort ?? null,
+          codexFastMode: codexFastMode ?? null,
+          attachmentsJson: attachmentsJson ?? "[]",
+          updatedAt,
+        });
+        return {};
+      }
+
+      case WS_METHODS.draftsList: {
+        const { projectId } = request.body;
+        const drafts = yield* draftRepository.listByProjectId({ projectId });
+        return { drafts };
+      }
+
+      case WS_METHODS.draftsDelete: {
+        const { threadId } = request.body;
+        yield* draftRepository.deleteByThreadId({ threadId });
         return {};
       }
 

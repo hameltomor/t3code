@@ -1,4 +1,4 @@
-import { ThreadId } from "@xbetools/contracts";
+import { ProjectId, ThreadId } from "@xbetools/contracts";
 import {
   Outlet,
   createRootRouteWithContext,
@@ -14,7 +14,7 @@ import { Button } from "../components/ui/button";
 import { AnchoredToastProvider, ToastProvider, toastManager } from "../components/ui/toast";
 import { serverConfigQueryOptions, serverQueryKeys } from "../lib/serverReactQuery";
 import { readNativeApi } from "../nativeApi";
-import { useComposerDraftStore } from "../composerDraftStore";
+import { hydrateDraftsFromServer, useComposerDraftStore } from "../composerDraftStore";
 import { useStore } from "../store";
 import { useTerminalStateStore } from "../terminalStateStore";
 import { preferredTerminalEditor } from "../terminal-links";
@@ -215,6 +215,19 @@ function EventRouter() {
         await syncSnapshot();
         if (disposed) {
           return;
+        }
+
+        // Hydrate server-persisted drafts for all known projects
+        const projectIds = Object.keys(
+          useComposerDraftStore.getState().projectDraftThreadIdByProjectId,
+        ) as ProjectId[];
+        if (payload.bootstrapProjectId) {
+          if (!projectIds.includes(payload.bootstrapProjectId)) {
+            projectIds.push(payload.bootstrapProjectId);
+          }
+        }
+        for (const pid of projectIds) {
+          hydrateDraftsFromServer(pid).catch(() => {});
         }
 
         if (!payload.bootstrapProjectId || !payload.bootstrapThreadId) {

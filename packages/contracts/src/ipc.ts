@@ -51,6 +51,7 @@ import type {
   NotificationUnreadCountResult,
   VapidPublicKeyResult,
 } from "./notification";
+import type { DraftListResult, DraftSaveInput } from "./draft";
 import { EditorId } from "./editor";
 
 export interface ContextMenuItem<T extends string = string> {
@@ -182,5 +183,10 @@ export interface NativeApi {
     }) => Promise<void>;
     unsubscribePush: (endpoint: string) => Promise<void>;
     onNotification: (callback: (notification: AppNotification) => void) => () => void;
+  };
+  drafts: {
+    save: (input: DraftSaveInput) => Promise<void>;
+    list: (projectId: string) => Promise<DraftListResult>;
+    delete: (threadId: string) => Promise<void>;
   };
 }

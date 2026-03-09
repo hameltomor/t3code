@@ -229,6 +229,11 @@ export function createWsNativeApi(): NativeApi {
           if (payload) callback(payload);
         }),
     },
+    drafts: {
+      save: (input) => transport.request(WS_METHODS.draftsSave, input),
+      list: (projectId) => transport.request(WS_METHODS.draftsList, { projectId }),
+      delete: (threadId) => transport.request(WS_METHODS.draftsDelete, { threadId }),
+    },
   };
 
   instance = { api, transport };

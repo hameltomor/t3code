@@ -43,6 +43,7 @@ import {
 import { KeybindingRule } from "./keybindings";
 import { ProjectSearchEntriesInput, ProjectWriteFileInput } from "./project";
 import { OpenInEditorInput } from "./editor";
+import { DRAFT_WS_METHODS, DraftDeleteInput, DraftListInput, DraftSaveInput } from "./draft";
 
 // ── WebSocket RPC Method Names ───────────────────────────────────────
 
@@ -93,6 +94,11 @@ export const WS_METHODS = {
   notificationGetVapidPublicKey: NOTIFICATION_WS_METHODS.getVapidPublicKey,
   notificationSubscribePush: NOTIFICATION_WS_METHODS.subscribePush,
   notificationUnsubscribePush: NOTIFICATION_WS_METHODS.unsubscribePush,
+
+  // Draft methods
+  draftsSave: DRAFT_WS_METHODS.save,
+  draftsList: DRAFT_WS_METHODS.list,
+  draftsDelete: DRAFT_WS_METHODS.delete,
 } as const;
 
 // ── Push Event Channels ──────────────────────────────────────────────
@@ -170,6 +176,11 @@ const WebSocketRequestBody = Schema.Union([
   tagRequestBody(WS_METHODS.notificationGetVapidPublicKey, Schema.Struct({})),
   tagRequestBody(WS_METHODS.notificationSubscribePush, PushSubscriptionInput),
   tagRequestBody(WS_METHODS.notificationUnsubscribePush, PushUnsubscribeInput),
+
+  // Draft methods
+  tagRequestBody(WS_METHODS.draftsSave, DraftSaveInput),
+  tagRequestBody(WS_METHODS.draftsList, DraftListInput),
+  tagRequestBody(WS_METHODS.draftsDelete, DraftDeleteInput),
 ]);
 
 export const WebSocketRequest = Schema.Struct({

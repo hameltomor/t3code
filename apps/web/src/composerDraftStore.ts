@@ -16,6 +16,7 @@ import {
 } from "./types";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { readNativeApi } from "./nativeApi";
 
 export const COMPOSER_DRAFT_STORAGE_KEY = "xbecode:composer-drafts:v1";
 export type DraftThreadEnvMode = "local" | "worktree";
@@ -523,6 +524,149 @@ function toHydratedThreadDraft(
   };
 }
 
+// ── Server Draft Sync ──────────────────────────────────────────────────
+
+const DRAFT_SYNC_DEBOUNCE_MS = 500;
+const draftSyncTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/**
+ * Look up the projectId for a thread from the draft thread state.
+ * Returns null if no mapping exists (e.g. the thread is server-owned).
+ */
+function getProjectIdForThread(threadId: ThreadId): ProjectId | null {
+  // Peek into the store without subscribing (safe in non-React code)
+  const state = useComposerDraftStore.getState();
+  const draftThread = state.draftThreadsByThreadId[threadId];
+  if (draftThread) return draftThread.projectId;
+  // Fallback: reverse-lookup from project mapping
+  for (const [projectId, draftThreadId] of Object.entries(state.projectDraftThreadIdByProjectId)) {
+    if (draftThreadId === threadId) return projectId as ProjectId;
+  }
+  return null;
+}
+
+function scheduleDraftSync(threadId: ThreadId): void {
+  const existing = draftSyncTimers.get(threadId);
+  if (existing != null) clearTimeout(existing);
+
+  draftSyncTimers.set(
+    threadId,
+    setTimeout(() => {
+      draftSyncTimers.delete(threadId);
+      syncDraftToServer(threadId);
+    }, DRAFT_SYNC_DEBOUNCE_MS),
+  );
+}
+
+function syncDraftToServer(threadId: ThreadId): void {
+  const api = readNativeApi();
+  if (!api) return;
+
+  const state = useComposerDraftStore.getState();
+  const draft = state.draftsByThreadId[threadId];
+  const projectId = getProjectIdForThread(threadId);
+  if (!projectId) return;
+
+  if (!draft || shouldRemoveDraft(draft)) {
+    // Draft was cleared — delete from server
+    api.drafts.delete(threadId).catch(() => {});
+    return;
+  }
+
+  api.drafts
+    .save({
+      threadId,
+      projectId,
+      prompt: draft.prompt,
+      provider: draft.provider ?? null,
+      model: draft.model ?? null,
+      runtimeMode: draft.runtimeMode ?? null,
+      interactionMode: draft.interactionMode ?? null,
+      effort: draft.effort ?? null,
+      codexFastMode: draft.codexFastMode || null,
+      attachmentsJson: JSON.stringify(
+        draft.persistedAttachments.map((a) => ({
+          id: a.id,
+          name: a.name,
+          mimeType: a.mimeType,
+          sizeBytes: a.sizeBytes,
+        })),
+      ),
+      updatedAt: new Date().toISOString(),
+    })
+    .catch(() => {});
+}
+
+function deleteDraftFromServer(threadId: ThreadId): void {
+  // Cancel any pending sync
+  const pending = draftSyncTimers.get(threadId);
+  if (pending != null) {
+    clearTimeout(pending);
+    draftSyncTimers.delete(threadId);
+  }
+  const api = readNativeApi();
+  if (!api) return;
+  api.drafts.delete(threadId).catch(() => {});
+}
+
+/**
+ * Hydrate drafts from the server.  Call this after WS connect to merge
+ * server-persisted drafts with local state.  Server wins when its
+ * `updatedAt` is newer than the local version.
+ */
+export async function hydrateDraftsFromServer(projectId: ProjectId): Promise<void> {
+  const api = readNativeApi();
+  if (!api) return;
+
+  try {
+    const { drafts } = await api.drafts.list(projectId);
+    if (!drafts || drafts.length === 0) return;
+
+    const state = useComposerDraftStore.getState();
+    const updates: Record<ThreadId, ComposerThreadDraftState> = {};
+
+    for (const serverDraft of drafts) {
+      const localDraft = state.draftsByThreadId[serverDraft.threadId];
+      // Only apply server draft if no local draft exists
+      // (if a local draft exists, it's fresher since localStorage writes are synchronous)
+      if (localDraft && localDraft.prompt.length > 0) {
+        continue;
+      }
+      if (serverDraft.prompt.length === 0) continue;
+
+      updates[serverDraft.threadId] = {
+        prompt: serverDraft.prompt,
+        images: [],
+        nonPersistedImageIds: [],
+        persistedAttachments: [],
+        provider: normalizeProviderKind(serverDraft.provider),
+        model: serverDraft.model ?? null,
+        runtimeMode:
+          serverDraft.runtimeMode === "approval-required" || serverDraft.runtimeMode === "full-access"
+            ? serverDraft.runtimeMode
+            : null,
+        interactionMode:
+          serverDraft.interactionMode === "plan" || serverDraft.interactionMode === "default"
+            ? serverDraft.interactionMode
+            : null,
+        effort:
+          serverDraft.effort && REASONING_EFFORT_VALUES.has(serverDraft.effort as CodexReasoningEffort)
+            ? (serverDraft.effort as CodexReasoningEffort)
+            : null,
+        codexFastMode: serverDraft.codexFastMode === true,
+      };
+    }
+
+    if (Object.keys(updates).length === 0) return;
+
+    useComposerDraftStore.setState((state) => ({
+      draftsByThreadId: { ...state.draftsByThreadId, ...updates },
+    }));
+  } catch {
+    // Server unavailable — local state is the source of truth
+  }
+}
+
 export const useComposerDraftStore = create<ComposerDraftStoreState>()(
   persist(
     (set, get) => ({
@@ -780,6 +924,7 @@ export const useComposerDraftStore = create<ComposerDraftStoreState>()(
           }
           return { draftsByThreadId: nextDraftsByThreadId };
         });
+        scheduleDraftSync(threadId);
       },
       setProvider: (threadId, provider) => {
         if (threadId.length === 0) {
@@ -807,6 +952,7 @@ export const useComposerDraftStore = create<ComposerDraftStoreState>()(
           }
           return { draftsByThreadId: nextDraftsByThreadId };
         });
+        scheduleDraftSync(threadId);
       },
       setModel: (threadId, model) => {
         if (threadId.length === 0) {
@@ -834,6 +980,7 @@ export const useComposerDraftStore = create<ComposerDraftStoreState>()(
           }
           return { draftsByThreadId: nextDraftsByThreadId };
         });
+        scheduleDraftSync(threadId);
       },
       setRuntimeMode: (threadId, runtimeMode) => {
         if (threadId.length === 0) {
@@ -862,6 +1009,7 @@ export const useComposerDraftStore = create<ComposerDraftStoreState>()(
           }
           return { draftsByThreadId: nextDraftsByThreadId };
         });
+        scheduleDraftSync(threadId);
       },
       setInteractionMode: (threadId, interactionMode) => {
         if (threadId.length === 0) {
@@ -890,6 +1038,7 @@ export const useComposerDraftStore = create<ComposerDraftStoreState>()(
           }
           return { draftsByThreadId: nextDraftsByThreadId };
         });
+        scheduleDraftSync(threadId);
       },
       setEffort: (threadId, effort) => {
         if (threadId.length === 0) {
@@ -922,6 +1071,7 @@ export const useComposerDraftStore = create<ComposerDraftStoreState>()(
           }
           return { draftsByThreadId: nextDraftsByThreadId };
         });
+        scheduleDraftSync(threadId);
       },
       setCodexFastMode: (threadId, enabled) => {
         if (threadId.length === 0) {
@@ -949,6 +1099,7 @@ export const useComposerDraftStore = create<ComposerDraftStoreState>()(
           }
           return { draftsByThreadId: nextDraftsByThreadId };
         });
+        scheduleDraftSync(threadId);
       },
       addImage: (threadId, image) => {
         if (threadId.length === 0) {
@@ -1132,6 +1283,7 @@ export const useComposerDraftStore = create<ComposerDraftStoreState>()(
           }
           return { draftsByThreadId: nextDraftsByThreadId };
         });
+        deleteDraftFromServer(threadId);
       },
       clearThreadDraft: (threadId) => {
         if (threadId.length === 0) {
@@ -1143,6 +1295,7 @@ export const useComposerDraftStore = create<ComposerDraftStoreState>()(
             revokeObjectPreviewUrl(image.previewUrl);
           }
         }
+        deleteDraftFromServer(threadId);
         set((state) => {
           const hasComposerDraft = state.draftsByThreadId[threadId] !== undefined;
           const hasDraftThread = state.draftThreadsByThreadId[threadId] !== undefined;
