@@ -420,17 +420,40 @@ const makeGitCore = Effect.gen(function* () {
       allowNonZeroExit: true,
     }).pipe(Effect.map((result) => result.code === 0));
 
+  const getOriginRemoteUrl = (cwd: string): Effect.Effect<string | null, GitCommandError> =>
+    executeGit("GitCore.getOriginRemoteUrl", cwd, ["remote", "get-url", "origin"], {
+      allowNonZeroExit: true,
+    }).pipe(
+      Effect.map((result) => {
+        if (result.code !== 0) return null;
+        const trimmed = result.stdout.trim();
+        return trimmed.length > 0 ? trimmed : null;
+      }),
+    );
+
   const resolveBaseBranchForNoUpstream = (
     cwd: string,
     branch: string,
   ): Effect.Effect<string | null, GitCommandError> =>
     Effect.gen(function* () {
-      const configuredBaseBranch = yield* runGitStdout(
-        "GitCore.resolveBaseBranchForNoUpstream.config",
+      // Check neutral config key first, then legacy GitHub-specific key
+      const neutralConfigured = yield* runGitStdout(
+        "GitCore.resolveBaseBranchForNoUpstream.config.neutral",
         cwd,
-        ["config", "--get", `branch.${branch}.gh-merge-base`],
+        ["config", "--get", `branch.${branch}.merge-base`],
         true,
       ).pipe(Effect.map((stdout) => stdout.trim()));
+
+      const ghConfigured = neutralConfigured.length > 0
+        ? ""
+        : yield* runGitStdout(
+            "GitCore.resolveBaseBranchForNoUpstream.config.gh",
+            cwd,
+            ["config", "--get", `branch.${branch}.gh-merge-base`],
+            true,
+          ).pipe(Effect.map((stdout) => stdout.trim()));
+
+      const configuredBaseBranch = neutralConfigured.length > 0 ? neutralConfigured : ghConfigured;
 
       const defaultBranch = yield* resolveDefaultBranchName(cwd);
       const candidates = [
@@ -1337,6 +1360,7 @@ const makeGitCore = Effect.gen(function* () {
     checkoutBranch,
     initRepo,
     listLocalBranchNames,
+    getOriginRemoteUrl,
     createWorkspaceWorktrees,
     removeWorkspaceWorktrees,
   } satisfies GitCoreShape;

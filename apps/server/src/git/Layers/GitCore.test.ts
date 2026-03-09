@@ -111,6 +111,7 @@ const makeIsolatedGitCore = (gitService: GitServiceShape) =>
       checkoutBranch: (input) => core.checkoutBranch(input),
       initRepo: (input) => core.initRepo(input),
       listLocalBranchNames: (cwd) => core.listLocalBranchNames(cwd),
+      getOriginRemoteUrl: (cwd) => core.getOriginRemoteUrl(cwd),
       createWorkspaceWorktrees: (input) => core.createWorkspaceWorktrees(input),
       removeWorkspaceWorktrees: (input) => core.removeWorkspaceWorktrees(input),
     } satisfies GitCoreShape;

@@ -34,7 +34,7 @@ import { ProjectionPushSubscriptionRepositoryLive } from "./persistence/Layers/P
 import { WebPushServiceLive } from "./push/WebPushService";
 import { GitManagerLive } from "./git/Layers/GitManager";
 import { GitCoreLive } from "./git/Layers/GitCore";
-import { GitHubCliLive } from "./git/Layers/GitHubCli";
+import { ForgeCliResolverLive } from "./git/Layers/ForgeCliResolver";
 import { CodexTextGenerationLive } from "./git/Layers/CodexTextGeneration";
 import { GitServiceLive } from "./git/Layers/GitService";
 import { WorkspaceRepoScannerLive } from "./git/Layers/WorkspaceRepoScanner";
@@ -123,9 +123,11 @@ export function makeServerRuntimeServicesLayer() {
     ),
   );
 
+  const forgeCliResolverLayer = ForgeCliResolverLive.pipe(Layer.provideMerge(gitCoreLayer));
+
   const gitManagerLayer = GitManagerLive.pipe(
     Layer.provideMerge(gitCoreLayer),
-    Layer.provideMerge(GitHubCliLive),
+    Layer.provideMerge(forgeCliResolverLayer),
     Layer.provideMerge(textGenerationLayer),
   );
 

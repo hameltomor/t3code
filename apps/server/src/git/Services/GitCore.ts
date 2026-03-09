@@ -167,6 +167,11 @@ export interface GitCoreShape {
   readonly listLocalBranchNames: (cwd: string) => Effect.Effect<string[], GitCommandError>;
 
   /**
+   * Get the URL of the `origin` remote, or null if no origin is configured.
+   */
+  readonly getOriginRemoteUrl: (cwd: string) => Effect.Effect<string | null, GitCommandError>;
+
+  /**
    * Create worktrees for multiple repos and assemble a synthetic workspace.
    */
   readonly createWorkspaceWorktrees: (

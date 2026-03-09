@@ -3,6 +3,11 @@ import type {
   GitStackedAction,
   GitStatusResult,
 } from "@xbetools/contracts";
+import {
+  type ForgeProvider,
+  reviewRequestLabel,
+  reviewRequestNoun,
+} from "../lib/forgeCopy";
 
 export type GitActionIconName = "commit" | "push" | "pr";
 
@@ -58,6 +63,7 @@ export function buildGitActionProgressStages(input: {
   forcePushOnly?: boolean;
   pushTarget?: string;
   featureBranch?: boolean;
+  forgeProvider?: ForgeProvider;
 }): string[] {
   const branchStages = input.featureBranch ? ["Preparing feature branch..."] : [];
   const shouldIncludeCommitStages =
@@ -74,19 +80,24 @@ export function buildGitActionProgressStages(input: {
   if (input.action === "commit_push") {
     return [...branchStages, ...commitStages, pushStage];
   }
-  return [...branchStages, ...commitStages, pushStage, "Creating PR..."];
+  return [...branchStages, ...commitStages, pushStage, reviewRequestLabel("creating", input.forgeProvider ?? "unknown")];
 }
 
 const withDescription = (title: string, description: string | undefined) =>
   description ? { title, description } : { title };
 
-export function summarizeGitResult(result: GitRunStackedActionResult): {
+export function summarizeGitResult(
+  result: GitRunStackedActionResult,
+  forgeProvider: ForgeProvider = "unknown",
+): {
   title: string;
   description?: string;
 } {
   if (result.pr.status === "created" || result.pr.status === "opened_existing") {
+    const noun = reviewRequestNoun(forgeProvider);
     const prNumber = result.pr.number ? ` #${result.pr.number}` : "";
-    const title = `${result.pr.status === "created" ? "Created PR" : "Opened PR"}${prNumber}`;
+    const verb = result.pr.status === "created" ? "Created" : "Opened";
+    const title = `${verb} ${noun}${prNumber}`;
     return withDescription(title, truncateText(result.pr.title));
   }
 
@@ -113,6 +124,7 @@ export function summarizeGitResult(result: GitRunStackedActionResult): {
 export function buildMenuItems(
   gitStatus: GitStatusResult | null,
   isBusy: boolean,
+  forgeProvider: ForgeProvider = "unknown",
 ): GitActionMenuItem[] {
   if (!gitStatus) return [];
 
@@ -120,10 +132,12 @@ export function buildMenuItems(
   const hasChanges = gitStatus.hasWorkingTreeChanges;
   const hasOpenPr = gitStatus.pr?.state === "open";
   const isBehind = gitStatus.behindCount > 0;
+  const hasKnownProvider = forgeProvider !== "unknown";
   const canCommit = !isBusy && hasChanges;
   const canPush = !isBusy && hasBranch && !hasChanges && !isBehind && gitStatus.aheadCount > 0;
   const canCreatePr =
     !isBusy &&
+    hasKnownProvider &&
     hasBranch &&
     !hasChanges &&
     !hasOpenPr &&
@@ -151,14 +165,14 @@ export function buildMenuItems(
     hasOpenPr
       ? {
           id: "pr",
-          label: "Open PR",
+          label: reviewRequestLabel("open", forgeProvider),
           disabled: !canOpenPr,
           icon: "pr",
           kind: "open_pr",
         }
       : {
           id: "pr",
-          label: "Create PR",
+          label: reviewRequestLabel("create", forgeProvider),
           disabled: !canCreatePr,
           icon: "pr",
           kind: "open_dialog",
@@ -171,6 +185,7 @@ export function resolveQuickAction(
   gitStatus: GitStatusResult | null,
   isBusy: boolean,
   isDefaultBranch = false,
+  forgeProvider: ForgeProvider = "unknown",
 ): GitQuickAction {
   if (isBusy) {
     return { label: "Commit", disabled: true, kind: "show_hint", hint: "Git action in progress." };
@@ -185,6 +200,8 @@ export function resolveQuickAction(
     };
   }
 
+  const noun = reviewRequestNoun(forgeProvider);
+  const hasKnownProvider = forgeProvider !== "unknown";
   const hasBranch = gitStatus.branch !== null;
   const hasChanges = gitStatus.hasWorkingTreeChanges;
   const hasOpenPr = gitStatus.pr?.state === "open";
@@ -197,16 +214,16 @@ export function resolveQuickAction(
       label: "Commit",
       disabled: true,
       kind: "show_hint",
-      hint: "Create and checkout a branch before pushing or opening a PR.",
+      hint: `Create and checkout a branch before pushing or opening a ${noun}.`,
     };
   }
 
   if (hasChanges) {
-    if (hasOpenPr || isDefaultBranch) {
+    if (hasOpenPr || isDefaultBranch || !hasKnownProvider) {
       return { label: "Commit & push", disabled: false, kind: "run_action", action: "commit_push" };
     }
     return {
-      label: "Commit, push & create PR",
+      label: `Commit, push & create ${reviewRequestNoun(forgeProvider)}`,
       disabled: false,
       kind: "run_action",
       action: "commit_push_pr",
@@ -216,7 +233,7 @@ export function resolveQuickAction(
   if (!gitStatus.hasUpstream) {
     if (!isAhead) {
       if (hasOpenPr) {
-        return { label: "Open PR", disabled: false, kind: "open_pr" };
+        return { label: reviewRequestLabel("open", forgeProvider), disabled: false, kind: "open_pr" };
       }
       return {
         label: "Push",
@@ -225,11 +242,11 @@ export function resolveQuickAction(
         hint: "No local commits to push.",
       };
     }
-    if (hasOpenPr || isDefaultBranch) {
+    if (hasOpenPr || isDefaultBranch || !hasKnownProvider) {
       return { label: "Push", disabled: false, kind: "run_action", action: "commit_push" };
     }
     return {
-      label: "Push & create PR",
+      label: `Push & create ${reviewRequestNoun(forgeProvider)}`,
       disabled: false,
       kind: "run_action",
       action: "commit_push_pr",
@@ -254,11 +271,11 @@ export function resolveQuickAction(
   }
 
   if (isAhead) {
-    if (hasOpenPr || isDefaultBranch) {
+    if (hasOpenPr || isDefaultBranch || !hasKnownProvider) {
       return { label: "Push", disabled: false, kind: "run_action", action: "commit_push" };
     }
     return {
-      label: "Push & create PR",
+      label: `Push & create ${reviewRequestNoun(forgeProvider)}`,
       disabled: false,
       kind: "run_action",
       action: "commit_push_pr",
@@ -266,7 +283,7 @@ export function resolveQuickAction(
   }
 
   if (hasOpenPr && gitStatus.hasUpstream) {
-    return { label: "Open PR", disabled: false, kind: "open_pr" };
+    return { label: reviewRequestLabel("open", forgeProvider), disabled: false, kind: "open_pr" };
   }
 
   return {
@@ -289,8 +306,10 @@ export function resolveDefaultBranchActionDialogCopy(input: {
   action: DefaultBranchConfirmableAction;
   branchName: string;
   includesCommit: boolean;
+  forgeProvider?: ForgeProvider;
 }): DefaultBranchActionDialogCopy {
   const branchLabel = input.branchName;
+  const noun = reviewRequestNoun(input.forgeProvider ?? "unknown");
   const suffix = ` on "${branchLabel}". You can continue on this branch or create a feature branch and run the same action there.`;
 
   if (input.action === "commit_push") {
@@ -308,17 +327,18 @@ export function resolveDefaultBranchActionDialogCopy(input: {
     };
   }
 
+  const createNoun = `create ${reviewRequestNoun(input.forgeProvider ?? "unknown")}`;
   if (input.includesCommit) {
     return {
-      title: "Commit, push & create PR from default branch?",
-      description: `This action will commit, push, and create a PR${suffix}`,
-      continueLabel: `Commit, push & create PR`,
+      title: `Commit, push & ${createNoun} from default branch?`,
+      description: `This action will commit, push, and create a ${noun}${suffix}`,
+      continueLabel: `Commit, push & ${createNoun}`,
     };
   }
   return {
-    title: "Push & create PR from default branch?",
-    description: `This action will push local commits and create a PR${suffix}`,
-    continueLabel: "Push & create PR",
+    title: `Push & ${createNoun} from default branch?`,
+    description: `This action will push local commits and create a ${noun}${suffix}`,
+    continueLabel: `Push & ${createNoun}`,
   };
 }
 
