@@ -94,6 +94,6 @@ When you restart the app with `pm2`, refresh the environment so it picks up the 
 pm2 restart ecosystem.config.cjs --update-env
 ```
 
-## Some notes
+## Contributing
 
-We are very very early in this project. Expect bugs.
+PRs welcome, ideas welcome, complaints welcome.
