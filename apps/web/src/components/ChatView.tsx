@@ -4188,7 +4188,7 @@ const ChatHeader = memo(function ChatHeader({
   const gitActionsRepoCwd = isMultiRepo ? (selectedRepoCwd ?? workspaceRepos[0]?.path ?? null) : gitCwd;
 
   return (
-    <div className="flex min-w-0 flex-1 items-center gap-2">
+    <div className="flex min-w-0 flex-1 flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2">
       <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden sm:gap-3">
         <SidebarTrigger className="size-7 shrink-0 md:hidden" />
         <h2
@@ -4212,32 +4212,38 @@ const ChatHeader = memo(function ChatHeader({
           </Badge>
         )}
       </div>
-      <div className="@container/header-actions flex min-w-0 flex-1 items-center justify-end gap-2 @sm/header-actions:gap-3">
+      <div className="@container/header-actions flex w-full min-w-0 items-center gap-2 @sm/header-actions:gap-3 sm:w-auto sm:flex-1 sm:justify-end">
         {activeProjectScripts && (
-          <ProjectScriptsControl
-            scripts={activeProjectScripts}
-            keybindings={keybindings}
-            preferredScriptId={preferredScriptId}
-            onRunScript={onRunProjectScript}
-            onAddScript={onAddProjectScript}
-            onUpdateScript={onUpdateProjectScript}
-          />
+          <div className="hidden sm:contents">
+            <ProjectScriptsControl
+              scripts={activeProjectScripts}
+              keybindings={keybindings}
+              preferredScriptId={preferredScriptId}
+              onRunScript={onRunProjectScript}
+              onAddScript={onAddProjectScript}
+              onUpdateScript={onUpdateProjectScript}
+            />
+          </div>
         )}
         {activeProjectName && (
-          <OpenInPicker
-            keybindings={keybindings}
-            availableEditors={availableEditors}
-            openInCwd={openInCwd}
-          />
+          <div className="hidden sm:contents">
+            <OpenInPicker
+              keybindings={keybindings}
+              availableEditors={availableEditors}
+              openInCwd={openInCwd}
+            />
+          </div>
         )}
         {activeProjectName && isMultiRepo && activeProjectId && workspaceReposQueryCwd && (
-          <RepoSwitcher
-            projectId={activeProjectId}
-            workspaceRoot={workspaceReposQueryCwd}
-            onSelectedRepoCwdChange={(repoCwd) => {
-              if (activeProjectId) setSelectedRepoCwd(activeProjectId, repoCwd);
-            }}
-          />
+          <div className="min-w-0 flex-1 sm:flex-initial [&_button]:sm:max-w-48 [&_button]:max-w-none [&_button]:w-full">
+            <RepoSwitcher
+              projectId={activeProjectId}
+              workspaceRoot={workspaceReposQueryCwd}
+              onSelectedRepoCwdChange={(repoCwd) => {
+                if (activeProjectId) setSelectedRepoCwd(activeProjectId, repoCwd);
+              }}
+            />
+          </div>
         )}
         {activeProjectName && <GitActionsControl gitCwd={gitActionsRepoCwd} activeThreadId={activeThreadId} />}
         <Tooltip>

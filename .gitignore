@@ -19,3 +19,4 @@ apps/web/src/components/__screenshots__
 tmp/
 logs/
 temp/
+.playwright-mcp/
