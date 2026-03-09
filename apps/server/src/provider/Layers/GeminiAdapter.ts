@@ -154,7 +154,7 @@ function resolveApiKey(
 
 function buildResumeCursor(ctx: GeminiSessionContext) {
   return {
-    threadId: ctx.session.threadId,
+    threadId: ctx.session.threadId!,
     model: ctx.model,
     turnCount: ctx.turns.length,
     turns: ctx.turns.map(serializeTurn),
@@ -231,7 +231,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
             type: "content.delta",
             eventId: stamp.eventId,
             provider: PROVIDER,
-            threadId: ctx.session.threadId,
+            threadId: ctx.session.threadId!,
             createdAt: stamp.createdAt,
             turnId: ts.turnId,
             itemId: RuntimeItemId.makeUnsafe(ts.assistantItemId),
@@ -246,7 +246,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
             type: "item.completed",
             eventId: stamp.eventId,
             provider: PROVIDER,
-            threadId: ctx.session.threadId,
+            threadId: ctx.session.threadId!,
             createdAt: stamp.createdAt,
             turnId: ts.turnId,
             itemId: RuntimeItemId.makeUnsafe(ts.assistantItemId),
@@ -266,7 +266,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
             type: "turn.completed",
             eventId: stamp.eventId,
             provider: PROVIDER,
-            threadId: ctx.session.threadId,
+            threadId: ctx.session.threadId!,
             createdAt: stamp.createdAt,
             turnId: ts.turnId,
             payload: {
@@ -313,7 +313,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
         }
 
         ctx.session.status = "closed";
-        sessions.delete(ctx.session.threadId);
+        sessions.delete(ctx.session.threadId!);
 
         if (opts.emitExitEvent) {
           const stamp = yield* emitter.makeEventStamp();
@@ -321,7 +321,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
             type: "session.exited",
             eventId: stamp.eventId,
             provider: PROVIDER,
-            threadId: ctx.session.threadId,
+            threadId: ctx.session.threadId!,
             createdAt: stamp.createdAt,
             payload: { reason: "stopped", recoverable: false, exitKind: "graceful" },
           });
@@ -374,7 +374,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
       turnId: TurnId,
     ): Effect.Effect<TranscriptFunctionResult, ProviderAdapterRequestError> =>
       Effect.gen(function* () {
-        const threadId = ctx.session.threadId;
+        const threadId = ctx.session.threadId!;
         const cwd = ctx.session.cwd ?? process.cwd();
 
         // Emit tool started
@@ -561,7 +561,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
                   type: "content.delta",
                   eventId: stamp.eventId,
                   provider: PROVIDER,
-                  threadId: ctx.session.threadId,
+                  threadId: ctx.session.threadId!,
                   createdAt: stamp.createdAt,
                   turnId: ts.turnId,
                   itemId: RuntimeItemId.makeUnsafe(ts.assistantItemId),

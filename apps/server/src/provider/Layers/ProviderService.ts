@@ -453,7 +453,7 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
         }
 
         return activeSessions.map((session) => {
-          const binding = bindingsByThreadId.get(session.threadId);
+          const binding = session.threadId ? bindingsByThreadId.get(session.threadId) : undefined;
           if (!binding) {
             return session;
           }

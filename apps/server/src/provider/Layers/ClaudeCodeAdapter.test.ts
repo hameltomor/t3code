@@ -291,7 +291,7 @@ describe("ClaudeCodeAdapterLive", () => {
       });
 
       const turn = yield* adapter.sendTurn({
-        threadId: session.threadId,
+        threadId: THREAD_ID,
         input: "hello",
         attachments: [],
       });
@@ -427,7 +427,7 @@ describe("ClaudeCodeAdapterLive", () => {
       });
 
       const turn = yield* adapter.sendTurn({
-        threadId: session.threadId,
+        threadId: THREAD_ID,
         input: "hello",
         attachments: [],
       });
@@ -516,7 +516,7 @@ describe("ClaudeCodeAdapterLive", () => {
       });
 
       const turn = yield* adapter.sendTurn({
-        threadId: session.threadId,
+        threadId: THREAD_ID,
         input: "hello",
         attachments: [],
       });
@@ -569,8 +569,7 @@ describe("ClaudeCodeAdapterLive", () => {
     );
   });
 
-  // TODO: Requires making ProviderSession.threadId optional — deferred to follow-up
-  it.effect.skip("does not fabricate provider thread ids before first SDK session_id", () => {
+  it.effect("does not fabricate provider thread ids before first SDK session_id", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
       const adapter = yield* ClaudeCodeAdapter;
@@ -588,7 +587,7 @@ describe("ClaudeCodeAdapterLive", () => {
       assert.equal(session.threadId, undefined);
 
       const turn = yield* adapter.sendTurn({
-        threadId: session.threadId,
+        threadId: THREAD_ID,
         input: "hello",
         attachments: [],
       });
@@ -628,16 +627,18 @@ describe("ClaudeCodeAdapterLive", () => {
         ],
       );
 
+      // Events carry the routing key (THREAD_ID), not the provider's real thread ID.
       const sessionStarted = runtimeEvents[0];
       assert.equal(sessionStarted?.type, "session.started");
       if (sessionStarted?.type === "session.started") {
-        assert.equal("threadId" in sessionStarted, false);
+        assert.equal(sessionStarted.threadId, THREAD_ID);
       }
 
       const threadStarted = runtimeEvents[4];
       assert.equal(threadStarted?.type, "thread.started");
       if (threadStarted?.type === "thread.started") {
-        assert.equal(threadStarted.threadId, "sdk-thread-real");
+        assert.equal(threadStarted.threadId, THREAD_ID);
+        assert.equal(threadStarted.payload.providerThreadId, "sdk-thread-real");
       }
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
@@ -697,7 +698,7 @@ describe("ClaudeCodeAdapterLive", () => {
       }
 
       yield* adapter.respondToRequest(
-        session.threadId,
+        THREAD_ID,
         ApprovalRequestId.makeUnsafe(runtimeRequestId),
         "accept",
       );
@@ -722,8 +723,7 @@ describe("ClaudeCodeAdapterLive", () => {
     );
   });
 
-  // TODO: Requires making ProviderSession.threadId optional — deferred to follow-up
-  it.effect.skip("passes parsed resume cursor values to Claude query options", () => {
+  it.effect("passes parsed resume cursor values to Claude query options", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
       const adapter = yield* ClaudeCodeAdapter;
@@ -793,7 +793,7 @@ describe("ClaudeCodeAdapterLive", () => {
       });
 
       const firstTurn = yield* adapter.sendTurn({
-        threadId: session.threadId,
+        threadId: THREAD_ID,
         input: "first",
         attachments: [],
       });
@@ -819,7 +819,7 @@ describe("ClaudeCodeAdapterLive", () => {
       }
 
       const secondTurn = yield* adapter.sendTurn({
-        threadId: session.threadId,
+        threadId: THREAD_ID,
         input: "second",
         attachments: [],
       });
@@ -844,14 +844,14 @@ describe("ClaudeCodeAdapterLive", () => {
         assert.equal(String(secondCompleted.value.turnId), String(secondTurn.turnId));
       }
 
-      const threadBeforeRollback = yield* adapter.readThread(session.threadId);
+      const threadBeforeRollback = yield* adapter.readThread(THREAD_ID);
       assert.equal(threadBeforeRollback.turns.length, 2);
 
-      const rolledBack = yield* adapter.rollbackThread(session.threadId, 1);
+      const rolledBack = yield* adapter.rollbackThread(THREAD_ID, 1);
       assert.equal(rolledBack.turns.length, 1);
       assert.equal(rolledBack.turns[0]?.id, firstTurn.turnId);
 
-      const threadAfterRollback = yield* adapter.readThread(session.threadId);
+      const threadAfterRollback = yield* adapter.readThread(THREAD_ID);
       assert.equal(threadAfterRollback.turns.length, 1);
       assert.equal(threadAfterRollback.turns[0]?.id, firstTurn.turnId);
     }).pipe(
@@ -871,7 +871,7 @@ describe("ClaudeCodeAdapterLive", () => {
         runtimeMode: "full-access",
       });
       yield* adapter.sendTurn({
-        threadId: session.threadId,
+        threadId: THREAD_ID,
         input: "hello",
         model: "claude-opus-4-6",
         attachments: [],
@@ -912,7 +912,7 @@ describe("ClaudeCodeAdapterLive", () => {
         runtimeMode: "full-access",
       });
       const turn = yield* adapter.sendTurn({
-        threadId: session.threadId,
+        threadId: THREAD_ID,
         input: "hello",
         attachments: [],
       });
@@ -951,7 +951,7 @@ describe("ClaudeCodeAdapterLive", () => {
 
       assert.equal(nativeEvents.length > 0, true);
       assert.equal(nativeEvents.some((record) => record.event?.provider === "claudeCode"), true);
-      assert.equal(nativeEvents.some((record) => String(record.event?.threadId) === String(session.threadId)), true);
+      assert.equal(nativeEvents.some((record) => String(record.event?.threadId) === String(THREAD_ID)), true);
       assert.equal(
         nativeEvents.some((record) => String(record.event?.turnId) === String(turn.turnId)),
         true,

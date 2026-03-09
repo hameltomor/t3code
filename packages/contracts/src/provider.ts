@@ -39,7 +39,7 @@ export const ProviderSession = Schema.Struct({
   runtimeMode: RuntimeMode,
   cwd: Schema.optional(TrimmedNonEmptyStringSchema),
   model: Schema.optional(TrimmedNonEmptyStringSchema),
-  threadId: ThreadId,
+  threadId: Schema.optional(ThreadId),
   resumeCursor: Schema.optional(Schema.Unknown),
   activeTurnId: Schema.optional(TurnId),
   createdAt: IsoDateTime,
@@ -100,7 +100,7 @@ export const ProviderSendTurnInput = Schema.Struct({
 export type ProviderSendTurnInput = typeof ProviderSendTurnInput.Type;
 
 export const ProviderTurnStartResult = Schema.Struct({
-  threadId: ThreadId,
+  threadId: Schema.optional(ThreadId),
   turnId: TurnId,
   resumeCursor: Schema.optional(Schema.Unknown),
 });
