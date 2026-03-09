@@ -59,7 +59,7 @@ A web GUI that puts multiple coding agents under one roof — all the power of t
     <td align="center"><strong>Linux</strong></td>
     <td align="center">x64</td>
     <td align="center">
-      <a href="https://github.com/x-b-e/xbe-code/releases/latest/download/XBE-Code-x64.AppImage">
+      <a href="https://github.com/x-b-e/xbe-code/releases/latest/download/XBE-Code-x86_64.AppImage">
         <img src="https://img.shields.io/badge/Download-.AppImage_(x64)-00d4aa?style=for-the-badge&logo=linux&logoColor=white" alt="Linux" />
       </a>
     </td>
