@@ -267,6 +267,21 @@ const runCommand = Effect.fn("runCommand")(function* (command: ChildProcess.Comm
   }
 });
 
+function resizeImage(sourcePng: string, size: number, outputPath: string, verbose: boolean) {
+  if (process.platform === "darwin") {
+    return runCommand(
+      ChildProcess.make({
+        ...commandOutputOptions(verbose),
+      })`sips -z ${size} ${size} ${sourcePng} --out ${outputPath}`,
+    );
+  }
+  return runCommand(
+    ChildProcess.make({
+      ...commandOutputOptions(verbose),
+    })`convert ${sourcePng} -resize ${`${size}x${size}`} ${outputPath}`,
+  );
+}
+
 function generateMacIconSet(
   sourcePng: string,
   targetIcns: string,
@@ -276,30 +291,50 @@ function generateMacIconSet(
 ) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
-    const iconsetDir = path.join(tmpRoot, "icon.iconset");
-    yield* fs.makeDirectory(iconsetDir, { recursive: true });
 
-    const iconSizes = [16, 32, 128, 256, 512] as const;
-    for (const size of iconSizes) {
+    if (process.platform === "darwin") {
+      const iconsetDir = path.join(tmpRoot, "icon.iconset");
+      yield* fs.makeDirectory(iconsetDir, { recursive: true });
+
+      const iconSizes = [16, 32, 128, 256, 512] as const;
+      for (const size of iconSizes) {
+        yield* resizeImage(
+          sourcePng,
+          size,
+          path.join(iconsetDir, `icon_${size}x${size}.png`),
+          verbose,
+        );
+
+        const retinaSize = size * 2;
+        yield* resizeImage(
+          sourcePng,
+          retinaSize,
+          path.join(iconsetDir, `icon_${size}x${size}@2x.png`),
+          verbose,
+        );
+      }
+
       yield* runCommand(
         ChildProcess.make({
           ...commandOutputOptions(verbose),
-        })`sips -z ${size} ${size} ${sourcePng} --out ${path.join(iconsetDir, `icon_${size}x${size}.png`)}`,
+        })`iconutil -c icns ${iconsetDir} -o ${targetIcns}`,
       );
-
-      const retinaSize = size * 2;
+    } else {
+      // On Linux, use png2icns from icnsutils
+      const sizes = [16, 32, 128, 256, 512] as const;
+      const pngPaths: string[] = [];
+      for (const size of sizes) {
+        const pngPath = path.join(tmpRoot, `icon_${size}.png`);
+        yield* resizeImage(sourcePng, size, pngPath, verbose);
+        pngPaths.push(pngPath);
+      }
+      const icnsCmd = `png2icns ${targetIcns} ${pngPaths.join(" ")}`;
       yield* runCommand(
         ChildProcess.make({
           ...commandOutputOptions(verbose),
-        })`sips -z ${retinaSize} ${retinaSize} ${sourcePng} --out ${path.join(iconsetDir, `icon_${size}x${size}@2x.png`)}`,
+        })`sh -c ${icnsCmd}`,
       );
     }
-
-    yield* runCommand(
-      ChildProcess.make({
-        ...commandOutputOptions(verbose),
-      })`iconutil -c icns ${iconsetDir} -o ${targetIcns}`,
-    );
   });
 }
 
@@ -321,11 +356,7 @@ function stageMacIcons(stageResourcesDir: string, verbose: boolean) {
     const iconPngPath = path.join(stageResourcesDir, "icon.png");
     const iconIcnsPath = path.join(stageResourcesDir, "icon.icns");
 
-    yield* runCommand(
-      ChildProcess.make({
-        ...commandOutputOptions(verbose),
-      })`sips -z 512 512 ${iconSource} --out ${iconPngPath}`,
-    );
+    yield* resizeImage(iconSource, 512, iconPngPath, verbose);
 
     yield* generateMacIconSet(iconSource, iconIcnsPath, tmpRoot, path, verbose);
   });
@@ -434,6 +465,7 @@ const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     appId: "com.xbetools.xbecode",
     productName,
     artifactName: "XBE-Code-${arch}.${ext}",
+    npmRebuild: false,
     directories: {
       buildResources: "apps/desktop/resources",
     },
