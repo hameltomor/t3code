@@ -1,77 +1,12 @@
-import { randomUUID } from "node:crypto";
-
-import { Effect, FileSystem, Layer, Path } from "effect";
+import { Effect, Layer } from "effect";
 import { resolveAutoFeatureBranchName, sanitizeFeatureBranchName } from "@xbetools/shared/git";
 
 import { GitManagerError } from "../Errors.ts";
 import { GitManager, type GitManagerShape } from "../Services/GitManager.ts";
 import { GitCore } from "../Services/GitCore.ts";
-import { GitHubCli } from "../Services/GitHubCli.ts";
+import { ForgeCliResolver } from "../Services/ForgeCliResolver.ts";
 import { TextGeneration } from "../Services/TextGeneration.ts";
-
-interface OpenPrInfo {
-  number: number;
-  title: string;
-  url: string;
-  baseRefName: string;
-  headRefName: string;
-}
-
-interface PullRequestInfo extends OpenPrInfo {
-  state: "open" | "closed" | "merged";
-  updatedAt: string | null;
-}
-
-function parsePullRequestList(raw: unknown): PullRequestInfo[] {
-  if (!Array.isArray(raw)) return [];
-
-  const parsed: PullRequestInfo[] = [];
-  for (const entry of raw) {
-    if (!entry || typeof entry !== "object") continue;
-    const record = entry as Record<string, unknown>;
-    const number = record.number;
-    const title = record.title;
-    const url = record.url;
-    const baseRefName = record.baseRefName;
-    const headRefName = record.headRefName;
-    const state = record.state;
-    const mergedAt = record.mergedAt;
-    const updatedAt = record.updatedAt;
-    if (typeof number !== "number" || !Number.isInteger(number) || number <= 0) {
-      continue;
-    }
-    if (
-      typeof title !== "string" ||
-      typeof url !== "string" ||
-      typeof baseRefName !== "string" ||
-      typeof headRefName !== "string"
-    ) {
-      continue;
-    }
-
-    let normalizedState: "open" | "closed" | "merged";
-    if ((typeof mergedAt === "string" && mergedAt.trim().length > 0) || state === "MERGED") {
-      normalizedState = "merged";
-    } else if (state === "OPEN" || state === undefined || state === null) {
-      normalizedState = "open";
-    } else if (state === "CLOSED") {
-      normalizedState = "closed";
-    } else {
-      continue;
-    }
-
-    parsed.push({
-      number,
-      title,
-      url,
-      baseRefName,
-      headRefName,
-      state: normalizedState,
-      updatedAt: typeof updatedAt === "string" && updatedAt.trim().length > 0 ? updatedAt : null,
-    });
-  }
-  return parsed;
-}
+import type { ForgeCliShape, ForgeReviewRequestSummary } from "../Services/ForgeCli.ts";
 
 function gitManagerError(operation: string, detail: string, cause?: unknown): GitManagerError {
   return new GitManagerError({
@@ -157,7 +92,7 @@ function extractBranchFromRef(ref: string): string {
   return normalized.slice(firstSlash + 1).trim();
 }
 
-function toStatusPr(pr: PullRequestInfo): {
+function toStatusPr(rr: ForgeReviewRequestSummary): {
   number: number;
   title: string;
   url: string;
@@ -166,98 +101,43 @@ function toStatusPr(pr: PullRequestInfo): {
   state: "open" | "closed" | "merged";
 } {
   return {
-    number: pr.number,
-    title: pr.title,
-    url: pr.url,
-    baseBranch: pr.baseRefName,
-    headBranch: pr.headRefName,
-    state: pr.state,
+    number: rr.number,
+    title: rr.title,
+    url: rr.url,
+    baseBranch: rr.baseBranch,
+    headBranch: rr.headBranch,
+    state: rr.state,
   };
 }
 
 export const makeGitManager = Effect.gen(function* () {
   const gitCore = yield* GitCore;
-  const gitHubCli = yield* GitHubCli;
+  const forgeCliResolver = yield* ForgeCliResolver;
   const textGeneration = yield* TextGeneration;
-  const fileSystem = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
 
-  const tempDir = process.env.TMPDIR ?? process.env.TEMP ?? process.env.TMP ?? "/tmp";
+  /**
+   * Resolve the forge CLI for a repository. All review request operations
+   * go through this — GitManager never does raw CLI execution.
+   */
+  const resolveForge = (cwd: string) =>
+    forgeCliResolver.resolve(cwd).pipe(Effect.catch(() => Effect.succeed(null as ForgeCliShape | null)));
 
-  const findOpenPr = (cwd: string, branch: string) =>
-    gitHubCli
-      .listOpenPullRequests({
-        cwd,
-        headBranch: branch,
-        limit: 1,
-      })
-      .pipe(
-        Effect.map((prs) => {
-          const [first] = prs;
-          if (!first) {
-            return null;
-          }
-          return {
-            number: first.number,
-            title: first.title,
-            url: first.url,
-            baseRefName: first.baseRefName,
-            headRefName: first.headRefName,
-            state: "open",
-            updatedAt: null,
-          } satisfies PullRequestInfo;
-        }),
-      );
-
-  const findLatestPr = (cwd: string, branch: string) =>
+  const resolveBaseBranch = (
+    cwd: string,
+    branch: string,
+    upstreamRef: string | null,
+    forge: ForgeCliShape | null,
+  ) =>
     Effect.gen(function* () {
-      const stdout = yield* gitHubCli
-        .execute({
-          cwd,
-          args: [
-            "pr",
-            "list",
-            "--head",
-            branch,
-            "--state",
-            "all",
-            "--limit",
-            "20",
-            "--json",
-            "number,title,url,baseRefName,headRefName,state,mergedAt,updatedAt",
-          ],
-        })
-        .pipe(Effect.map((result) => result.stdout));
+      // 1. Neutral config key (new canonical)
+      const neutralConfigured = yield* gitCore.readConfigValue(cwd, `branch.${branch}.merge-base`);
+      if (neutralConfigured) return neutralConfigured;
 
-      const raw = stdout.trim();
-      if (raw.length === 0) {
-        return null;
-      }
+      // 2. Legacy GitHub-specific config key (backward compat)
+      const ghConfigured = yield* gitCore.readConfigValue(cwd, `branch.${branch}.gh-merge-base`);
+      if (ghConfigured) return ghConfigured;
 
-      const parsedJson = yield* Effect.try({
-        try: () => JSON.parse(raw) as unknown,
-        catch: (cause) =>
-          gitManagerError("findLatestPr", "GitHub CLI returned invalid PR list JSON.", cause),
-      });
-
-      const parsed = parsePullRequestList(parsedJson).toSorted((a, b) => {
-        const left = a.updatedAt ? Date.parse(a.updatedAt) : 0;
-        const right = b.updatedAt ? Date.parse(b.updatedAt) : 0;
-        return right - left;
-      });
-
-      const latestOpenPr = parsed.find((pr) => pr.state === "open");
-      if (latestOpenPr) {
-        return latestOpenPr;
-      }
-      return parsed[0] ?? null;
-    });
-
-  const resolveBaseBranch = (cwd: string, branch: string, upstreamRef: string | null) =>
-    Effect.gen(function* () {
-      const configured = yield* gitCore.readConfigValue(cwd, `branch.${branch}.gh-merge-base`);
-      if (configured) return configured;
-
+      // 3. Extract from upstream ref if set
       if (upstreamRef) {
         const upstreamBranch = extractBranchFromRef(upstreamRef);
         if (upstreamBranch.length > 0 && upstreamBranch !== branch) {
@@ -265,11 +145,14 @@ export const makeGitManager = Effect.gen(function* () {
         }
       }
 
-      const defaultFromGh = yield* gitHubCli
-        .getDefaultBranch({ cwd })
-        .pipe(Effect.catch(() => Effect.succeed(null)));
-      if (defaultFromGh) {
-        return defaultFromGh;
+      // 4. Forge CLI default branch lookup
+      if (forge) {
+        const defaultFromForge = yield* forge
+          .getDefaultBranch({ cwd })
+          .pipe(Effect.catch(() => Effect.succeed(null)));
+        if (defaultFromForge) {
+          return defaultFromForge;
+        }
       }
 
       return "main";
@@ -279,7 +162,6 @@ export const makeGitManager = Effect.gen(function* () {
     cwd: string;
     branch: string | null;
     commitMessage?: string;
-    /** When true, also produce a semantic feature branch name. */
     includeBranch?: boolean;
   }) =>
     Effect.gen(function* () {
@@ -351,29 +233,37 @@ export const makeGitManager = Effect.gen(function* () {
       if (!branch) {
         return yield* gitManagerError(
           "runPrStep",
-          "Cannot create a pull request from detached HEAD.",
+          "Cannot create a review request from detached HEAD.",
         );
       }
       if (!details.hasUpstream) {
         return yield* gitManagerError(
           "runPrStep",
-          "Current branch has not been pushed. Push before creating a PR.",
+          "Current branch has not been pushed. Push before creating a review request.",
         );
       }
 
-      const existing = yield* findOpenPr(cwd, branch);
+      const forge = yield* resolveForge(cwd);
+      if (!forge) {
+        return yield* gitManagerError(
+          "runPrStep",
+          "Could not detect forge provider. Set `git config xbecode.forge-provider github` or `gitlab`.",
+        );
+      }
+
+      const existing = yield* forge.findOpenReviewRequest({ cwd, headBranch: branch });
       if (existing) {
         return {
           status: "opened_existing" as const,
           url: existing.url,
           number: existing.number,
-          baseBranch: existing.baseRefName,
-          headBranch: existing.headRefName,
+          baseBranch: existing.baseBranch,
+          headBranch: existing.headBranch,
           title: existing.title,
         };
       }
 
-      const baseBranch = yield* resolveBaseBranch(cwd, branch, details.upstreamRef);
+      const baseBranch = yield* resolveBaseBranch(cwd, branch, details.upstreamRef, forge);
       const rangeContext = yield* gitCore.readRangeContext(cwd, baseBranch);
 
       const generated = yield* textGeneration.generatePrContent({
@@ -385,25 +275,15 @@ export const makeGitManager = Effect.gen(function* () {
         diffPatch: limitContext(rangeContext.diffPatch, 60_000),
       });
 
-      const bodyFile = path.join(tempDir, `xbecode-pr-body-${process.pid}-${randomUUID()}.md`);
-      yield* fileSystem
-        .writeFileString(bodyFile, generated.body)
-        .pipe(
-          Effect.mapError((cause) =>
-            gitManagerError("runPrStep", "Failed to write pull request body temp file.", cause),
-          ),
-        );
-      yield* gitHubCli
-        .createPullRequest({
-          cwd,
-          baseBranch,
-          headBranch: branch,
-          title: generated.title,
-          bodyFile,
-        })
-        .pipe(Effect.ensuring(fileSystem.remove(bodyFile).pipe(Effect.catch(() => Effect.void))));
+      yield* forge.createReviewRequest({
+        cwd,
+        baseBranch,
+        headBranch: branch,
+        title: generated.title,
+        body: generated.body,
+      });
 
-      const created = yield* findOpenPr(cwd, branch);
+      const created = yield* forge.findOpenReviewRequest({ cwd, headBranch: branch });
       if (!created) {
         return {
           status: "created" as const,
@@ -417,8 +297,8 @@ export const makeGitManager = Effect.gen(function* () {
         status: "created" as const,
         url: created.url,
         number: created.number,
-        baseBranch: created.baseRefName,
-        headBranch: created.headRefName,
+        baseBranch: created.baseBranch,
+        headBranch: created.headBranch,
         title: created.title,
       };
     });
@@ -426,12 +306,17 @@ export const makeGitManager = Effect.gen(function* () {
   const status: GitManagerShape["status"] = Effect.fnUntraced(function* (input) {
     const details = yield* gitCore.statusDetails(input.cwd);
 
+    const forge = yield* resolveForge(input.cwd);
+    const forgeProvider = forge?.provider ?? "unknown";
+
     const pr =
-      details.branch !== null
-        ? yield* findLatestPr(input.cwd, details.branch).pipe(
-            Effect.map((latest) => (latest ? toStatusPr(latest) : null)),
-            Effect.catch(() => Effect.succeed(null)),
-          )
+      details.branch !== null && forge
+        ? yield* forge
+            .findLatestReviewRequest({ cwd: input.cwd, headBranch: details.branch, limit: 20 })
+            .pipe(
+              Effect.map((latest) => (latest ? toStatusPr(latest) : null)),
+              Effect.catch(() => Effect.succeed(null)),
+            )
         : null;
 
     return {
@@ -441,6 +326,7 @@ export const makeGitManager = Effect.gen(function* () {
       hasUpstream: details.hasUpstream,
       aheadCount: details.aheadCount,
       behindCount: details.behindCount,
+      forgeProvider,
       pr,
     };
   });
@@ -486,7 +372,7 @@ export const makeGitManager = Effect.gen(function* () {
       if (!input.featureBranch && wantsPr && !initialStatus.branch) {
         return yield* gitManagerError(
           "runStackedAction",
-          "Cannot create a pull request from detached HEAD.",
+          "Cannot create a review request from detached HEAD.",
         );
       }
 

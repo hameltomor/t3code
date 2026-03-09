@@ -104,7 +104,7 @@ interface TerminalStatusIndicator {
 }
 
 interface PrStatusIndicator {
-  label: "PR open" | "PR closed" | "PR merged";
+  label: string;
   colorClass: string;
   tooltip: string;
   url: string;
@@ -176,30 +176,31 @@ function terminalStatusFromRunningIds(
   };
 }
 
-function prStatusIndicator(pr: ThreadPr): PrStatusIndicator | null {
+function prStatusIndicator(pr: ThreadPr, forgeProvider: "github" | "gitlab" | "unknown" = "unknown"): PrStatusIndicator | null {
   if (!pr) return null;
+  const noun = forgeProvider === "gitlab" ? "MR" : "PR";
 
   if (pr.state === "open") {
     return {
-      label: "PR open",
+      label: `${noun} open`,
       colorClass: "text-emerald-600 dark:text-emerald-300/90",
-      tooltip: `#${pr.number} PR open: ${pr.title}`,
+      tooltip: `#${pr.number} ${noun} open: ${pr.title}`,
       url: pr.url,
     };
   }
   if (pr.state === "closed") {
     return {
-      label: "PR closed",
+      label: `${noun} closed`,
       colorClass: "text-zinc-500 dark:text-zinc-400/80",
-      tooltip: `#${pr.number} PR closed: ${pr.title}`,
+      tooltip: `#${pr.number} ${noun} closed: ${pr.title}`,
       url: pr.url,
     };
   }
   if (pr.state === "merged") {
     return {
-      label: "PR merged",
+      label: `${noun} merged`,
       colorClass: "text-violet-600 dark:text-violet-300/90",
-      tooltip: `#${pr.number} PR merged: ${pr.title}`,
+      tooltip: `#${pr.number} ${noun} merged: ${pr.title}`,
       url: pr.url,
     };
   }
@@ -364,7 +365,7 @@ export default function Sidebar() {
       refetchInterval: 60_000,
     })),
   });
-  const prByThreadId = useMemo(() => {
+  const { prByThreadId, forgeProviderByThreadId } = useMemo(() => {
     const statusByCwd = new Map<string, GitStatusResult>();
     for (let index = 0; index < threadGitStatusCwds.length; index += 1) {
       const cwd = threadGitStatusCwds[index];
@@ -375,14 +376,16 @@ export default function Sidebar() {
       }
     }
 
-    const map = new Map<ThreadId, ThreadPr>();
+    const prMap = new Map<ThreadId, ThreadPr>();
+    const fpMap = new Map<ThreadId, "github" | "gitlab" | "unknown">();
     for (const target of threadGitTargets) {
       const status = target.cwd ? statusByCwd.get(target.cwd) : undefined;
       const branchMatches =
         target.branch !== null && status?.branch !== null && status?.branch === target.branch;
-      map.set(target.threadId, branchMatches ? (status?.pr ?? null) : null);
+      prMap.set(target.threadId, branchMatches ? (status?.pr ?? null) : null);
+      fpMap.set(target.threadId, status?.forgeProvider ?? "unknown");
     }
-    return map;
+    return { prByThreadId: prMap, forgeProviderByThreadId: fpMap };
   }, [threadGitStatusCwds, threadGitStatusQueries, threadGitTargets]);
 
   const openPrLink = useCallback((event: React.MouseEvent<HTMLElement>, prUrl: string) => {
@@ -1162,7 +1165,7 @@ export default function Sidebar() {
                             thread,
                             pendingApprovalByThreadId.get(thread.id) === true,
                           );
-                          const prStatus = prStatusIndicator(prByThreadId.get(thread.id) ?? null);
+                          const prStatus = prStatusIndicator(prByThreadId.get(thread.id) ?? null, forgeProviderByThreadId.get(thread.id));
                           const terminalStatus = terminalStatusFromRunningIds(
                             selectThreadTerminalState(terminalStateByThreadId, thread.id)
                               .runningTerminalIds,

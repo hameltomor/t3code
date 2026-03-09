@@ -1,3 +1,41 @@
+export type ForgeProvider = "github" | "gitlab";
+
+/**
+ * Extract the hostname from a git remote URL.
+ * Handles SSH (`git@host:group/repo.git`) and HTTPS (`https://host/group/repo.git`) formats.
+ */
+export function extractHostFromRemoteUrl(url: string): string | null {
+  const trimmed = url.trim();
+  if (trimmed.length === 0) return null;
+
+  // SSH format: git@gitlab.company.com:group/repo.git
+  const sshMatch = trimmed.match(/^[\w.-]+@([\w.-]+):/);
+  if (sshMatch?.[1]) return sshMatch[1].toLowerCase();
+
+  // HTTPS / HTTP format
+  try {
+    const parsed = new URL(trimmed);
+    const host = parsed.hostname.toLowerCase();
+    return host.length > 0 ? host : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Detect forge provider from a git remote URL by parsing the hostname.
+ * Returns null for unknown hosts — callers must handle that case explicitly.
+ */
+export function detectForgeProviderFromRemoteUrl(remoteUrl: string): ForgeProvider | null {
+  const host = extractHostFromRemoteUrl(remoteUrl);
+  if (!host) return null;
+
+  if (host === "github.com" || host.endsWith(".github.com")) return "github";
+  if (host === "gitlab.com" || host.includes("gitlab")) return "gitlab";
+
+  return null;
+}
+
 /**
  * Sanitize an arbitrary string into a valid, lowercase git branch fragment.
  * Strips quotes, collapses separators, limits to 64 chars.

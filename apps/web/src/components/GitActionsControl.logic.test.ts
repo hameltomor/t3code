@@ -85,6 +85,44 @@ describe("when: branch is clean and has an open PR", () => {
       },
     ]);
   });
+
+  it("resolveQuickAction uses MR label for gitlab provider", () => {
+    const quick = resolveQuickAction(
+      status({
+        pr: {
+          number: 10,
+          title: "Open MR",
+          url: "https://gitlab.com/group/project/-/merge_requests/10",
+          baseBranch: "main",
+          headBranch: "feature/test",
+          state: "open",
+        },
+      }),
+      false,
+      false,
+      "gitlab",
+    );
+    assert.deepInclude(quick, { kind: "open_pr", label: "Open MR", disabled: false });
+  });
+
+  it("buildMenuItems uses MR label for gitlab provider", () => {
+    const items = buildMenuItems(
+      status({
+        pr: {
+          number: 11,
+          title: "Existing MR",
+          url: "https://gitlab.com/group/project/-/merge_requests/11",
+          baseBranch: "main",
+          headBranch: "feature/test",
+          state: "open",
+        },
+      }),
+      false,
+      "gitlab",
+    );
+    const prItem = items.find((i) => i.id === "pr");
+    assert.equal(prItem?.label, "Open MR");
+  });
 });
 
 describe("when: actions are busy", () => {
@@ -210,7 +248,7 @@ describe("when: branch is clean, ahead, and has an open PR", () => {
 
 describe("when: branch is clean, ahead, and has no open PR", () => {
   it("resolveQuickAction pushes and creates a PR", () => {
-    const quick = resolveQuickAction(status({ aheadCount: 2, pr: null }), false);
+    const quick = resolveQuickAction(status({ aheadCount: 2, pr: null }), false, false, "github");
     assert.deepInclude(quick, {
       kind: "run_action",
       action: "commit_push_pr",
@@ -218,8 +256,26 @@ describe("when: branch is clean, ahead, and has no open PR", () => {
     });
   });
 
+  it("resolveQuickAction pushes and creates an MR for gitlab", () => {
+    const quick = resolveQuickAction(status({ aheadCount: 2, pr: null }), false, false, "gitlab");
+    assert.deepInclude(quick, {
+      kind: "run_action",
+      action: "commit_push_pr",
+      label: "Push & create MR",
+    });
+  });
+
+  it("resolveQuickAction downgrades to push-only when provider is unknown", () => {
+    const quick = resolveQuickAction(status({ aheadCount: 2, pr: null }), false, false, "unknown");
+    assert.deepInclude(quick, {
+      kind: "run_action",
+      action: "commit_push",
+      label: "Push",
+    });
+  });
+
   it("buildMenuItems enables push and create PR, with commit disabled", () => {
-    const items = buildMenuItems(status({ aheadCount: 2, pr: null }), false);
+    const items = buildMenuItems(status({ aheadCount: 2, pr: null }), false, "github");
     assert.deepEqual(items, [
       {
         id: "commit",
@@ -246,6 +302,12 @@ describe("when: branch is clean, ahead, and has no open PR", () => {
         dialogAction: "create_pr",
       },
     ]);
+  });
+
+  it("buildMenuItems disables create PR when provider is unknown", () => {
+    const items = buildMenuItems(status({ aheadCount: 2, pr: null }), false, "unknown");
+    const prItem = items.find((i) => i.id === "pr");
+    assert.equal(prItem?.disabled, true);
   });
 });
 
@@ -340,11 +402,34 @@ describe("when: branch has diverged from upstream", () => {
 
 describe("when: working tree has local changes", () => {
   it("resolveQuickAction returns commit, push, and create PR", () => {
-    const quick = resolveQuickAction(status({ hasWorkingTreeChanges: true }), false);
+    const quick = resolveQuickAction(status({ hasWorkingTreeChanges: true }), false, false, "github");
     assert.deepInclude(quick, {
       kind: "run_action",
       action: "commit_push_pr",
       label: "Commit, push & create PR",
+    });
+  });
+
+  it("resolveQuickAction returns commit, push, and create MR for gitlab", () => {
+    const quick = resolveQuickAction(
+      status({ hasWorkingTreeChanges: true }),
+      false,
+      false,
+      "gitlab",
+    );
+    assert.deepInclude(quick, {
+      kind: "run_action",
+      action: "commit_push_pr",
+      label: "Commit, push & create MR",
+    });
+  });
+
+  it("resolveQuickAction downgrades to commit & push when provider is unknown", () => {
+    const quick = resolveQuickAction(status({ hasWorkingTreeChanges: true }), false, false, "unknown");
+    assert.deepInclude(quick, {
+      kind: "run_action",
+      action: "commit_push",
+      label: "Commit & push",
     });
   });
 
@@ -436,6 +521,8 @@ describe("when: working tree has local changes and branch is behind upstream", (
     const quick = resolveQuickAction(
       status({ hasWorkingTreeChanges: true, behindCount: 1 }),
       false,
+      false,
+      "github",
     );
     assert.deepInclude(quick, {
       kind: "run_action",
@@ -617,6 +704,8 @@ describe("when: branch has no upstream configured", () => {
         pr: null,
       }),
       false,
+      false,
+      "github",
     );
     assert.deepInclude(quick, {
       kind: "run_action",
@@ -626,10 +715,30 @@ describe("when: branch has no upstream configured", () => {
     });
   });
 
+  it("resolveQuickAction downgrades to push-only when no upstream, ahead, and unknown provider", () => {
+    const quick = resolveQuickAction(
+      status({
+        hasUpstream: false,
+        aheadCount: 2,
+        pr: null,
+      }),
+      false,
+      false,
+      "unknown",
+    );
+    assert.deepInclude(quick, {
+      kind: "run_action",
+      action: "commit_push",
+      label: "Push",
+      disabled: false,
+    });
+  });
+
   it("buildMenuItems enables create PR when no upstream and commits are ahead", () => {
     const items = buildMenuItems(
       status({ hasUpstream: false, pr: null, aheadCount: 2 }),
       false,
+      "github",
     );
     assert.deepEqual(items, [
       {
@@ -776,6 +885,22 @@ describe("resolveDefaultBranchActionDialogCopy", () => {
     });
   });
 
+  it("uses MR copy for gitlab provider", () => {
+    const copy = resolveDefaultBranchActionDialogCopy({
+      action: "commit_push_pr",
+      branchName: "main",
+      includesCommit: false,
+      forgeProvider: "gitlab",
+    });
+
+    assert.deepEqual(copy, {
+      title: "Push & create MR from default branch?",
+      description:
+        'This action will push local commits and create a MR on "main". You can continue on this branch or create a feature branch and run the same action there.',
+      continueLabel: "Push & create MR",
+    });
+  });
+
   it("keeps commit copy when the action includes a commit", () => {
     const copy = resolveDefaultBranchActionDialogCopy({
       action: "commit_push_pr",
@@ -813,6 +938,18 @@ describe("buildGitActionProgressStages", () => {
       pushTarget: "origin/feature/test",
     });
     assert.deepEqual(stages, ["Pushing to origin/feature/test...", "Creating PR..."]);
+  });
+
+  it("uses MR label for gitlab provider in progress stages", () => {
+    const stages = buildGitActionProgressStages({
+      action: "commit_push_pr",
+      hasCustomCommitMessage: false,
+      hasWorkingTreeChanges: true,
+      forcePushOnly: true,
+      pushTarget: "origin/feature/test",
+      forgeProvider: "gitlab",
+    });
+    assert.deepEqual(stages, ["Pushing to origin/feature/test...", "Creating MR..."]);
   });
 
   it("includes commit stages for commit+push when working tree is dirty", () => {
@@ -896,6 +1033,35 @@ describe("summarizeGitResult", () => {
     assert.deepEqual(result, {
       title: "Created PR #42",
       description: "feat: ship github shortcuts and improve PR CTA in success toast",
+    });
+  });
+
+  it("returns MR-focused toast for gitlab provider", () => {
+    const result = summarizeGitResult(
+      {
+        action: "commit_push_pr",
+        branch: { status: "skipped_not_requested" },
+        commit: {
+          status: "created",
+          commitSha: "89abcdef01234567",
+          subject: "feat: add gitlab support",
+        },
+        push: {
+          status: "pushed",
+          branch: "foo",
+        },
+        pr: {
+          status: "created",
+          number: 42,
+          title: "feat: add gitlab support",
+        },
+      },
+      "gitlab",
+    );
+
+    assert.deepEqual(result, {
+      title: "Created MR #42",
+      description: "feat: add gitlab support",
     });
   });
 

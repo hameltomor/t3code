@@ -104,6 +104,8 @@ const GitStatusPr = Schema.Struct({
   state: GitStatusPrState,
 });
 
+const ForgeProviderSchema = Schema.Literals(["github", "gitlab", "unknown"]);
+
 export const GitStatusResult = Schema.Struct({
   branch: TrimmedNonEmptyStringSchema.pipe(Schema.NullOr),
   hasWorkingTreeChanges: Schema.Boolean,
@@ -121,6 +123,7 @@ export const GitStatusResult = Schema.Struct({
   hasUpstream: Schema.Boolean,
   aheadCount: NonNegativeInt,
   behindCount: NonNegativeInt,
+  forgeProvider: Schema.optional(ForgeProviderSchema),
   pr: Schema.NullOr(GitStatusPr),
 });
 export type GitStatusResult = typeof GitStatusResult.Type;

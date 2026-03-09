@@ -2,7 +2,7 @@ import type { GitStackedAction, GitStatusResult, ThreadId } from "@xbetools/cont
 import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDownIcon, CloudUploadIcon, GitCommitIcon, InfoIcon } from "lucide-react";
-import { GitHubIcon } from "./Icons";
+import { GitHubIcon, GitLabIcon } from "./Icons";
 import {
   buildGitActionProgressStages,
   buildMenuItems,
@@ -15,6 +15,8 @@ import {
   resolveQuickAction,
   summarizeGitResult,
 } from "./GitActionsControl.logic";
+import type { ForgeProvider } from "~/lib/forgeCopy";
+import { reviewRequestNoun } from "~/lib/forgeCopy";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -63,6 +65,7 @@ function getMenuActionDisabledReason(
   item: GitActionMenuItem,
   gitStatus: GitStatusResult | null,
   isBusy: boolean,
+  forgeProvider: ForgeProvider = "unknown",
 ): string | null {
   if (!item.disabled) return null;
   if (isBusy) return "Git action in progress.";
@@ -97,42 +100,51 @@ function getMenuActionDisabledReason(
     return "Push is currently unavailable.";
   }
 
+  const noun = reviewRequestNoun(forgeProvider);
+  if (forgeProvider === "unknown") {
+    return `Set \`git config xbecode.forge-provider github\` or \`gitlab\` to enable ${noun} actions.`;
+  }
   if (hasOpenPr) {
-    return "Open PR is currently unavailable.";
+    return `Open ${noun} is currently unavailable.`;
   }
   if (!hasBranch) {
-    return "Detached HEAD: checkout a branch before creating a PR.";
+    return `Detached HEAD: checkout a branch before creating a ${noun}.`;
   }
   if (hasChanges) {
-    return "Commit local changes before creating a PR.";
+    return `Commit local changes before creating a ${noun}.`;
   }
   if (!isAhead) {
-    return "No local commits to include in a PR.";
+    return `No local commits to include in a ${noun}.`;
   }
   if (isBehind) {
-    return "Branch is behind upstream. Pull/rebase before creating a PR.";
+    return `Branch is behind upstream. Pull/rebase before creating a ${noun}.`;
   }
-  return "Create PR is currently unavailable.";
+  return `Create ${noun} is currently unavailable.`;
 }
 
 const COMMIT_DIALOG_TITLE = "Commit changes";
 const COMMIT_DIALOG_DESCRIPTION =
   "Review and confirm your commit. Leave the message blank to auto-generate one.";
 
-function GitActionItemIcon({ icon }: { icon: GitActionIconName }) {
-  if (icon === "commit") return <GitCommitIcon />;
-  if (icon === "push") return <CloudUploadIcon />;
-  return <GitHubIcon />;
+function ForgeIcon({ className, forgeProvider }: { className?: string; forgeProvider: ForgeProvider }) {
+  if (forgeProvider === "gitlab") return <GitLabIcon className={className} />;
+  return <GitHubIcon className={className} />;
 }
 
-function GitQuickActionIcon({ quickAction }: { quickAction: GitQuickAction }) {
+function GitActionItemIcon({ icon, forgeProvider }: { icon: GitActionIconName; forgeProvider: ForgeProvider }) {
+  if (icon === "commit") return <GitCommitIcon />;
+  if (icon === "push") return <CloudUploadIcon />;
+  return <ForgeIcon forgeProvider={forgeProvider} />;
+}
+
+function GitQuickActionIcon({ quickAction, forgeProvider }: { quickAction: GitQuickAction; forgeProvider: ForgeProvider }) {
   const iconClassName = "size-3.5";
-  if (quickAction.kind === "open_pr") return <GitHubIcon className={iconClassName} />;
+  if (quickAction.kind === "open_pr") return <ForgeIcon className={iconClassName} forgeProvider={forgeProvider} />;
   if (quickAction.kind === "run_pull") return <InfoIcon className={iconClassName} />;
   if (quickAction.kind === "run_action") {
     if (quickAction.action === "commit") return <GitCommitIcon className={iconClassName} />;
     if (quickAction.action === "commit_push") return <CloudUploadIcon className={iconClassName} />;
-    return <GitHubIcon className={iconClassName} />;
+    return <ForgeIcon className={iconClassName} forgeProvider={forgeProvider} />;
   }
   if (quickAction.label === "Commit") return <GitCommitIcon className={iconClassName} />;
   return <InfoIcon className={iconClassName} />;
@@ -164,6 +176,7 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
   }, [isGitStatusOutOfSync, queryClient]);
 
   const gitStatusForActions = isGitStatusOutOfSync ? null : gitStatus;
+  const forgeProvider: ForgeProvider = gitStatusForActions?.forgeProvider ?? "unknown";
 
   const initMutation = useMutation(gitInitMutationOptions({ cwd: gitCwd, queryClient }));
 
@@ -184,12 +197,12 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
   }, [branchList?.branches, gitStatusForActions?.branch]);
 
   const gitActionMenuItems = useMemo(
-    () => buildMenuItems(gitStatusForActions, isGitActionRunning),
-    [gitStatusForActions, isGitActionRunning],
+    () => buildMenuItems(gitStatusForActions, isGitActionRunning, forgeProvider),
+    [gitStatusForActions, isGitActionRunning, forgeProvider],
   );
   const quickAction = useMemo(
-    () => resolveQuickAction(gitStatusForActions, isGitActionRunning, isDefaultBranch),
-    [gitStatusForActions, isDefaultBranch, isGitActionRunning],
+    () => resolveQuickAction(gitStatusForActions, isGitActionRunning, isDefaultBranch, forgeProvider),
+    [gitStatusForActions, isDefaultBranch, isGitActionRunning, forgeProvider],
   );
   const quickActionDisabledReason = quickAction.disabled
     ? (quickAction.hint ?? "This action is currently unavailable.")
@@ -199,6 +212,7 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
         action: pendingDefaultBranchAction.action,
         branchName: pendingDefaultBranchAction.branchName,
         includesCommit: pendingDefaultBranchAction.includesCommit,
+        forgeProvider,
       })
     : null;
 
@@ -285,6 +299,7 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
         hasWorkingTreeChanges: !!actionStatus?.hasWorkingTreeChanges,
         forcePushOnly: forcePushOnlyProgress,
         featureBranch,
+        forgeProvider,
         ...(pushTarget ? { pushTarget } : {}),
       });
       const resolvedProgressToastId =
@@ -329,7 +344,7 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
       try {
         const result = await promise;
         stopProgressUpdates();
-        const resultToast = summarizeGitResult(result);
+        const resultToast = summarizeGitResult(result, forgeProvider);
 
         const existingOpenPrUrl = actionStatus?.pr?.state === "open" ? actionStatus.pr.url : undefined;
         const prUrl = result.pr.url ?? existingOpenPrUrl;
@@ -376,7 +391,7 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
             : shouldOfferOpenPrCta
               ? {
                   actionProps: {
-                    children: "Open PR",
+                    children: `Open ${reviewRequestNoun(forgeProvider)}`,
                     onClick: () => {
                       const api = readNativeApi();
                       if (!api) return;
@@ -388,7 +403,7 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
               : shouldOfferCreatePrCta
                 ? {
                     actionProps: {
-                      children: "Create PR",
+                      children: `Create ${reviewRequestNoun(forgeProvider)}`,
                       onClick: () => {
                         closeResultToast();
                         void runGitActionWithToast({
@@ -419,6 +434,7 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
       setPendingDefaultBranchAction,
       threadToastData,
       gitStatusForActions,
+      forgeProvider,
     ],
   );
 
@@ -605,7 +621,7 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
                   />
                 }
               >
-                <GitQuickActionIcon quickAction={quickAction} />
+                <GitQuickActionIcon quickAction={quickAction} forgeProvider={forgeProvider} />
                 <span className="sr-only @sm/header-actions:not-sr-only @sm/header-actions:ml-0.5">
                   {quickAction.label}
                 </span>
@@ -621,7 +637,7 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
               disabled={isGitActionRunning || quickAction.disabled}
               onClick={runQuickAction}
             >
-              <GitQuickActionIcon quickAction={quickAction} />
+              <GitQuickActionIcon quickAction={quickAction} forgeProvider={forgeProvider} />
               <span className="sr-only @sm/header-actions:not-sr-only @sm/header-actions:ml-0.5">
                 {quickAction.label}
               </span>
@@ -645,6 +661,7 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
                   item,
                   gitStatusForActions,
                   isGitActionRunning,
+                  forgeProvider,
                 );
                 if (item.disabled && disabledReason) {
                   return (
@@ -655,7 +672,7 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
                         render={<span className="block w-max cursor-not-allowed" />}
                       >
                         <MenuItem className="w-full" disabled>
-                          <GitActionItemIcon icon={item.icon} />
+                          <GitActionItemIcon icon={item.icon} forgeProvider={forgeProvider} />
                           {item.label}
                         </MenuItem>
                       </PopoverTrigger>
@@ -674,14 +691,14 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
                       openDialogForMenuItem(item);
                     }}
                   >
-                    <GitActionItemIcon icon={item.icon} />
+                    <GitActionItemIcon icon={item.icon} forgeProvider={forgeProvider} />
                     {item.label}
                   </MenuItem>
                 );
               })}
               {gitStatusForActions?.branch === null && (
                 <p className="px-2 py-1.5 text-xs text-warning">
-                  Detached HEAD: create and checkout a branch to enable push and PR actions.
+                  Detached HEAD: create and checkout a branch to enable push and {reviewRequestNoun(forgeProvider)} actions.
                 </p>
               )}
               {gitStatusForActions &&
