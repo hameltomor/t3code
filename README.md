@@ -12,6 +12,8 @@ A web GUI that puts multiple coding agents under one roof — all the power of t
 - **GitHub & GitLab** — Create PRs/MRs, view status, and push — all from the UI. Auto-detects your forge from the remote URL.
 - **Notification center** — In-app inbox plus Web Push alerts for completed tasks, approval requests, and input prompts.
 - **Image attachments** — Paste or upload images directly into the chat. They're persisted and forwarded to the agent.
+- **Mobile-ready** — Responsive UI tested down to 320px. Install as a PWA on any phone or tablet — works like a native app.
+- **Desktop app** — Native Electron builds for macOS, Windows, and Linux with auto-updates.
 
 ## Why XBE Code over OpenCode?
 
