@@ -223,6 +223,7 @@ jobs:
   publish_cli:
     name: Publish CLI to npm
     needs: [preflight, build]
+    continue-on-error: true
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -285,7 +286,7 @@ jobs:
 
   release:
     name: Publish GitHub Release
-    needs: [preflight, build, publish_cli]
+    needs: [preflight, build]
     runs-on: ubuntu-24.04
     steps:
       - name: Download all desktop artifacts
