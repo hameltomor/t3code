@@ -16,14 +16,16 @@ A web GUI that puts multiple coding agents under one roof — all the power of t
 - **Desktop app** — Native Electron builds for macOS, Windows, and Linux with auto-updates.
 - **Thread search** — Fuzzy search across titles, messages, and branch names. Cmd/Ctrl+K to find any conversation instantly.
 
-## Why XBE Code over OpenCode?
+## How XBE Code compares
 
-| | **XBE Code** | **OpenCode** |
-|---|---|---|
-| **Cost** | Free. Uses your existing CLI accounts — no extra subscription. | $10–20/mo plans or pay-per-token through their proxy. |
-| **Your keys, your tokens** | Runs native CLIs (codex, claude, gemini) directly. Tokens go straight to the provider — no middleman. | Routes requests through OpenCode's own infrastructure. |
-| **Transparency** | Fully open source. Read every line, verify nothing leaves your machine, extend anything. | Open-source core, but model access flows through their services. |
-| **Security** | Code runs locally, calls go to the providers you already trust. Nothing to audit beyond what's in this repo. | Additional trust surface — your code context passes through a third-party relay. |
+| | **XBE Code** | **Cursor** | **Antigravity** | **OpenCode** |
+|---|---|---|---|---|
+| **Cost** | Free — uses your existing CLI accounts | $20–200/mo (credit-based) | Free preview, ~$20/mo after | $10–20/mo or pay-per-token |
+| **Your keys, your tokens** | Native CLIs — tokens go straight to the provider | Proxied through Cursor's infra | Proxied through Google's infra | Proxied through OpenCode's infra |
+| **Vendor lock-in** | None — swap agents freely, no proprietary editor | Tied to Cursor's VS Code fork | Tied to Google's IDE | Own model routing layer |
+| **Transparency** | Fully open source, runs locally, nothing hidden | Closed-source client | Closed-source platform | Open-source core, closed model relay |
+| **Multi-agent** | Codex + Claude Code + Gemini side by side | Single model per request | Gemini-first, limited others | Multiple models, own proxy |
+| **Run anywhere** | Browser, PWA, desktop app (macOS/Win/Linux) | Desktop only | Desktop only | Terminal + web |
 
 ## How to use
 
