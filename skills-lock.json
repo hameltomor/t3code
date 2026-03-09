@@ -21,6 +21,11 @@
       "sourceType": "github",
       "computedHash": "6412eb4eb3b91595ebab937f0c69501240e7ba761b3d82510b5cf506ec5c7adc"
     },
+    "framer-motion": {
+      "source": "mindrally/skills",
+      "sourceType": "github",
+      "computedHash": "39a33b58952788812d305f7b676b86ee800d3d5be9752e10392435d7fae73d8a"
+    },
     "frontend-design": {
       "source": "anthropics/skills",
       "sourceType": "github",
@@ -45,6 +50,11 @@
       "source": "existential-birds/beagle",
       "sourceType": "github",
       "computedHash": "8c634cb9b05cf11c40412978784ca246d78a35846ea0d2215e14ee589e3331d4"
+    },
+    "web-animation-design": {
+      "source": "connorads/dotfiles",
+      "sourceType": "github",
+      "computedHash": "9b35682407be5fc012ac327d0febf5760e7019eed50a102eefacbb97150618e7"
     },
     "zustand": {
       "source": "lobehub/lobehub",
