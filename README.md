@@ -10,6 +10,68 @@
 A web GUI that puts multiple coding agents under one roof — all the power of the terminal, none of the juggling. Run agents side by side, keep context, ship faster.
 </p>
 
+<!-- Download links use /releases/latest/download/ which always resolves   -->
+<!-- to the most recent GitHub release. No README edits needed on release. -->
+<!-- Just create a release, upload the build artifacts, and you're done.   -->
+
+<h2 align="center">Download Desktop App</h2>
+
+<p align="center">
+  <a href="https://github.com/x-b-e/xbe-code/releases/latest">
+    <img src="https://img.shields.io/github/v/release/x-b-e/xbe-code?label=latest&color=ff006e&style=flat-square" alt="Latest release" />
+  </a>
+</p>
+
+<table align="center">
+  <tr>
+    <th align="center">Platform</th>
+    <th align="center">Architecture</th>
+    <th align="center">Download</th>
+  </tr>
+  <tr>
+    <td align="center"><strong>macOS</strong></td>
+    <td align="center">Apple Silicon (M1/M2/M3/M4)</td>
+    <td align="center">
+      <a href="https://github.com/x-b-e/xbe-code/releases/latest/download/XBE-Code-arm64.dmg">
+        <img src="https://img.shields.io/badge/Download-.dmg_(arm64)-ff006e?style=for-the-badge&logo=apple&logoColor=white" alt="macOS Apple Silicon" />
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center"><strong>macOS</strong></td>
+    <td align="center">Intel</td>
+    <td align="center">
+      <a href="https://github.com/x-b-e/xbe-code/releases/latest/download/XBE-Code-x64.dmg">
+        <img src="https://img.shields.io/badge/Download-.dmg_(x64)-ff006e?style=for-the-badge&logo=apple&logoColor=white" alt="macOS Intel" />
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Windows</strong></td>
+    <td align="center">x64</td>
+    <td align="center">
+      <a href="https://github.com/x-b-e/xbe-code/releases/latest/download/XBE-Code-x64.exe">
+        <img src="https://img.shields.io/badge/Download-.exe_(x64)-8b5cf6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows" />
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Linux</strong></td>
+    <td align="center">x64</td>
+    <td align="center">
+      <a href="https://github.com/x-b-e/xbe-code/releases/latest/download/XBE-Code-x64.AppImage">
+        <img src="https://img.shields.io/badge/Download-.AppImage_(x64)-00d4aa?style=for-the-badge&logo=linux&logoColor=white" alt="Linux" />
+      </a>
+    </td>
+  </tr>
+</table>
+
+<p align="center">
+  <a href="https://github.com/x-b-e/xbe-code/releases">
+    <img src="https://img.shields.io/badge/All_Releases_%E2%86%92-0a0a0a?style=flat-square" alt="All releases" />
+  </a>
+</p>
+
 > **Fork notice:** This project is a fork of [T3 Code](https://github.com/pingdotgg/t3code) by [Ping.gg](https://github.com/pingdotgg). The original project is licensed under its respective license. XBE Code is an independent rebranding and continuation with extended functionality.
 
 ## Features
