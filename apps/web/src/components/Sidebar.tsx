@@ -1051,9 +1051,9 @@ export default function Sidebar() {
   }, []);
 
   const wordmark = (
-    <div className="flex items-center gap-2">
-      <SidebarTrigger className="shrink-0 md:hidden" />
-      <div className="flex min-w-0 flex-1 items-center gap-1 mt-2 ml-1">
+    <div className="flex items-center gap-3 md:gap-2">
+      <SidebarTrigger className="shrink-0 size-9 md:size-7 md:hidden" />
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 md:gap-1 mt-2 ml-1">
         <a
           href="https://www.x-b-e.com/"
           target="_blank"
@@ -1062,7 +1062,7 @@ export default function Sidebar() {
         >
           <XBEWordmark />
         </a>
-        <span className="truncate text-sm font-medium tracking-tight text-muted-foreground">
+        <span className="truncate text-base md:text-sm font-medium tracking-tight text-muted-foreground">
           Code
         </span>
       </div>
@@ -1075,7 +1075,7 @@ export default function Sidebar() {
         <>
           <SidebarHeader className="drag-region h-[52px] flex-row items-center gap-2 px-4 py-0 pl-[82px]">
             {wordmark}
-            <div className="ml-auto mt-2">
+            <div className="ml-auto mt-2 hidden md:block">
               <NotificationBell />
             </div>
             {showDesktopUpdateButton && (
@@ -1100,18 +1100,18 @@ export default function Sidebar() {
           </SidebarHeader>
         </>
       ) : (
-        <SidebarHeader className="flex-row items-center gap-3 px-3 py-2 sm:gap-2.5 sm:px-4 sm:py-3">
+        <SidebarHeader className="flex-row items-center gap-3 px-4 py-3 md:gap-2.5 md:px-4 md:py-3">
           {wordmark}
-          <div className="ml-auto">
+          <div className="ml-auto hidden md:block">
             <NotificationBell />
           </div>
         </SidebarHeader>
       )}
 
       <SidebarContent className="gap-0">
-        <div className="px-2 pt-2 pb-1">
+        <div className="px-3 md:px-2 pt-2 pb-1">
           <div className="relative">
-            <SearchIcon className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/50" />
+            <SearchIcon className="pointer-events-none absolute left-2.5 md:left-2 top-1/2 size-4 md:size-3.5 -translate-y-1/2 text-muted-foreground/50" />
             <input
               ref={searchInputRef}
               type="search"
@@ -1145,7 +1145,7 @@ export default function Sidebar() {
           </div>
         </div>
 
-        <SidebarGroup className="px-2 py-2">
+        <SidebarGroup className="px-3 md:px-2 py-2">
           <SidebarMenu>
             {sortedProjects.map((project) => {
               const projectThreads = getProjectThreadsForSearch(
@@ -1218,7 +1218,7 @@ export default function Sidebar() {
                                 void handleNewThread(project.id);
                               }}
                             >
-                              <SquarePenIcon className="size-3.5" />
+                              <SquarePenIcon className="size-4 md:size-3.5" />
                             </SidebarMenuAction>
                           }
                         />
@@ -1231,7 +1231,7 @@ export default function Sidebar() {
                     </div>
 
                     <CollapsibleContent>
-                      <SidebarMenuSub className="mx-1 my-0 w-full translate-x-0 gap-0 px-1.5 py-0">
+                      <SidebarMenuSub className="mx-1 my-0 w-full translate-x-0 gap-1 md:gap-0 px-1.5 py-0">
                         {visibleThreads.map((thread) => {
                           const isActive = routeThreadId === thread.id;
                           const threadStatus = threadStatusPill(
@@ -1250,7 +1250,7 @@ export default function Sidebar() {
                                 render={<div role="button" tabIndex={0} />}
                                 size="sm"
                                 isActive={isActive}
-                                className={`h-10 md:h-7 w-full translate-x-0 cursor-default justify-start px-2 text-left hover:bg-accent hover:text-foreground ${
+                                className={`h-12 md:h-7 w-full translate-x-0 cursor-default justify-start px-3 md:px-2 text-left hover:bg-accent hover:text-foreground ${
                                   isActive
                                     ? "bg-accent/85 text-foreground font-medium ring-1 ring-border/70 dark:bg-accent/55 dark:ring-border/50"
                                     : "text-muted-foreground"
@@ -1343,7 +1343,7 @@ export default function Sidebar() {
                                       onClick={(e) => e.stopPropagation()}
                                     />
                                   ) : (
-                                    <span className="min-w-0 flex-1 truncate text-xs">
+                                    <span className="min-w-0 flex-1 truncate text-sm md:text-xs">
                                       {thread.title}
                                     </span>
                                   )}
@@ -1362,7 +1362,7 @@ export default function Sidebar() {
                                     </span>
                                   )}
                                   <span
-                                    className={`text-[10px] ${
+                                    className={`text-xs md:text-[10px] ${
                                       isActive ? "text-foreground/65" : "text-muted-foreground/40"
                                     }`}
                                   >
@@ -1379,7 +1379,7 @@ export default function Sidebar() {
                             <SidebarMenuSubButton
                               render={<button type="button" />}
                               size="sm"
-                              className="h-9 md:h-6 w-full translate-x-0 justify-start px-2 text-left text-[10px] text-muted-foreground/60 hover:bg-accent hover:text-muted-foreground/80"
+                              className="h-12 md:h-6 w-full translate-x-0 justify-start px-3 md:px-2 text-left text-xs md:text-[10px] text-muted-foreground/60 hover:bg-accent hover:text-muted-foreground/80"
                               onClick={() => {
                                 expandThreadListForProject(project.id);
                               }}
@@ -1393,7 +1393,7 @@ export default function Sidebar() {
                             <SidebarMenuSubButton
                               render={<button type="button" />}
                               size="sm"
-                              className="h-9 md:h-6 w-full translate-x-0 justify-start px-2 text-left text-[10px] text-muted-foreground/60 hover:bg-accent hover:text-muted-foreground/80"
+                              className="h-12 md:h-6 w-full translate-x-0 justify-start px-3 md:px-2 text-left text-xs md:text-[10px] text-muted-foreground/60 hover:bg-accent hover:text-muted-foreground/80"
                               onClick={() => {
                                 collapseThreadListForProject(project.id);
                               }}
@@ -1427,14 +1427,14 @@ export default function Sidebar() {
       </SidebarContent>
 
       <SidebarSeparator />
-      <SidebarFooter className="gap-0 p-3">
+      <SidebarFooter className="gap-0 p-4 md:p-3">
         {addingProject ? (
           <>
             <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
               Add project
             </p>
             <input
-              className="mb-2 w-full rounded-md border border-border bg-secondary px-2 py-1.5 font-mono text-xs text-foreground placeholder:text-muted-foreground/40 focus:border-ring focus:outline-none"
+              className="mb-2 w-full rounded-md border border-border bg-secondary px-3 md:px-2 py-3 md:py-1.5 font-mono text-sm md:text-xs text-foreground placeholder:text-muted-foreground/40 focus:border-ring focus:outline-none"
               placeholder="/path/to/project"
               value={newCwd}
               onChange={(event) => setNewCwd(event.target.value)}
@@ -1446,7 +1446,7 @@ export default function Sidebar() {
             {isElectron && (
               <button
                 type="button"
-                className="mb-2 flex w-full items-center justify-center rounded-md border border-border px-2 py-1.5 text-xs text-muted-foreground transition-colors duration-150 hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
+                className="mb-2 flex w-full items-center justify-center rounded-md border border-border px-3 md:px-2 h-12 md:h-auto md:py-1.5 text-sm md:text-xs text-muted-foreground transition-colors duration-150 hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
                 onClick={() => void handlePickFolder()}
                 disabled={isPickingFolder || isAddingProject}
               >
@@ -1456,7 +1456,7 @@ export default function Sidebar() {
             <div className="flex gap-2">
               <button
                 type="button"
-                className="flex-1 rounded-md bg-primary px-2 py-1 text-xs font-medium text-primary-foreground transition-colors duration-150 hover:bg-primary/90"
+                className="flex-1 rounded-md bg-primary px-3 md:px-2 py-2.5 md:py-1 text-sm md:text-xs font-medium text-primary-foreground transition-colors duration-150 hover:bg-primary/90"
                 onClick={handleAddProject}
                 disabled={isAddingProject}
               >
@@ -1464,7 +1464,7 @@ export default function Sidebar() {
               </button>
               <button
                 type="button"
-                className="flex-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground/80 transition-colors duration-150 hover:bg-secondary"
+                className="flex-1 rounded-md border border-border px-3 md:px-2 py-2.5 md:py-1 text-sm md:text-xs text-muted-foreground/80 transition-colors duration-150 hover:bg-secondary"
                 onClick={() => setAddingProject(false)}
               >
                 Cancel
@@ -1474,7 +1474,7 @@ export default function Sidebar() {
         ) : (
           <button
             type="button"
-            className="flex w-full cursor-pointer items-center justify-center gap-1 rounded-md border border-dashed border-border py-3 md:py-2 text-sm md:text-xs text-muted-foreground/70 transition-colors duration-150 hover:border-ring hover:text-muted-foreground"
+            className="flex w-full cursor-pointer items-center justify-center gap-1 rounded-md border border-dashed border-border h-12 md:h-auto md:py-2 text-sm md:text-xs text-muted-foreground/70 transition-colors duration-150 hover:border-ring hover:text-muted-foreground"
             onClick={() => setAddingProject(true)}
           >
             + Add project

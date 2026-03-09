@@ -1,6 +1,14 @@
-# XBE Code
+<p align="center">
+  <a href="https://www.x-b-e.com/">
+    <img src="assets/prod/logo.svg" alt="XBE Code" width="96" height="96" />
+  </a>
+</p>
 
+<h1 align="center">XBE Code</h1>
+
+<p align="center">
 A web GUI that puts multiple coding agents under one roof — all the power of the terminal, none of the juggling. Run agents side by side, keep context, ship faster.
+</p>
 
 > **Fork notice:** This project is a fork of [T3 Code](https://github.com/pingdotgg/t3code) by [Ping.gg](https://github.com/pingdotgg). The original project is licensed under its respective license. XBE Code is an independent rebranding and continuation with extended functionality.
 

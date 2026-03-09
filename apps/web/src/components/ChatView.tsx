@@ -122,6 +122,7 @@ import {
 } from "../lib/turnDiffTree";
 import BranchToolbar from "./BranchToolbar";
 import GitActionsControl from "./GitActionsControl";
+import { NotificationBell } from "./NotificationCenter";
 import RepoSwitcher from "./RepoSwitcher";
 import {
   isOpenFavoriteEditorShortcut,
@@ -3519,7 +3520,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
           <header className="border-b border-border px-3 py-2 md:hidden">
             <div className="flex items-center gap-2">
               <SidebarTrigger className="size-7 shrink-0" />
-              <span className="text-sm font-medium text-foreground">Threads</span>
+              <span className="flex-1 text-sm font-medium text-foreground">Threads</span>
+              <NotificationBell />
             </div>
           </header>
         )}
@@ -4298,6 +4300,9 @@ const ChatHeader = memo(function ChatHeader({
                 : "Toggle diff panel"}
           </TooltipPopup>
         </Tooltip>
+        <div className="shrink-0 md:hidden">
+          <NotificationBell />
+        </div>
       </div>
     </div>
   );
