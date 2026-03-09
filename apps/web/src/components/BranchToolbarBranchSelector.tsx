@@ -380,7 +380,7 @@ export function BranchToolbarBranchSelector({
                   index={virtualRow.index}
                   value={itemValue}
                   className={
-                    itemValue === resolvedActiveBranch ? "bg-accent text-foreground" : undefined
+                    itemValue === resolvedActiveBranch ? "bg-accent text-accent-foreground" : undefined
                   }
                   style={{
                     position: "absolute",
@@ -394,7 +394,7 @@ export function BranchToolbarBranchSelector({
                   <div className="flex w-full items-center justify-between gap-2">
                     <span className="truncate">{itemValue}</span>
                     {badge && (
-                      <span className="shrink-0 text-[10px] text-muted-foreground/45">{badge}</span>
+                      <span className="shrink-0 text-[10px] opacity-60">{badge}</span>
                     )}
                   </div>
                 </ComboboxItem>

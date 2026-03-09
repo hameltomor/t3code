@@ -4,31 +4,63 @@
 
 @theme inline {
   --animate-skeleton: skeleton 2s -1s infinite linear;
-  --color-warning-foreground: var(--warning-foreground);
-  --color-warning: var(--warning);
-  --color-success-foreground: var(--success-foreground);
-  --color-success: var(--success);
-  --color-info-foreground: var(--info-foreground);
-  --color-info: var(--info);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --color-foreground: var(--foreground);
+
+  /* Core semantic colors */
   --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Status colors */
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+
+  /* Brand triad */
+  --color-neon-pink: var(--neon-pink);
+  --color-neon-purple: var(--neon-purple);
+  --color-neon-teal: var(--neon-teal);
+
+  /* Extended tokens */
+  --color-input-background: var(--input-background);
+  --color-switch-background: var(--switch-background);
+
+  /* Sidebar */
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Charts */
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  /* Radius scale */
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -36,6 +68,7 @@
   --radius-2xl: calc(var(--radius) + 8px);
   --radius-3xl: calc(var(--radius) + 12px);
   --radius-4xl: calc(var(--radius) + 16px);
+
   @keyframes skeleton {
     to {
       background-position: -200% 0;
@@ -63,26 +96,43 @@
 
 :root {
   color-scheme: light;
-  --radius: 0.625rem;
-  --background: var(--color-white);
-  --foreground: var(--color-neutral-800);
-  --card: var(--color-white);
-  --card-foreground: var(--color-neutral-800);
-  --popover: var(--color-white);
-  --popover-foreground: var(--color-neutral-800);
-  --primary: oklch(0.488 0.217 264);
-  --primary-foreground: var(--color-white);
-  --secondary: --alpha(var(--color-black) / 4%);
-  --secondary-foreground: var(--color-neutral-800);
-  --muted: --alpha(var(--color-black) / 4%);
-  --muted-foreground: color-mix(in srgb, var(--color-neutral-500) 90%, var(--color-black));
-  --accent: --alpha(var(--color-black) / 4%);
-  --accent-foreground: var(--color-neutral-800);
-  --destructive: var(--color-red-500);
-  --border: --alpha(var(--color-black) / 8%);
-  --input: --alpha(var(--color-black) / 10%);
-  --ring: oklch(0.488 0.217 264);
-  --destructive-foreground: var(--color-red-700);
+  --radius: 0.25rem;
+
+  /* Brand triad (identical in both modes) */
+  --neon-pink: #ff006e;
+  --neon-purple: #8b5cf6;
+  --neon-teal: #00d4aa;
+
+  /* Surfaces */
+  --background: #ffffff;
+  --foreground: #0a0a0a;
+  --card: #f8f9fa;
+  --card-foreground: #0a0a0a;
+  --popover: #ffffff;
+  --popover-foreground: #0a0a0a;
+
+  /* Actions */
+  --primary: #ff006e;
+  --primary-foreground: #ffffff;
+  --secondary: #8b5cf6;
+  --secondary-foreground: #ffffff;
+  --accent: #ff006e;
+  --accent-foreground: #ffffff;
+
+  /* Neutral */
+  --muted: #f1f5f9;
+  --muted-foreground: #374151;
+  --destructive: #d4183d;
+  --destructive-foreground: #ffffff;
+
+  /* Borders & Inputs */
+  --border: #0000001a;
+  --input: #0000001a;
+  --input-background: #f8f9fa;
+  --switch-background: #e2e8f0;
+  --ring: #ff006e;
+
+  /* Status */
   --info: var(--color-blue-500);
   --info-foreground: var(--color-blue-700);
   --success: var(--color-emerald-500);
@@ -90,44 +140,103 @@
   --warning: var(--color-amber-500);
   --warning-foreground: var(--color-amber-700);
 
+  /* Sidebar */
+  --sidebar: #f8f9fa;
+  --sidebar-foreground: #0a0a0a;
+  --sidebar-primary: #ff006e;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f1f5f9;
+  --sidebar-accent-foreground: #0a0a0a;
+  --sidebar-border: #0000001a;
+  --sidebar-ring: #ff006e;
+
+  /* Charts */
+  --chart-1: #ff006e;
+  --chart-2: #8b5cf6;
+  --chart-3: #00d4aa;
+  --chart-4: gold;
+  --chart-5: #ff4500;
+
+  /* Space */
+  --space-dark: #f8f9fa;
+  --space-darker: #f1f5f9;
+
+  /* Shadows */
+  --shadow-card: 0 1px 3px #0000001a, 0 1px 2px #0000000f;
+  --shadow-card-large: 0 10px 15px #0000001a, 0 4px 6px #0000000d;
+  --shadow-dropdown: 0 10px 25px #00000026, 0 4px 10px #0000001a;
+
   @variant dark {
     color-scheme: dark;
-    --background: color-mix(in srgb, var(--color-neutral-950) 95%, var(--color-white));
-    --foreground: var(--color-neutral-100);
-    --card: color-mix(in srgb, var(--background) 98%, var(--color-white));
-    --card-foreground: var(--color-neutral-100);
-    --popover: color-mix(in srgb, var(--background) 98%, var(--color-white));
-    --popover-foreground: var(--color-neutral-100);
-    --primary: oklch(0.588 0.217 264);
-    --primary-foreground: var(--color-white);
-    --secondary: --alpha(var(--color-white) / 4%);
-    --secondary-foreground: var(--color-neutral-100);
-    --muted: --alpha(var(--color-white) / 4%);
-    --muted-foreground: color-mix(in srgb, var(--color-neutral-500) 90%, var(--color-white));
-    --accent: --alpha(var(--color-white) / 4%);
-    --accent-foreground: var(--color-neutral-100);
-    --destructive: color-mix(in srgb, var(--color-red-500) 90%, var(--color-white));
-    --border: --alpha(var(--color-white) / 6%);
-    --input: --alpha(var(--color-white) / 8%);
-    --ring: oklch(0.588 0.217 264);
-    --destructive-foreground: var(--color-red-400);
+
+    /* Surfaces */
+    --background: #0a0a0a;
+    --foreground: #ffffff;
+    --card: #1a1a1a;
+    --card-foreground: #ffffff;
+    --popover: #1a1a1a;
+    --popover-foreground: #ffffff;
+
+    /* Actions (brand colors stay identical) */
+    --primary: #ff006e;
+    --primary-foreground: #ffffff;
+    --secondary: #8b5cf6;
+    --secondary-foreground: #ffffff;
+    --accent: #ff006e;
+    --accent-foreground: #ffffff;
+
+    /* Neutral */
+    --muted: #2a2a2a;
+    --muted-foreground: #d1d5db;
+    --destructive: #d4183d;
+    --destructive-foreground: #ffffff;
+
+    /* Borders & Inputs */
+    --border: #ffffff1a;
+    --input: #ffffff1a;
+    --input-background: #2a2a2a;
+    --switch-background: #3a3a3a;
+    --ring: #ff006e;
+
+    /* Status */
     --info: var(--color-blue-500);
     --info-foreground: var(--color-blue-400);
     --success: var(--color-emerald-500);
     --success-foreground: var(--color-emerald-400);
     --warning: var(--color-amber-500);
     --warning-foreground: var(--color-amber-400);
+
+    /* Sidebar */
+    --sidebar: #1a1a1a;
+    --sidebar-foreground: #ffffff;
+    --sidebar-primary: #ff006e;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #2a2a2a;
+    --sidebar-accent-foreground: #ffffff;
+    --sidebar-border: #ffffff1a;
+    --sidebar-ring: #ff006e;
+
+    /* Space */
+    --space-dark: #0a0a0a;
+    --space-darker: #050505;
+
+    /* Shadows — cards lose shadows in dark mode */
+    --shadow-card: none;
+    --shadow-card-large: none;
+    --shadow-dropdown: 0 10px 25px #00000080, 0 4px 10px #0000004d;
   }
 }
 
 body {
   font-family:
-    "DM Sans",
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
+    "Poppins",
+    ui-sans-serif,
     system-ui,
-    sans-serif;
+    sans-serif,
+    "Apple Color Emoji",
+    "Segoe UI Emoji",
+    "Segoe UI Symbol",
+    "Noto Color Emoji";
   margin: 0;
   padding: 0;
   min-height: 100vh;
@@ -311,7 +420,7 @@ label:has(> select#reasoning-effort) select {
 
 .chat-markdown :not(pre) > code {
   border: 1px solid var(--border);
-  border-radius: 0.375rem;
+  border-radius: 4px;
   background: var(--muted);
   padding: 0.1rem 0.35rem;
   color: var(--foreground);
@@ -322,7 +431,7 @@ label:has(> select#reasoning-effort) select {
   max-width: 100%;
   overflow-x: auto;
   border: 1px solid var(--border);
-  border-radius: 0.75rem;
+  border-radius: 8px;
   background: var(--muted);
   padding: 0.8rem 0.9rem;
 }
@@ -354,7 +463,7 @@ label:has(> select#reasoning-effort) select {
   justify-content: center;
   height: 1.5rem;
   width: 1.5rem;
-  border-radius: 0.375rem;
+  border-radius: 4px;
   border: 1px solid var(--border);
   background: color-mix(in srgb, var(--background) 82%, transparent);
   color: var(--muted-foreground);

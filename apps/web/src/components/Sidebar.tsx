@@ -64,6 +64,7 @@ import {
   SidebarMenuSubItem,
   SidebarSeparator,
   SidebarTrigger,
+  useSidebar,
 } from "./ui/sidebar";
 import {
   formatWorktreePathForDisplay,
@@ -212,12 +213,11 @@ function prStatusIndicator(pr: ThreadPr, forgeProvider: "github" | "gitlab" | "u
 
 function XBEWordmark() {
   return (
-    <span
-      aria-label="XBE"
-      className="shrink-0 text-sm font-bold tracking-tight text-foreground"
-    >
-      XBE
-    </span>
+    <img
+      src="/xbe-wordmark.png"
+      alt="XBE"
+      className="h-4 shrink-0 dark:brightness-100 brightness-0"
+    />
   );
 }
 
@@ -266,6 +266,7 @@ function ProjectFavicon({ cwd }: { cwd: string }) {
 }
 
 export default function Sidebar() {
+  const { isMobile, setOpenMobile } = useSidebar();
   const projects = useStore((store) => store.projects);
   const threads = useStore((store) => store.threads);
   const markThreadUnread = useStore((store) => store.markThreadUnread);
@@ -291,6 +292,16 @@ export default function Sidebar() {
     strict: false,
     select: (params) => (params.threadId ? ThreadId.makeUnsafe(params.threadId) : null),
   });
+
+  // Auto-close mobile sidebar drawer when route changes
+  const prevRouteThreadIdRef = useRef(routeThreadId);
+  useEffect(() => {
+    if (prevRouteThreadIdRef.current !== routeThreadId && isMobile) {
+      setOpenMobile(false);
+    }
+    prevRouteThreadIdRef.current = routeThreadId;
+  }, [routeThreadId, isMobile, setOpenMobile]);
+
   const { data: keybindings = EMPTY_KEYBINDINGS } = useQuery({
     ...serverConfigQueryOptions(),
     select: (config) => config.keybindings,
@@ -1043,7 +1054,14 @@ export default function Sidebar() {
     <div className="flex items-center gap-2">
       <SidebarTrigger className="shrink-0 md:hidden" />
       <div className="flex min-w-0 flex-1 items-center gap-1 mt-2 ml-1">
-        <XBEWordmark />
+        <a
+          href="https://www.x-b-e.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="shrink-0 opacity-80 transition-opacity hover:opacity-100"
+        >
+          <XBEWordmark />
+        </a>
         <span className="truncate text-sm font-medium tracking-tight text-muted-foreground">
           Code
         </span>
@@ -1110,7 +1128,7 @@ export default function Sidebar() {
                   }
                 }
               }}
-              className="h-7 w-full rounded-md border border-input bg-background pl-7 pr-7 text-xs text-foreground placeholder:text-muted-foreground/50 outline-none ring-ring/24 transition-shadow focus:border-ring focus:ring-[3px] dark:bg-input/32 [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none"
+              className="h-12 md:h-7 w-full rounded-md border border-input bg-background pl-8 md:pl-7 pr-8 md:pr-7 text-sm md:text-xs text-foreground placeholder:text-muted-foreground/50 outline-none ring-ring/24 transition-shadow focus:border-ring focus:ring-[3px] dark:bg-input/32 [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none"
             />
             {searchQuery && (
               <button
@@ -1160,7 +1178,7 @@ export default function Sidebar() {
                         render={
                           <SidebarMenuButton
                             size="sm"
-                            className="gap-2 px-2 py-1.5 text-left hover:bg-accent group-hover/project-header:bg-accent group-hover/project-header:text-sidebar-accent-foreground"
+                            className="h-12 md:h-7 gap-2.5 md:gap-2 px-3 md:px-2 py-1.5 text-left hover:bg-accent group-hover/project-header:bg-accent group-hover/project-header:text-sidebar-accent-foreground"
                           />
                         }
                         onContextMenu={(event) => {
@@ -1172,12 +1190,12 @@ export default function Sidebar() {
                         }}
                       >
                         <ChevronRightIcon
-                          className={`-ml-0.5 size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-150 ${
+                          className={`-ml-0.5 size-4 md:size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-150 ${
                             project.expanded ? "rotate-90" : ""
                           }`}
                         />
                         <ProjectFavicon cwd={project.cwd} />
-                        <span className="flex-1 truncate text-xs font-medium text-foreground/90">
+                        <span className="flex-1 truncate text-sm md:text-xs font-medium text-foreground/90">
                           {project.name}
                         </span>
                         <RepoSummaryBadge projectId={project.id} workspaceRoot={project.cwd} />
@@ -1193,7 +1211,7 @@ export default function Sidebar() {
                                 />
                               }
                               showOnHover
-                              className="top-1 right-1 size-5 rounded-md p-0 text-muted-foreground/70 hover:bg-secondary hover:text-foreground"
+                              className="top-1 right-1 size-8 md:size-5 rounded-md p-0 text-muted-foreground/70 hover:bg-secondary hover:text-foreground"
                               onClick={(event) => {
                                 event.preventDefault();
                                 event.stopPropagation();
@@ -1232,12 +1250,13 @@ export default function Sidebar() {
                                 render={<div role="button" tabIndex={0} />}
                                 size="sm"
                                 isActive={isActive}
-                                className={`h-7 w-full translate-x-0 cursor-default justify-start px-2 text-left hover:bg-accent hover:text-foreground ${
+                                className={`h-10 md:h-7 w-full translate-x-0 cursor-default justify-start px-2 text-left hover:bg-accent hover:text-foreground ${
                                   isActive
                                     ? "bg-accent/85 text-foreground font-medium ring-1 ring-border/70 dark:bg-accent/55 dark:ring-border/50"
                                     : "text-muted-foreground"
                                 }`}
                                 onClick={() => {
+                                  if (isMobile) setOpenMobile(false);
                                   void navigate({
                                     to: "/$threadId",
                                     params: { threadId: thread.id },
@@ -1246,6 +1265,7 @@ export default function Sidebar() {
                                 onKeyDown={(event) => {
                                   if (event.key !== "Enter" && event.key !== " ") return;
                                   event.preventDefault();
+                                  if (isMobile) setOpenMobile(false);
                                   void navigate({
                                     to: "/$threadId",
                                     params: { threadId: thread.id },
@@ -1359,7 +1379,7 @@ export default function Sidebar() {
                             <SidebarMenuSubButton
                               render={<button type="button" />}
                               size="sm"
-                              className="h-6 w-full translate-x-0 justify-start px-2 text-left text-[10px] text-muted-foreground/60 hover:bg-accent hover:text-muted-foreground/80"
+                              className="h-9 md:h-6 w-full translate-x-0 justify-start px-2 text-left text-[10px] text-muted-foreground/60 hover:bg-accent hover:text-muted-foreground/80"
                               onClick={() => {
                                 expandThreadListForProject(project.id);
                               }}
@@ -1373,7 +1393,7 @@ export default function Sidebar() {
                             <SidebarMenuSubButton
                               render={<button type="button" />}
                               size="sm"
-                              className="h-6 w-full translate-x-0 justify-start px-2 text-left text-[10px] text-muted-foreground/60 hover:bg-accent hover:text-muted-foreground/80"
+                              className="h-9 md:h-6 w-full translate-x-0 justify-start px-2 text-left text-[10px] text-muted-foreground/60 hover:bg-accent hover:text-muted-foreground/80"
                               onClick={() => {
                                 collapseThreadListForProject(project.id);
                               }}
@@ -1454,7 +1474,7 @@ export default function Sidebar() {
         ) : (
           <button
             type="button"
-            className="flex w-full cursor-pointer items-center justify-center gap-1 rounded-md border border-dashed border-border py-2 text-xs text-muted-foreground/70 transition-colors duration-150 hover:border-ring hover:text-muted-foreground"
+            className="flex w-full cursor-pointer items-center justify-center gap-1 rounded-md border border-dashed border-border py-3 md:py-2 text-sm md:text-xs text-muted-foreground/70 transition-colors duration-150 hover:border-ring hover:text-muted-foreground"
             onClick={() => setAddingProject(true)}
           >
             + Add project

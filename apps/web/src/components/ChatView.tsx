@@ -4759,7 +4759,7 @@ const EditableUserMessageBubble = memo(function EditableUserMessageBubble(props:
                   </Button>
                 )}
               </div>
-              <p className="text-right text-[10px] text-muted-foreground/30">
+              <p className="text-right text-[10px] text-secondary-foreground/50">
                 {formatTimestamp(message.createdAt)}
               </p>
             </div>

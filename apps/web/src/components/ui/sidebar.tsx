@@ -231,6 +231,7 @@ function Sidebar({
             data-mobile="true"
             data-sidebar="sidebar"
             data-slot="sidebar"
+            keepMounted
             showCloseButton={false}
             side={side}
             style={
@@ -640,7 +641,7 @@ function SidebarFooter({ className, ...props }: React.ComponentProps<"div">) {
 function SidebarSeparator({ className, ...props }: React.ComponentProps<typeof Separator>) {
   return (
     <Separator
-      className={cn("mx-2 w-auto bg-sidebar-border", className)}
+      className={cn("mx-2 data-[orientation=horizontal]:w-auto bg-sidebar-border", className)}
       data-sidebar="separator"
       data-slot="sidebar-separator"
       {...props}

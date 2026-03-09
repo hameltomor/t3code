@@ -4,7 +4,7 @@ import type {
   ProjectId,
   ThreadId,
 } from "@xbetools/contracts";
-import { OrchestrationCommand } from "@xbetools/contracts";
+import { CommandId, OrchestrationCommand } from "@xbetools/contracts";
 import { Deferred, Effect, Layer, Option, PubSub, Queue, Schema, Stream } from "effect";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
@@ -228,6 +228,44 @@ const makeOrchestrationEngine = Effect.gen(function* () {
       yield* Queue.offer(commandQueue, { command, result });
       return yield* Deferred.await(result);
     });
+
+  // Clean up threads that were "running" when the server last shut down.
+  // After a restart no in-memory provider sessions exist, so these threads
+  // are orphaned and must be moved to "stopped" to avoid stuck UI state.
+  const orphanedThreads = readModel.threads.filter(
+    (t) =>
+      !t.deletedAt &&
+      t.session &&
+      (t.session.status === "running" || t.session.status === "starting"),
+  );
+  if (orphanedThreads.length > 0) {
+    yield* Effect.log("cleaning up orphaned running sessions", {
+      count: orphanedThreads.length,
+      threadIds: orphanedThreads.map((t) => t.id),
+    });
+    const now = new Date().toISOString();
+    for (const thread of orphanedThreads) {
+      yield* dispatch({
+        type: "thread.session.set",
+        commandId: CommandId.makeUnsafe(`server:orphan-cleanup:${crypto.randomUUID()}`),
+        threadId: thread.id,
+        session: {
+          threadId: thread.id,
+          status: "stopped",
+          providerName: thread.session!.providerName,
+          runtimeMode: thread.session!.runtimeMode,
+          activeTurnId: null,
+          lastError: "Session interrupted by server restart",
+          updatedAt: now,
+        },
+        createdAt: now,
+      }).pipe(
+        Effect.catch(() =>
+          Effect.logWarning("failed to clean up orphaned session", { threadId: thread.id }),
+        ),
+      );
+    }
+  }
 
   const streamDomainEvents: OrchestrationEngineShape["streamDomainEvents"] =
     Stream.fromPubSub(eventPubSub);

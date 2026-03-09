@@ -1,16 +1,16 @@
 export const BRAND_ASSET_PATHS = {
-  productionMacIconPng: "assets/prod/black-macos-1024.png",
-  productionLinuxIconPng: "assets/prod/black-universal-1024.png",
-  productionWindowsIconIco: "assets/prod/t3-black-windows.ico",
-  productionWebFaviconIco: "assets/prod/t3-black-web-favicon.ico",
-  productionWebFavicon16Png: "assets/prod/t3-black-web-favicon-16x16.png",
-  productionWebFavicon32Png: "assets/prod/t3-black-web-favicon-32x32.png",
-  productionWebAppleTouchIconPng: "assets/prod/t3-black-web-apple-touch-180.png",
-  developmentWindowsIconIco: "assets/dev/blueprint-windows.ico",
-  developmentWebFaviconIco: "assets/dev/blueprint-web-favicon.ico",
-  developmentWebFavicon16Png: "assets/dev/blueprint-web-favicon-16x16.png",
-  developmentWebFavicon32Png: "assets/dev/blueprint-web-favicon-32x32.png",
-  developmentWebAppleTouchIconPng: "assets/dev/blueprint-web-apple-touch-180.png",
+  productionMacIconPng: "assets/prod/xbe-macos-1024.png",
+  productionLinuxIconPng: "assets/prod/xbe-universal-1024.png",
+  productionWindowsIconIco: "assets/prod/xbe-windows.ico",
+  productionWebFaviconIco: "assets/prod/xbe-web-favicon.ico",
+  productionWebFavicon16Png: "assets/prod/xbe-web-favicon-16x16.png",
+  productionWebFavicon32Png: "assets/prod/xbe-web-favicon-32x32.png",
+  productionWebAppleTouchIconPng: "assets/prod/xbe-web-apple-touch-180.png",
+  developmentWindowsIconIco: "assets/dev/xbe-dev-windows.ico",
+  developmentWebFaviconIco: "assets/dev/xbe-dev-web-favicon.ico",
+  developmentWebFavicon16Png: "assets/dev/xbe-dev-web-favicon-16x16.png",
+  developmentWebFavicon32Png: "assets/dev/xbe-dev-web-favicon-32x32.png",
+  developmentWebAppleTouchIconPng: "assets/dev/xbe-dev-web-apple-touch-180.png",
 } as const;
 
 export interface IconOverride {

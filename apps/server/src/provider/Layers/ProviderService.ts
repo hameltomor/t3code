@@ -356,8 +356,14 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
         const routed = yield* resolveRoutableSession({
           threadId: input.threadId,
           operation: "ProviderService.interruptTurn",
-          allowRecovery: true,
+          allowRecovery: false,
         });
+        if (!routed.isActive) {
+          return yield* toValidationError(
+            "ProviderService.interruptTurn",
+            `No active provider session for thread '${input.threadId}'.`,
+          );
+        }
         yield* routed.adapter.interruptTurn(routed.threadId, input.turnId);
         yield* analytics.record("provider.turn.interrupted", {
           provider: routed.adapter.provider,
