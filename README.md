@@ -72,6 +72,25 @@ A web GUI that puts multiple coding agents under one roof — all the power of t
   </a>
 </p>
 
+<h2 align="center">Run as Web Server (Linux / any OS)</h2>
+
+<p align="center">No repo clone needed. Requires <a href="https://nodejs.org">Node.js</a> 22.13+ and <code>gh</code> CLI with repo access.</p>
+
+```bash
+# download and install the latest server release
+gh release download --repo x-b-e/xbe-code --pattern 'xbe-server.tgz' --dir /tmp --clobber
+npm install -g /tmp/xbe-server.tgz
+
+# start the server (opens browser automatically)
+xbe
+```
+
+<p align="center">
+  <a href="https://github.com/x-b-e/xbe-code/releases/latest/download/xbe-server.tgz">
+    <img src="https://img.shields.io/badge/Download-xbe--server.tgz-00d4aa?style=for-the-badge&logo=npm&logoColor=white" alt="Server tarball" />
+  </a>
+</p>
+
 > **Fork notice:** This project is a fork of [T3 Code](https://github.com/pingdotgg/t3code) by [Ping.gg](https://github.com/pingdotgg). The original project is licensed under its respective license. XBE Code is an independent rebranding and continuation with extended functionality.
 
 ## Features

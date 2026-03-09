@@ -1,6 +1,6 @@
 # release
 
-How to publish a new desktop release so the README download buttons always point to the latest version.
+How to publish a new release so the README download buttons always point to the latest version. Covers both desktop apps and the web server tarball.
 
 ## how it works
 
@@ -17,6 +17,7 @@ How to publish a new desktop release so the README download buttons always point
 | macOS Intel | `XBE-Code-x64.dmg` | `bun dist:desktop:dmg:x64` | macOS (x64 or arm64) |
 | Windows x64 | `XBE-Code-x64.exe` | `bun dist:desktop:win` | Windows |
 | Linux x64 | `XBE-Code-x86_64.AppImage` | `bun dist:desktop:linux` | Linux |
+| Web server (all OS) | `xbe-server.tgz` | `bun apps/server/scripts/cli.ts pack --output-dir release` | any |
 
 ## step by step
 
@@ -38,6 +39,10 @@ bun dist:desktop:dmg:x64
 
 # windows (on a windows machine)
 bun dist:desktop:win
+
+# web server tarball (on any machine with the repo)
+bun apps/server/scripts/cli.ts pack --output-dir release
+cp release/xbe-*.tgz release/xbe-server.tgz
 ```
 
 If the web/server code hasn't changed since the last build, add `--skip-build` to save time:
@@ -75,6 +80,9 @@ gh release upload $VERSION release/XBE-Code-arm64.dmg release/XBE-Code-x64.dmg -
 
 # windows
 gh release upload $VERSION release/XBE-Code-x64.exe --repo x-b-e/xbe-code --clobber
+
+# web server tarball
+gh release upload $VERSION release/xbe-server.tgz --repo x-b-e/xbe-code --clobber
 ```
 
 `--clobber` overwrites if the file already exists (safe to re-upload).
@@ -92,6 +100,7 @@ XBE-Code-arm64.dmg
 XBE-Code-x64.dmg
 XBE-Code-x64.exe
 XBE-Code-x86_64.AppImage
+xbe-server.tgz
 ```
 
 The README download buttons now point to this release.
@@ -105,6 +114,23 @@ VERSION=v0.1.0
 bun dist:desktop:linux
 gh release upload $VERSION release/XBE-Code-x86_64.AppImage --repo x-b-e/xbe-code --clobber
 ```
+
+## installing the web server (for team members)
+
+Team members with `gh` CLI access can install and run the web server without cloning the repo:
+
+```bash
+# install (or upgrade)
+gh release download --repo x-b-e/xbe-code --pattern 'xbe-server.tgz' --dir /tmp --clobber
+npm install -g /tmp/xbe-server.tgz
+
+# run
+xbe
+```
+
+The server starts on `http://localhost:<port>`, auto-opens a browser, and serves the full web UI. Pass `--port 3775` to pin the port, or `--no-browser` for headless use.
+
+Prerequisites: Node.js 22.13+ and at least one authorized agent CLI (Codex, Claude Code, or Gemini CLI).
 
 ## signing (optional)
 

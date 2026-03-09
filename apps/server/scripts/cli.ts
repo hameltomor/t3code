@@ -246,12 +246,95 @@ const publishCmd = Command.make(
 ).pipe(Command.withDescription("Publish the server package to npm."));
 
 // ---------------------------------------------------------------------------
+// pack subcommand
+// ---------------------------------------------------------------------------
+
+const packCmd = Command.make(
+  "pack",
+  {
+    outputDir: Flag.string("output-dir").pipe(Flag.withDefault(".")),
+    verbose: Flag.boolean("verbose").pipe(Flag.withDefault(false)),
+  },
+  (config) =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const fs = yield* FileSystem.FileSystem;
+      const repoRoot = yield* RepoRoot;
+      const serverDir = path.join(repoRoot, "apps/server");
+      const packageJsonPath = path.join(serverDir, "package.json");
+      const backupPath = `${packageJsonPath}.bak`;
+
+      for (const relPath of ["dist/index.mjs", "dist/client/index.html"]) {
+        const abs = path.join(serverDir, relPath);
+        if (!(yield* fs.exists(abs))) {
+          return yield* new CliError({
+            message: `Missing build asset: ${abs}. Run the build subcommand first.`,
+          });
+        }
+      }
+
+      yield* Effect.acquireUseRelease(
+        Effect.gen(function* () {
+          const pkg = {
+            name: serverPackageJson.name,
+            repository: serverPackageJson.repository,
+            bin: serverPackageJson.bin,
+            type: serverPackageJson.type,
+            version: serverPackageJson.version,
+            engines: serverPackageJson.engines,
+            files: serverPackageJson.files,
+            dependencies: serverPackageJson.dependencies as Record<string, unknown>,
+          };
+
+          pkg.dependencies = resolveCatalogDependencies(
+            pkg.dependencies,
+            rootPackageJson.workspaces.catalog,
+            "apps/server dependencies",
+          );
+
+          const original = yield* fs.readFileString(packageJsonPath);
+          yield* fs.writeFileString(backupPath, original);
+          yield* fs.writeFileString(packageJsonPath, `${JSON.stringify(pkg, null, 2)}\n`);
+          yield* Effect.log("[cli] Resolved package.json for pack");
+
+          const iconBackups = yield* applyPublishIconOverrides(repoRoot, serverDir);
+          return { iconBackups };
+        }),
+        () =>
+          Effect.gen(function* () {
+            const outputDir = path.resolve(repoRoot, config.outputDir);
+            yield* Effect.log(`[cli] Running: npm pack --pack-destination ${outputDir}`);
+            yield* runCommand(
+              ChildProcess.make("npm", ["pack", "--pack-destination", outputDir], {
+                cwd: serverDir,
+                stdout: "inherit",
+                stderr: "inherit",
+              }),
+            );
+          }),
+        (resource: { readonly iconBackups: ReadonlyArray<PublishIconBackup> }) =>
+          Effect.gen(function* () {
+            yield* restorePublishIconOverrides(resource.iconBackups).pipe(
+              Effect.catch((error) =>
+                Effect.logError(
+                  `[cli] Failed to restore publish icon overrides: ${String(error)}`,
+                ),
+              ),
+            );
+            yield* fs.rename(backupPath, packageJsonPath);
+            if (config.verbose) yield* Effect.log("[cli] Restored original package.json");
+          }),
+      );
+    }),
+).pipe(Command.withDescription("Create a distributable npm tarball with resolved dependencies."));
+
+// ---------------------------------------------------------------------------
 // root command
 // ---------------------------------------------------------------------------
 
 const cli = Command.make("cli").pipe(
-  Command.withDescription("T3 server build & publish CLI."),
-  Command.withSubcommands([buildCmd, publishCmd]),
+  Command.withDescription("XBE server build, pack & publish CLI."),
+  Command.withSubcommands([buildCmd, packCmd, publishCmd]),
 );
 
 Command.run(cli, { version: "0.0.0" }).pipe(
