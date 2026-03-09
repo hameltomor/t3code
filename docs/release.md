@@ -1,118 +1,258 @@
 # release
 
-How to publish a new release so the README download buttons always point to the latest version. Covers both desktop apps and the web server tarball.
+Full manual release guide. Everything runs from a single Linux machine with `gh`, `gcloud`/`gsutil`, Wine, and ImageMagick installed.
+
+## prerequisites
+
+Tools required on the build machine:
+
+```bash
+# required
+bun --version          # bun runtime (see package.json for version)
+node --version         # Node.js 22.13+
+gh --version           # GitHub CLI, authenticated to x-b-e/xbe-code
+gsutil version         # Google Cloud SDK, authenticated with GCS access
+
+# for cross-platform builds from Linux
+wine --version         # Wine (with wine32 for NSIS)
+convert --version      # ImageMagick (icon resizing)
+png2icns --help        # icnsutils (macOS .icns generation)
+```
+
+Install on Debian/Ubuntu:
+
+```bash
+sudo dpkg --add-architecture i386
+sudo apt-get update
+sudo apt-get install -y wine wine32:i386 imagemagick icnsutils
+# initialize wine32 prefix (one-time)
+rm -rf ~/.wine && WINEARCH=win32 wineboot --init
+```
 
 ## how it works
 
 - The README uses GitHub's `/releases/latest/download/` URLs which auto-resolve to the most recent non-prerelease release.
 - Artifact filenames are version-free (`XBE-Code-{arch}.{ext}`), so the same README links work for every release.
 - No README edits needed when releasing a new version.
-- Cross-compilation is not supported due to native Node modules (`node-pty`, `msgpackr-extract`). Each platform must be built on its native OS.
+- Desktop auto-update uses `electron-updater` with a generic provider pointing at `https://synkr-server.price-bee.com/xbecode/`.
+- The update server (`synkr-server`) proxies `latest*.yml` manifests and binary downloads from GCS bucket `xbecode-releases`.
+- Cross-compilation from Linux works for all platforms (`npmRebuild: false` skips native module recompilation; prebuilt binaries are used).
 
 ## artifacts
 
-| platform | filename | build command | build machine |
-|---|---|---|---|
-| macOS Apple Silicon | `XBE-Code-arm64.dmg` | `bun dist:desktop:dmg:arm64` | macOS (arm64) |
-| macOS Intel | `XBE-Code-x64.dmg` | `bun dist:desktop:dmg:x64` | macOS (x64 or arm64) |
-| Windows x64 | `XBE-Code-x64.exe` | `bun dist:desktop:win` | Windows |
-| Linux x64 | `XBE-Code-x86_64.AppImage` | `bun dist:desktop:linux` | Linux |
-| Web server (all OS) | `xbe-server.tgz` | `bun apps/server/scripts/cli.ts pack --output-dir release` | any |
+| platform | filename | build command |
+|---|---|---|
+| Linux x64 | `XBE-Code-x86_64.AppImage` | `bun dist:desktop:artifact -- --platform linux --target AppImage --arch x64 --build-version $V` |
+| macOS arm64 | `XBE-Code-arm64.zip` | `bun dist:desktop:artifact -- --platform mac --target zip --arch arm64 --build-version $V` |
+| macOS x64 | `XBE-Code-x64.zip` | `bun dist:desktop:artifact -- --platform mac --target zip --arch x64 --build-version $V` |
+| Windows x64 | `XBE-Code-x64.exe` | `bun dist:desktop:artifact -- --platform win --target nsis --arch x64 --build-version $V` |
+| Web server | `xbe-server.tgz` | `bun apps/server/scripts/cli.ts pack --output-dir release` |
 
-## step by step
+## full release step by step
 
 ### 1. pick a version
 
-Decide the version tag. Use semver: `v0.1.0`, `v1.0.0`, etc. Avoid prerelease suffixes (`-alpha`, `-beta`) because GitHub's `/releases/latest` endpoint skips prereleases and the README download links will 404.
+```bash
+V=0.0.6    # no "v" prefix here — just the number
+```
 
-### 2. build on each platform
+Avoid prerelease suffixes (`-alpha`, `-beta`) — GitHub's `/releases/latest` endpoint skips prereleases and the README download links will 404.
 
-Run these on the respective machines. All commands output to `./release/`.
+### 2. bump versions in package.json files
 
 ```bash
-# linux (on a linux machine)
-bun dist:desktop:linux
+node --input-type=module -e '
+  import { readFileSync, writeFileSync } from "node:fs";
+  const V = process.argv[1];
+  for (const f of [
+    "apps/server/package.json",
+    "apps/desktop/package.json",
+    "apps/web/package.json",
+    "packages/contracts/package.json",
+  ]) {
+    const pkg = JSON.parse(readFileSync(f, "utf8"));
+    pkg.version = V;
+    writeFileSync(f, JSON.stringify(pkg, null, 2) + "\n");
+  }
+  console.log("All versions set to " + V);
+' "$V"
 
-# macos (on a mac)
-bun dist:desktop:dmg:arm64
-bun dist:desktop:dmg:x64
+bun install   # refresh lockfile
+```
 
-# windows (on a windows machine)
-bun dist:desktop:win
+### 3. commit and push
 
-# web server tarball (on any machine with the repo)
+```bash
+git add apps/server/package.json apps/desktop/package.json apps/web/package.json packages/contracts/package.json bun.lock
+git commit -m "chore(release): prepare v$V"
+git push origin main
+```
+
+### 4. build all artifacts
+
+```bash
+# clean release directory
+rm -rf release && mkdir release
+
+# build web + server + desktop (prerequisite for all platform builds)
+bun run build:desktop
+
+# build all 4 platforms
+bun dist:desktop:artifact -- --platform linux --target AppImage --arch x64 --build-version "$V"
+bun dist:desktop:artifact -- --platform mac --target zip --arch arm64 --build-version "$V"
+bun dist:desktop:artifact -- --platform mac --target zip --arch x64 --build-version "$V"
+bun dist:desktop:artifact -- --platform win --target nsis --arch x64 --build-version "$V"
+
+# build web server tarball
 bun apps/server/scripts/cli.ts pack --output-dir release
 cp release/xbe-*.tgz release/xbe-server.tgz
 ```
 
-If the web/server code hasn't changed since the last build, add `--skip-build` to save time:
+### 5. fix macOS manifests
+
+The x64 build overwrites `latest-mac.yml`. Rename it and recreate the arm64 manifest:
 
 ```bash
-bun dist:desktop:linux -- --skip-build
+# rename x64 manifest
+cp release/latest-mac.yml release/latest-mac-x64.yml
+
+# recreate arm64 manifest
+SHA=$(openssl dgst -sha512 -binary release/XBE-Code-arm64.zip | openssl base64 -A)
+SIZE=$(stat -c %s release/XBE-Code-arm64.zip)
+DATE=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+
+cat > release/latest-mac.yml <<EOF
+version: $V
+files:
+  - url: XBE-Code-arm64.zip
+    sha512: $SHA
+    size: $SIZE
+path: XBE-Code-arm64.zip
+sha512: $SHA
+releaseDate: '$DATE'
+EOF
 ```
 
-### 3. create the github release
-
-From any machine with `gh` CLI authenticated:
+### 6. verify local artifacts
 
 ```bash
-VERSION=v0.1.0
+ls -lh release/
+```
 
-gh release create $VERSION \
+Expected files:
+
+```
+XBE-Code-arm64.zip              # macOS Apple Silicon
+XBE-Code-arm64.zip.blockmap
+XBE-Code-x64.zip                # macOS Intel
+XBE-Code-x64.zip.blockmap
+XBE-Code-x64.exe                # Windows
+XBE-Code-x64.exe.blockmap
+XBE-Code-x86_64.AppImage        # Linux
+latest-linux.yml                 # Linux update manifest
+latest-mac.yml                   # macOS arm64 update manifest
+latest-mac-x64.yml              # macOS x64 update manifest
+latest.yml                       # Windows update manifest
+xbe-server.tgz                  # Web server tarball
+```
+
+### 7. create GitHub release
+
+```bash
+gh release create "v$V" \
   --repo x-b-e/xbe-code \
-  --title "$VERSION" \
-  --notes "Desktop release $VERSION" \
-  --latest
+  --title "XBE Code v$V" \
+  --generate-notes \
+  --latest \
+  release/XBE-Code-arm64.zip \
+  release/XBE-Code-arm64.zip.blockmap \
+  release/XBE-Code-x64.exe \
+  release/XBE-Code-x64.exe.blockmap \
+  release/XBE-Code-x64.zip \
+  release/XBE-Code-x64.zip.blockmap \
+  release/XBE-Code-x86_64.AppImage \
+  release/latest-linux.yml \
+  release/latest-mac.yml \
+  release/latest-mac-x64.yml \
+  release/latest.yml \
+  release/xbe-server.tgz
 ```
 
-### 4. upload artifacts from each build machine
-
-Upload from whichever machine produced the artifact:
+### 8. upload to GCS (auto-update)
 
 ```bash
-VERSION=v0.1.0
+# upload manifests to bucket root (electron-updater reads these)
+gsutil cp release/latest-mac.yml gs://xbecode-releases/latest-mac.yml
+gsutil cp release/latest-mac-x64.yml gs://xbecode-releases/latest-mac-x64.yml
+gsutil cp release/latest-linux.yml gs://xbecode-releases/latest-linux.yml
+gsutil cp release/latest.yml gs://xbecode-releases/latest.yml
 
-# linux
-gh release upload $VERSION release/XBE-Code-x86_64.AppImage --repo x-b-e/xbe-code --clobber
-
-# macos
-gh release upload $VERSION release/XBE-Code-arm64.dmg release/XBE-Code-x64.dmg --repo x-b-e/xbe-code --clobber
-
-# windows
-gh release upload $VERSION release/XBE-Code-x64.exe --repo x-b-e/xbe-code --clobber
-
-# web server tarball
-gh release upload $VERSION release/xbe-server.tgz --repo x-b-e/xbe-code --clobber
+# upload binaries to version prefix (electron-updater downloads from here)
+gsutil -m cp \
+  release/XBE-Code-arm64.zip \
+  release/XBE-Code-arm64.zip.blockmap \
+  release/XBE-Code-x64.exe \
+  release/XBE-Code-x64.exe.blockmap \
+  release/XBE-Code-x64.zip \
+  release/XBE-Code-x64.zip.blockmap \
+  release/XBE-Code-x86_64.AppImage \
+  gs://xbecode-releases/$V/
 ```
 
-`--clobber` overwrites if the file already exists (safe to re-upload).
-
-### 5. verify
+### 9. verify everything
 
 ```bash
-gh release view $VERSION --repo x-b-e/xbe-code --json assets --jq '.assets[].name'
+# GitHub release assets
+gh release view "v$V" --repo x-b-e/xbe-code --json assets --jq '.assets[].name'
+
+# auto-update manifests
+curl -s https://synkr-server.price-bee.com/xbecode/latest.yml | head -2
+curl -s https://synkr-server.price-bee.com/xbecode/latest-mac.yml | head -2
+curl -s https://synkr-server.price-bee.com/xbecode/latest-linux.yml | head -2
+
+# download redirects
+curl -sI 'https://synkr-server.price-bee.com/xbecode/download/mac?arch=arm64' | grep location
+curl -sI 'https://synkr-server.price-bee.com/xbecode/download/win' | grep location
+curl -sI 'https://synkr-server.price-bee.com/xbecode/download/linux' | grep location
+
+# GCS bucket
+gsutil ls gs://xbecode-releases/$V/
 ```
 
-Expected output:
+All manifests should show `version: $V` and all download redirects should point to `https://storage.googleapis.com/xbecode-releases/$V/...`.
 
-```
-XBE-Code-arm64.dmg
-XBE-Code-x64.dmg
-XBE-Code-x64.exe
-XBE-Code-x86_64.AppImage
-xbe-server.tgz
+## CI release (alternative)
+
+Instead of building locally, you can trigger the GitHub Actions workflow:
+
+```bash
+gh workflow run release.yml --repo x-b-e/xbe-code -f version=$V
 ```
 
-The README download buttons now point to this release.
+This builds all 4 platforms on native runners (macOS, Linux, Windows), uploads to GCS, and creates the GitHub release automatically. The `finalize` job bumps versions in `package.json` and pushes to main.
+
+Monitor with:
+
+```bash
+gh run list --repo x-b-e/xbe-code --workflow=release.yml --limit 1
+gh run watch --repo x-b-e/xbe-code    # live tail
+```
 
 ## replacing a single artifact
 
-To rebuild and replace one platform without touching the others:
+Rebuild one platform and re-upload to both GitHub and GCS:
 
 ```bash
-VERSION=v0.1.0
-bun dist:desktop:linux
-gh release upload $VERSION release/XBE-Code-x86_64.AppImage --repo x-b-e/xbe-code --clobber
+# rebuild linux
+bun run build:desktop
+bun dist:desktop:artifact -- --platform linux --target AppImage --arch x64 --build-version "$V"
+
+# re-upload to GitHub
+gh release upload "v$V" release/XBE-Code-x86_64.AppImage --repo x-b-e/xbe-code --clobber
+
+# re-upload to GCS
+gsutil cp release/XBE-Code-x86_64.AppImage gs://xbecode-releases/$V/
+gsutil cp release/latest-linux.yml gs://xbecode-releases/latest-linux.yml
 ```
 
 ## installing the web server (for team members)
@@ -132,11 +272,48 @@ The server starts on `http://localhost:<port>`, auto-opens a browser, and serves
 
 Prerequisites: Node.js 22.13+ and at least one authorized agent CLI (Codex, Claude Code, or Gemini CLI).
 
+## desktop auto-update
+
+- Runtime updater: `electron-updater` in `apps/desktop/src/main.ts`.
+- Background checks run on startup delay + interval. No automatic download or install.
+- The desktop UI shows a rocket update button when an update is available; click once to download, click again to restart/install.
+- Provider: `generic` pointing at `https://synkr-server.price-bee.com/xbecode/`.
+- The update server (`synkr-server`) proxies `latest*.yml` manifests and binary downloads from GCS bucket `xbecode-releases`.
+- No GitHub token or authentication required — the GCS bucket is publicly readable.
+- Override the update URL at build time: set `XBECODE_DESKTOP_UPDATE_URL` env var.
+
+GCS bucket structure:
+
+```
+gs://xbecode-releases/
+  latest.yml               # Windows manifest (always current)
+  latest-mac.yml            # macOS arm64 manifest
+  latest-mac-x64.yml        # macOS x64 manifest
+  latest-linux.yml          # Linux manifest
+  0.0.5/                    # version prefix
+    XBE-Code-arm64.zip
+    XBE-Code-arm64.zip.blockmap
+    XBE-Code-x64.zip
+    XBE-Code-x64.zip.blockmap
+    XBE-Code-x64.exe
+    XBE-Code-x64.exe.blockmap
+    XBE-Code-x86_64.AppImage
+```
+
+## browser/PWA update notification
+
+- The service worker (`apps/web/public/sw.js`) uses message-based activation — new versions wait until the app sends a `SKIP_WAITING` message.
+- `useServiceWorkerUpdate` hook detects a waiting service worker and polls for updates every 4 hours.
+- `useAppUpdate` hook unifies browser SW updates and desktop electron-updater into a single `AppUpdateInfo` interface.
+- `UpdateBanner` component renders a top-center notification banner when an update is available.
+- In Electron, the banner shows desktop update status (available -> downloading -> ready to restart).
+- In browsers, the banner prompts the user to refresh and activates the new service worker on click.
+
 ## signing (optional)
 
-Signing is auto-detected from environment variables. Builds are unsigned by default. Pass `--signed` to enable.
+Signing is auto-detected from environment variables. Builds are unsigned by default. Add `--signed` to the build command to enable.
 
-### apple signing + notarization (macos)
+### apple signing + notarization (macOS)
 
 Set these environment variables (or GitHub Actions secrets for CI):
 
@@ -146,14 +323,9 @@ Set these environment variables (or GitHub Actions secrets for CI):
 - `APPLE_API_KEY_ID` — key ID from App Store Connect
 - `APPLE_API_ISSUER` — issuer ID from App Store Connect
 
-Setup:
+Note: macOS signing only works when building on macOS (not from Linux cross-compilation). Use CI for signed macOS builds.
 
-1. Create a `Developer ID Application` certificate in Apple Developer portal.
-2. Export certificate + private key as `.p12` from Keychain, base64-encode it.
-3. Create an API key in App Store Connect (Team key).
-4. Build with signing: `bun dist:desktop:dmg:arm64 -- --signed`
-
-### azure trusted signing (windows)
+### azure trusted signing (Windows)
 
 Set these environment variables:
 
@@ -165,57 +337,22 @@ Set these environment variables:
 - `AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME`
 - `AZURE_TRUSTED_SIGNING_PUBLISHER_NAME`
 
-Setup:
-
-1. Create Azure Trusted Signing account and certificate profile.
-2. Create an Entra app registration (service principal) with Trusted Signing permissions.
-3. Build with signing: `bun dist:desktop:win -- --signed`
-
-## desktop auto-update
-
-- Runtime updater: `electron-updater` in `apps/desktop/src/main.ts`.
-- Background checks run on startup delay + interval. No automatic download or install.
-- The desktop UI shows a rocket update button when an update is available; click once to download, click again to restart/install.
-- Provider: generic (`provider: generic`) pointing at `https://synkr-server.price-bee.com/xbecode/`.
-- The update server is a NestJS app (`synkr-server`) that serves `latest*.yml` manifests and binary downloads from GCS bucket `xbecode-releases`.
-- No GitHub token or authentication required — the GCS bucket is publicly readable.
-- The CI `upload_gcs` job automatically uploads manifests to the bucket root and binaries to `{version}/` on every release.
-- Override the update URL at runtime: set `XBECODE_DESKTOP_UPDATE_URL` env var (build-time) or modify `app-update.yml`.
-- Required release assets for updater to work: platform installers, `latest*.yml` metadata, `*.blockmap` files.
-
-## browser/PWA update notification
-
-- The service worker (`apps/web/public/sw.js`) uses message-based activation — new versions wait until the app sends a `SKIP_WAITING` message.
-- `useServiceWorkerUpdate` hook detects a waiting service worker and polls for updates every 4 hours.
-- `useAppUpdate` hook unifies browser SW updates and desktop electron-updater into a single `AppUpdateInfo` interface.
-- `UpdateBanner` component renders a top-center notification banner when an update is available.
-- In Electron, the banner shows desktop update status (available → downloading → ready to restart).
-- In browsers, the banner prompts the user to refresh and activates the new service worker on click.
-
-## npm cli publishing
-
-The CLI package (`apps/server`, npm package `xbe`) can be published separately:
-
-1. Confirm npm org/user owns package `xbe`.
-2. Bump version in `apps/server/package.json`.
-3. Build: `bun run build:desktop`
-4. Publish: `cd apps/server && bun publish --access public`
-
-For GitHub Actions OIDC trusted publishing, configure the npm package settings with provider GitHub Actions, repository `x-b-e/xbe-code`, workflow file `.github/workflows/release.yml`.
-
 ## common mistakes
 
 | mistake | result | fix |
 |---|---|---|
-| Release created with `--prerelease` | README links 404 | `gh release edit $VERSION --repo x-b-e/xbe-code --prerelease=false --latest` |
-| Forgot `--latest` flag | Older release stays as "latest" | `gh release edit $VERSION --repo x-b-e/xbe-code --latest` |
-| Built on wrong OS | Cross-compilation error | Build each platform on its native OS |
-| Version in artifact name | README links break | Keep `artifactName` in build script as `XBE-Code-${arch}.${ext}` |
-| macOS build unsigned when expected signed | Missing Apple secrets | Check `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_API_*` are set |
-| Windows build unsigned when expected signed | Missing Azure secrets | Check all `AZURE_*` env vars are set |
+| Release created with `--prerelease` | README links 404 | `gh release edit v$V --repo x-b-e/xbe-code --prerelease=false --latest` |
+| Forgot `--latest` flag | Older release stays as "latest" | `gh release edit v$V --repo x-b-e/xbe-code --latest` |
+| Forgot `bun run build:desktop` | Missing `apps/server/dist/client/index.html` | Run `bun run build:desktop` before artifact builds |
+| macOS x64 overwrites `latest-mac.yml` | arm64 users get wrong binary | Rename to `latest-mac-x64.yml` and recreate arm64 manifest (step 5) |
+| Uploaded to GCS but forgot manifests | Auto-updater doesn't see new version | Upload `latest*.yml` to bucket root |
+| Wine not initialized | Windows build fails with `kernel32.dll` error | `rm -rf ~/.wine && WINEARCH=win32 wineboot --init` |
 
 ## troubleshooting
 
-- Build fails with signing error: retry without `--signed` to confirm unsigned path works, then re-check credentials.
-- `electron-updater` doesn't find updates: ensure `latest*.yml` and `*.blockmap` files are in the release assets.
-- Private repo download 404: ensure the user is logged into GitHub and has repo access, or set `GH_TOKEN` for CLI use.
+- **Build fails with `sips` not found**: You're on Linux. Ensure ImageMagick (`convert`) and `icnsutils` (`png2icns`) are installed.
+- **Build fails with `wine: could not load kernel32.dll`**: Recreate Wine prefix: `rm -rf ~/.wine && WINEARCH=win32 wineboot --init`
+- **Build fails with `Missing bundled server client`**: Run `bun run build:desktop` first.
+- **`electron-updater` doesn't find updates**: Ensure `latest*.yml` files are uploaded to GCS bucket root and binaries are in `{version}/` prefix.
+- **Build fails with signing error**: Retry without `--signed` to confirm unsigned path works, then re-check credentials.
+- **Private repo download 404**: Ensure the user is logged into GitHub and has repo access, or set `GH_TOKEN` for CLI use.
