@@ -11,9 +11,11 @@ import { QueryClient, useQueryClient } from "@tanstack/react-query";
 
 import { APP_DISPLAY_NAME } from "../branding";
 import { Button } from "../components/ui/button";
+import { InstallBanner } from "../components/InstallBanner";
 import { UpdateBanner } from "../components/UpdateBanner";
 import { AnchoredToastProvider, ToastProvider, toastManager } from "../components/ui/toast";
 import { useAppUpdate } from "../hooks/useAppUpdate";
+import { useInstallPrompt } from "../hooks/useInstallPrompt";
 import { serverConfigQueryOptions, serverQueryKeys } from "../lib/serverReactQuery";
 import { readNativeApi } from "../nativeApi";
 import { hydrateDraftsFromServer, useComposerDraftStore } from "../composerDraftStore";
@@ -49,6 +51,7 @@ function RootRouteView() {
   }
 
   const appUpdate = useAppUpdate();
+  const installPrompt = useInstallPrompt();
 
   return (
     <ToastProvider>
@@ -57,6 +60,7 @@ function RootRouteView() {
         <DesktopProjectBootstrap />
         <Outlet />
         <UpdateBanner update={appUpdate} />
+        <InstallBanner install={installPrompt} />
       </AnchoredToastProvider>
     </ToastProvider>
   );

@@ -77,7 +77,8 @@ const makeWebPushService = Effect.gen(function* () {
 
   const vapidKeys = loadOrGenerateVapidKeys(config.stateDir);
   if (vapidKeys) {
-    webpush.setVapidDetails("mailto:noreply@xbe.tools", vapidKeys.publicKey, vapidKeys.privateKey);
+    const vapidEmail = process.env.XBECODE_VAPID_EMAIL ?? "noreply@xbe.tools";
+    webpush.setVapidDetails(`mailto:${vapidEmail}`, vapidKeys.publicKey, vapidKeys.privateKey);
     logger.info("Web Push initialized with VAPID keys");
   } else {
     logger.warn("Web Push disabled — VAPID key generation failed");
@@ -99,31 +100,34 @@ const makeWebPushService = Effect.gen(function* () {
       const payloadString = JSON.stringify(payload);
       const now = new Date().toISOString();
 
-      for (const sub of subscriptions) {
-        yield* Effect.tryPromise({
-          try: () => sendPushToSubscription(sub, payloadString),
-          catch: (error): WebPushError => new WebPushError({ cause: error }),
-        }).pipe(
-          Effect.tap(() =>
-            pushSubscriptionRepository.updateLastUsedAt(sub.endpoint, now).pipe(
-              Effect.catch(() => Effect.void),
-            ),
-          ),
-          Effect.catch((error) => {
-            const cause = error instanceof WebPushError ? error.cause : null;
-            const statusCode =
-              cause && typeof cause === "object" && "statusCode" in cause
-                ? (cause as { statusCode: number }).statusCode
-                : null;
-            if (statusCode === 404 || statusCode === 410) {
-              return pushSubscriptionRepository.deleteByEndpoint(sub.endpoint).pipe(
+      yield* Effect.all(
+        subscriptions.map((sub) =>
+          Effect.tryPromise({
+            try: () => sendPushToSubscription(sub, payloadString),
+            catch: (error): WebPushError => new WebPushError({ cause: error }),
+          }).pipe(
+            Effect.tap(() =>
+              pushSubscriptionRepository.updateLastUsedAt(sub.endpoint, now).pipe(
                 Effect.catch(() => Effect.void),
-              );
-            }
-            return Effect.void;
-          }),
-        );
-      }
+              ),
+            ),
+            Effect.catch((error) => {
+              const cause = error instanceof WebPushError ? error.cause : null;
+              const statusCode =
+                cause && typeof cause === "object" && "statusCode" in cause
+                  ? (cause as { statusCode: number }).statusCode
+                  : null;
+              if (statusCode === 404 || statusCode === 410) {
+                return pushSubscriptionRepository.deleteByEndpoint(sub.endpoint).pipe(
+                  Effect.catch(() => Effect.void),
+                );
+              }
+              return Effect.void;
+            }),
+          ),
+        ),
+        { concurrency: 10 },
+      );
     }).pipe(Effect.asVoid);
 
   return {

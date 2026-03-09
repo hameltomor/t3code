@@ -5,6 +5,7 @@
 @theme inline {
   --animate-skeleton: skeleton 2s -1s infinite linear;
   --animate-banner-in-top: banner-in-top 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-banner-in-bottom: banner-in-bottom 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
 
   /* Core semantic colors */
   --color-background: var(--background);
@@ -80,6 +81,17 @@
     from {
       opacity: 0;
       transform: translateY(-100%);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes banner-in-bottom {
+    from {
+      opacity: 0;
+      transform: translateY(100%);
     }
     to {
       opacity: 1;

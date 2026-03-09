@@ -1,8 +1,12 @@
-// Service worker for PWA installability and push notifications.
-// Network-first: always fetch from network, caches only an offline fallback page.
+// Service worker for PWA installability, push notifications, and offline support.
+// Bump SW_VERSION when deploying changes — cache names include the version
+// so old caches are cleaned up automatically on activation.
 
-const OFFLINE_CACHE = "xbe-offline-v1";
+const SW_VERSION = 2;
+const OFFLINE_CACHE = `xbe-offline-v${SW_VERSION}`;
+const APP_SHELL_CACHE = `xbe-app-shell-v${SW_VERSION}`;
 const OFFLINE_URL = "/offline.html";
+const KNOWN_CACHES = new Set([OFFLINE_CACHE, APP_SHELL_CACHE]);
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -22,18 +26,29 @@ self.addEventListener("message", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((key) => key !== OFFLINE_CACHE).map((key) => caches.delete(key))),
+      Promise.all(keys.filter((key) => !KNOWN_CACHES.has(key)).map((key) => caches.delete(key))),
     ).then(() => self.clients.claim()),
   );
 });
 
-// Navigation requests: try network, fall back to cached offline page
+// Navigation requests: network-first with app shell caching.
+// Successful responses are cached so the app shell loads offline.
 self.addEventListener("fetch", (event) => {
   if (event.request.mode !== "navigate") return;
   event.respondWith(
-    fetch(event.request).catch(() =>
-      caches.match(OFFLINE_URL).then((cached) => cached || new Response("Offline", { status: 503 })),
-    ),
+    fetch(event.request)
+      .then((response) => {
+        if (response.ok) {
+          const cloned = response.clone();
+          caches.open(APP_SHELL_CACHE).then((cache) => cache.put(event.request, cloned));
+        }
+        return response;
+      })
+      .catch(() =>
+        caches.match(event.request)
+          .then((cached) => cached || caches.match(OFFLINE_URL))
+          .then((cached) => cached || new Response("Offline", { status: 503 })),
+      ),
   );
 });
 
@@ -60,7 +75,7 @@ self.addEventListener("push", (event) => {
   );
 });
 
-// Click handler — focus existing tab or open new window
+// Click handler — prefer client already at target URL, then any client, then new window
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const { threadId } = event.notification.data || {};
@@ -70,18 +85,59 @@ self.addEventListener("notificationclick", (event) => {
     self.clients
       .matchAll({ type: "window", includeUncontrolled: true })
       .then((windowClients) => {
-        // Try to focus an existing window
-        for (const client of windowClients) {
-          if (client.focus) {
-            return client.focus().then((focusedClient) => {
-              if (focusedClient.navigate) {
-                return focusedClient.navigate(targetUrl);
-              }
-            });
+        // Prefer a client already showing the target URL
+        const urlMatch = windowClients.find((client) => {
+          try {
+            const url = new URL(client.url);
+            return url.pathname === targetUrl;
+          } catch {
+            return false;
           }
+        });
+        if (urlMatch && urlMatch.focus) {
+          return urlMatch.focus();
         }
-        // Otherwise open new window
+
+        // Fall back to any focusable client and navigate it
+        const anyClient = windowClients.find((client) => client.focus);
+        if (anyClient) {
+          return anyClient.focus().then((focusedClient) => {
+            if (focusedClient.navigate) {
+              return focusedClient.navigate(targetUrl);
+            }
+          });
+        }
+
+        // No existing window — open a new one
         return self.clients.openWindow(targetUrl);
       }),
+  );
+});
+
+// Handle push subscription rotation — re-subscribe and notify clients
+self.addEventListener("pushsubscriptionchange", (event) => {
+  event.waitUntil(
+    (async () => {
+      try {
+        const oldSubscription = event.oldSubscription;
+        const newSubscription = await self.registration.pushManager.subscribe(
+          oldSubscription
+            ? { userVisibleOnly: true, applicationServerKey: oldSubscription.options.applicationServerKey }
+            : { userVisibleOnly: true },
+        );
+
+        // Notify all clients to re-register the new subscription with the server
+        const clients = await self.clients.matchAll({ type: "window" });
+        for (const client of clients) {
+          // ServiceWorkerClient.postMessage() does not accept targetOrigin
+          client.postMessage({
+            type: "PUSH_SUBSCRIPTION_CHANGED",
+            subscription: newSubscription.toJSON(),
+          });
+        }
+      } catch {
+        // Re-subscription failed — clients will need to resubscribe on next visit
+      }
+    })(),
   );
 });

@@ -141,6 +141,9 @@ export async function showNativeNotification(notification: AppNotification): Pro
   // Only show when page is not focused
   if (document.hasFocus()) return;
 
+  // Check permission before attempting to show
+  if (!supportsNotifications() || Notification.permission !== "granted") return;
+
   try {
     const registration = await navigator.serviceWorker?.ready;
     if (!registration) return;
@@ -236,9 +239,45 @@ export async function subscribeToPush(api: {
     });
 
     return true;
-  } catch {
+  } catch (error) {
+    console.warn("[Push] subscribeToPush failed:", error instanceof Error ? error.message : error);
     return false;
   }
+}
+
+/**
+ * Listen for push subscription changes from the service worker.
+ * When the browser rotates the push subscription, re-register with the server.
+ */
+export function installPushSubscriptionChangeListener(api: {
+  subscribePush: (subscription: {
+    endpoint: string;
+    p256dhKey: string;
+    authKey: string;
+  }) => Promise<void>;
+}): () => void {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return () => {};
+
+  const handler = (event: MessageEvent) => {
+    if (event.data?.type === "PUSH_SUBSCRIPTION_CHANGED" && event.data.subscription) {
+      const keys = event.data.subscription.keys as
+        | { p256dh?: string; auth?: string }
+        | undefined;
+      const endpoint = event.data.subscription.endpoint as string | undefined;
+      if (keys?.p256dh && keys?.auth && endpoint) {
+        void api.subscribePush({
+          endpoint,
+          p256dhKey: keys.p256dh,
+          authKey: keys.auth,
+        }).catch((error) => {
+          console.warn("[Push] Re-registration after subscription change failed:", error);
+        });
+      }
+    }
+  };
+
+  navigator.serviceWorker.addEventListener("message", handler);
+  return () => navigator.serviceWorker.removeEventListener("message", handler);
 }
 
 export async function unsubscribeFromPush(api: {

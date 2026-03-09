@@ -8,6 +8,7 @@ import {
   getDeniedPermissionInstructions,
   getNotificationPermission,
   isIOSSafariBrowser,
+  installPushSubscriptionChangeListener,
   playNotificationSound,
   requestNotificationPermission,
   showNativeNotification,
@@ -303,7 +304,13 @@ export function NotificationBell() {
       }
     });
 
-    return unsub;
+    // Re-register push subscription if the browser rotates it
+    const unsubPushChange = installPushSubscriptionChangeListener(api.notifications);
+
+    return () => {
+      unsub();
+      unsubPushChange();
+    };
   }, [fetchUnreadCount]);
 
   // Auto-mark notifications as read when navigating to a thread

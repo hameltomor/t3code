@@ -21,12 +21,15 @@ export interface ServiceWorkerUpdateState {
 export function useServiceWorkerUpdate(): ServiceWorkerUpdateState {
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const waitingWorkerRef = useRef<ServiceWorker | null>(null);
+  const activatedByThisTabRef = useRef(false);
 
   useEffect(() => {
     if (isElectron) return;
     if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
 
     let disposed = false;
+    let intervalId: number | null = null;
+    const stateChangeCleanups: Array<{ worker: ServiceWorker; handler: () => void }> = [];
 
     const trackWaiting = (worker: ServiceWorker | null) => {
       if (disposed || !worker) return;
@@ -34,10 +37,14 @@ export function useServiceWorkerUpdate(): ServiceWorkerUpdateState {
       setUpdateAvailable(true);
     };
 
-    const onStateChange = (worker: ServiceWorker) => () => {
-      if (worker.state === "installed") {
-        trackWaiting(worker);
-      }
+    const trackInstalling = (worker: ServiceWorker) => {
+      const handler = () => {
+        if (worker.state === "installed") {
+          trackWaiting(worker);
+        }
+      };
+      worker.addEventListener("statechange", handler);
+      stateChangeCleanups.push({ worker, handler });
     };
 
     void navigator.serviceWorker.ready.then((registration) => {
@@ -52,20 +59,19 @@ export function useServiceWorkerUpdate(): ServiceWorkerUpdateState {
       registration.addEventListener("updatefound", () => {
         const installing = registration.installing;
         if (!installing) return;
-        installing.addEventListener("statechange", onStateChange(installing));
+        trackInstalling(installing);
       });
 
       // Periodically check for SW updates (long-lived SPA).
-      const intervalId = window.setInterval(() => {
+      intervalId = window.setInterval(() => {
         registration.update().catch(() => {});
       }, CHECK_INTERVAL_MS);
-
-      return () => window.clearInterval(intervalId);
     });
 
     // When a new SW takes control (after SKIP_WAITING), reload to pick up new assets.
+    // Only reload in the tab that initiated the update to avoid disrupting other tabs.
     const onControllerChange = () => {
-      if (!disposed) {
+      if (!disposed && activatedByThisTabRef.current) {
         window.location.reload();
       }
     };
@@ -73,6 +79,12 @@ export function useServiceWorkerUpdate(): ServiceWorkerUpdateState {
 
     return () => {
       disposed = true;
+      if (intervalId !== null) {
+        window.clearInterval(intervalId);
+      }
+      for (const { worker, handler } of stateChangeCleanups) {
+        worker.removeEventListener("statechange", handler);
+      }
       navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
     };
   }, []);
@@ -80,6 +92,7 @@ export function useServiceWorkerUpdate(): ServiceWorkerUpdateState {
   const activateUpdate = useCallback(() => {
     const worker = waitingWorkerRef.current;
     if (!worker) return;
+    activatedByThisTabRef.current = true;
     // ServiceWorker.postMessage() doesn't accept targetOrigin (different API from Window.postMessage).
     // oxlint(unicorn/require-post-message-target-origin) -- not applicable to SW.
     worker.postMessage({ type: "SKIP_WAITING" }); // eslint-disable-line unicorn/require-post-message-target-origin
