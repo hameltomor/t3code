@@ -18,7 +18,7 @@ A web GUI that puts multiple coding agents under one roof — all the power of t
 
 <p align="center">
   <a href="https://github.com/x-b-e/xbe-code/releases/latest">
-    <img src="https://img.shields.io/github/v/release/x-b-e/xbe-code?label=latest&color=ff006e&style=flat-square" alt="Latest release" />
+    <img src="https://img.shields.io/badge/latest_release-%E2%86%93-ff006e?style=flat-square" alt="Latest release" />
   </a>
 </p>
 
