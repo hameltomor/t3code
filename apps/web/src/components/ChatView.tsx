@@ -131,7 +131,7 @@ import {
 } from "../keybindings";
 import ChatMarkdown from "./ChatMarkdown";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
-import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "./ui/alert";
 import {
   BotIcon,
   ChevronDownIcon,
@@ -1780,6 +1780,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
         "button, summary, [role='button'], [data-scroll-anchor-target]",
       );
       if (!trigger || !scrollContainer.contains(trigger)) return;
+      if (trigger.closest("[data-scroll-anchor-ignore]")) return;
 
       pendingInteractionAnchorRef.current = {
         element: trigger,
@@ -3578,7 +3579,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
 
       {/* Error banner */}
       <ProviderHealthBanner status={activeProviderStatus} />
-      <ThreadErrorBanner error={activeThread.error} />
+      <ThreadErrorBanner
+        error={activeThread.error}
+        onDismiss={() => setThreadError(activeThread.id, null)}
+      />
       <PlanModePanel activePlan={activePlan} />
 
       {/* Messages */}
@@ -4218,11 +4222,11 @@ const ChatHeader = memo(function ChatHeader({
   const gitActionsRepoCwd = isMultiRepo ? (selectedRepoCwd ?? workspaceRepos[0]?.path ?? null) : gitCwd;
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2">
-      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden sm:gap-3">
+    <div className="flex min-w-0 flex-1 flex-row items-center gap-2 sm:gap-2">
+      <div className="flex min-w-0 items-center gap-1.5 overflow-hidden sm:flex-1 sm:gap-3">
         <SidebarTrigger className="size-7 shrink-0 md:hidden" />
         <h2
-          className="min-w-0 shrink truncate text-sm font-medium text-foreground"
+          className="max-w-12 sm:max-w-none min-w-0 shrink truncate text-sm font-medium text-foreground"
           title={activeThreadTitle}
         >
           {activeThreadTitle}
@@ -4230,19 +4234,19 @@ const ChatHeader = memo(function ChatHeader({
         {activeProjectName && truncatedProjectName && (
           <Badge
             variant="outline"
-            className="max-w-32 min-w-0 shrink-0 justify-start overflow-hidden"
+            className="max-w-18 sm:max-w-32 min-w-0 shrink-0 justify-start overflow-hidden"
             title={activeProjectName}
           >
             <span className="block truncate">{truncatedProjectName}</span>
           </Badge>
         )}
         {activeProjectName && !isGitRepo && !isMultiRepo && (
-          <Badge variant="outline" className="shrink-0 text-[10px] text-amber-700">
+          <Badge variant="outline" className="hidden sm:inline-flex shrink-0 text-[10px] text-amber-700">
             No Git
           </Badge>
         )}
       </div>
-      <div className="@container/header-actions flex w-full min-w-0 items-center gap-2 @sm/header-actions:gap-3 sm:w-auto sm:flex-1 sm:justify-end">
+      <div className="@container/header-actions flex min-w-0 flex-1 items-center justify-end gap-1 sm:gap-2 @sm/header-actions:gap-3">
         {activeProjectScripts && (
           <div className="hidden sm:contents">
             <ProjectScriptsControl
@@ -4265,7 +4269,7 @@ const ChatHeader = memo(function ChatHeader({
           </div>
         )}
         {activeProjectName && isMultiRepo && activeProjectId && workspaceReposQueryCwd && (
-          <div className="min-w-0 flex-1 sm:flex-initial [&_button]:sm:max-w-48 [&_button]:max-w-none [&_button]:w-full">
+          <div className="min-w-0 [&_button]:max-w-24 [&_button]:sm:max-w-48">
             <RepoSwitcher
               projectId={activeProjectId}
               workspaceRoot={workspaceReposQueryCwd}
@@ -4300,7 +4304,7 @@ const ChatHeader = memo(function ChatHeader({
                 : "Toggle diff panel"}
           </TooltipPopup>
         </Tooltip>
-        <div className="shrink-0 md:hidden">
+        <div className="shrink-0">
           <NotificationBell />
         </div>
       </div>
@@ -4308,7 +4312,13 @@ const ChatHeader = memo(function ChatHeader({
   );
 });
 
-const ThreadErrorBanner = memo(function ThreadErrorBanner({ error }: { error: string | null }) {
+const ThreadErrorBanner = memo(function ThreadErrorBanner({
+  error,
+  onDismiss,
+}: {
+  error: string | null;
+  onDismiss?: () => void;
+}) {
   if (!error) return null;
   return (
     <div className="pt-3 mx-auto max-w-3xl">
@@ -4317,6 +4327,18 @@ const ThreadErrorBanner = memo(function ThreadErrorBanner({ error }: { error: st
         <AlertDescription className="line-clamp-3" title={error}>
           {error}
         </AlertDescription>
+        {onDismiss && (
+          <AlertAction>
+            <button
+              type="button"
+              aria-label="Dismiss error"
+              className="inline-flex size-6 items-center justify-center rounded-md text-destructive/60 transition-colors hover:text-destructive"
+              onClick={onDismiss}
+            >
+              <XIcon className="size-3.5" />
+            </button>
+          </AlertAction>
+        )}
       </Alert>
     </div>
   );
@@ -4732,7 +4754,7 @@ const EditableUserMessageBubble = memo(function EditableUserMessageBubble(props:
         ) : (
           <>
             {message.text && (
-              <pre className="whitespace-pre-wrap wrap-break-word font-mono text-sm leading-relaxed text-foreground">
+              <pre className="whitespace-pre-wrap wrap-break-word font-mono text-base md:text-sm leading-relaxed text-foreground">
                 {message.text}
               </pre>
             )}
@@ -5078,7 +5100,7 @@ const ProposedPlanCard = memo(function ProposedPlanCard({
         </div>
         {canCollapse ? (
           <div className="mt-4 flex justify-center">
-            <Button size="sm" variant="outline" onClick={() => setExpanded((value) => !value)}>
+            <Button size="sm" variant="outline" data-scroll-anchor-ignore onClick={() => setExpanded((value) => !value)}>
               {expanded ? "Collapse plan" : "Expand plan"}
             </Button>
           </div>

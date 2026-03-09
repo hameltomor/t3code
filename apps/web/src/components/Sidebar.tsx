@@ -8,7 +8,6 @@ import {
   TerminalIcon,
   XIcon,
 } from "lucide-react";
-import { NotificationBell } from "./NotificationCenter";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DEFAULT_RUNTIME_MODE,
@@ -26,8 +25,8 @@ import { isElectron } from "../env";
 import { newCommandId, newProjectId, newThreadId } from "../lib/utils";
 import { useStore } from "../store";
 import { isChatNewLocalShortcut, isChatNewShortcut, shortcutLabelForCommand } from "../keybindings";
-import { type Thread } from "../types";
-import { derivePendingApprovals } from "../session-logic";
+import { derivePendingApprovals, derivePendingUserInputs } from "../session-logic";
+import { resolveThreadStatusPill } from "./Sidebar.logic";
 import {
   gitRemoveWorktreeMutationOptions,
   gitRemoveWorkspaceWorktreesMutationOptions,
@@ -94,13 +93,6 @@ function formatRelativeTime(iso: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-interface ThreadStatusPill {
-  label: "Working" | "Connecting" | "Completed" | "Pending Approval";
-  colorClass: string;
-  dotClass: string;
-  pulse: boolean;
-}
-
 interface TerminalStatusIndicator {
   label: "Terminal process running";
   colorClass: string;
@@ -115,57 +107,6 @@ interface PrStatusIndicator {
 }
 
 type ThreadPr = GitStatusResult["pr"];
-
-function hasUnseenCompletion(thread: Thread): boolean {
-  if (!thread.latestTurn?.completedAt) return false;
-  const completedAt = Date.parse(thread.latestTurn.completedAt);
-  if (Number.isNaN(completedAt)) return false;
-  if (!thread.lastVisitedAt) return true;
-
-  const lastVisitedAt = Date.parse(thread.lastVisitedAt);
-  if (Number.isNaN(lastVisitedAt)) return true;
-  return completedAt > lastVisitedAt;
-}
-
-function threadStatusPill(thread: Thread, hasPendingApprovals: boolean): ThreadStatusPill | null {
-  if (hasPendingApprovals) {
-    return {
-      label: "Pending Approval",
-      colorClass: "text-amber-600 dark:text-amber-300/90",
-      dotClass: "bg-amber-500 dark:bg-amber-300/90",
-      pulse: false,
-    };
-  }
-
-  if (thread.session?.status === "running") {
-    return {
-      label: "Working",
-      colorClass: "text-sky-600 dark:text-sky-300/80",
-      dotClass: "bg-sky-500 dark:bg-sky-300/80",
-      pulse: true,
-    };
-  }
-
-  if (thread.session?.status === "connecting") {
-    return {
-      label: "Connecting",
-      colorClass: "text-sky-600 dark:text-sky-300/80",
-      dotClass: "bg-sky-500 dark:bg-sky-300/80",
-      pulse: true,
-    };
-  }
-
-  if (hasUnseenCompletion(thread)) {
-    return {
-      label: "Completed",
-      colorClass: "text-emerald-600 dark:text-emerald-300/90",
-      dotClass: "bg-emerald-500 dark:bg-emerald-300/90",
-      pulse: false,
-    };
-  }
-
-  return null;
-}
 
 function terminalStatusFromRunningIds(
   runningTerminalIds: string[],
@@ -330,6 +271,13 @@ export default function Sidebar() {
     const map = new Map<ThreadId, boolean>();
     for (const thread of threads) {
       map.set(thread.id, derivePendingApprovals(thread.activities).length > 0);
+    }
+    return map;
+  }, [threads]);
+  const pendingUserInputByThreadId = useMemo(() => {
+    const map = new Map<ThreadId, boolean>();
+    for (const thread of threads) {
+      map.set(thread.id, derivePendingUserInputs(thread.activities).length > 0);
     }
     return map;
   }, [threads]);
@@ -1053,7 +1001,7 @@ export default function Sidebar() {
   const wordmark = (
     <div className="flex items-center gap-3 md:gap-2">
       <SidebarTrigger className="shrink-0 size-9 md:size-7 md:hidden" />
-      <div className="flex min-w-0 flex-1 items-center gap-1.5 md:gap-1 mt-2 ml-1">
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 md:gap-1 md:mt-2 md:ml-1">
         <a
           href="https://www.x-b-e.com/"
           target="_blank"
@@ -1075,9 +1023,7 @@ export default function Sidebar() {
         <>
           <SidebarHeader className="drag-region h-[52px] flex-row items-center gap-2 px-4 py-0 pl-[82px]">
             {wordmark}
-            <div className="ml-auto mt-2 hidden md:block">
-              <NotificationBell />
-            </div>
+            <div className="ml-auto mt-2" />
             {showDesktopUpdateButton && (
               <Tooltip>
                 <TooltipTrigger
@@ -1100,11 +1046,8 @@ export default function Sidebar() {
           </SidebarHeader>
         </>
       ) : (
-        <SidebarHeader className="flex-row items-center gap-3 px-4 py-3 md:gap-2.5 md:px-4 md:py-3">
+        <SidebarHeader className="flex-row items-center gap-3 px-4 py-2 md:gap-2.5 md:px-4 md:py-3">
           {wordmark}
-          <div className="ml-auto hidden md:block">
-            <NotificationBell />
-          </div>
         </SidebarHeader>
       )}
 
@@ -1234,10 +1177,11 @@ export default function Sidebar() {
                       <SidebarMenuSub className="mx-1 my-0 w-full translate-x-0 gap-1 md:gap-0 px-1.5 py-0">
                         {visibleThreads.map((thread) => {
                           const isActive = routeThreadId === thread.id;
-                          const threadStatus = threadStatusPill(
+                          const threadStatus = resolveThreadStatusPill({
                             thread,
-                            pendingApprovalByThreadId.get(thread.id) === true,
-                          );
+                            hasPendingApprovals: pendingApprovalByThreadId.get(thread.id) === true,
+                            hasPendingUserInput: pendingUserInputByThreadId.get(thread.id) === true,
+                          });
                           const prStatus = prStatusIndicator(prByThreadId.get(thread.id) ?? null, forgeProviderByThreadId.get(thread.id));
                           const terminalStatus = terminalStatusFromRunningIds(
                             selectThreadTerminalState(terminalStateByThreadId, thread.id)
