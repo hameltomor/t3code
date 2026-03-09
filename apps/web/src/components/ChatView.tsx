@@ -3938,7 +3938,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
                   {phase !== "running" && !activePendingProgress && pendingUserInputs.length === 0 && (
                     <button
                       type="button"
-                      className="flex size-8 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground/80"
+                      className="flex size-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground/80"
                       onClick={() => fileInputRef.current?.click()}
                       aria-label="Attach images"
                     >
@@ -3982,7 +3982,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
                   ) : phase === "running" ? (
                     <button
                       type="button"
-                      className="flex size-8 items-center justify-center rounded-full bg-rose-500/90 text-white transition-all duration-150 hover:bg-rose-500 hover:scale-105 sm:h-8 sm:w-8"
+                      className="flex size-8 cursor-pointer items-center justify-center rounded-full bg-rose-500/90 text-white transition-all duration-150 hover:bg-rose-500 hover:scale-105 sm:h-8 sm:w-8"
                       onClick={() => void onInterrupt()}
                       aria-label="Stop generation"
                     >
@@ -4045,7 +4045,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
                     ) : (
                       <button
                         type="submit"
-                        className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/90 text-primary-foreground transition-all duration-150 hover:bg-primary hover:scale-105 disabled:opacity-30 disabled:hover:scale-100 sm:h-8 sm:w-8"
+                        className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-primary/90 text-primary-foreground transition-all duration-150 hover:bg-primary hover:scale-105 disabled:cursor-default disabled:opacity-30 disabled:hover:scale-100 sm:h-8 sm:w-8"
                         disabled={
                           isSendBusy ||
                           isConnecting ||
