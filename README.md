@@ -14,6 +14,7 @@ A web GUI that puts multiple coding agents under one roof — all the power of t
 - **Image attachments** — Paste or upload images directly into the chat. They're persisted and forwarded to the agent.
 - **Mobile-ready** — Responsive UI tested down to 320px. Install as a PWA on any phone or tablet — works like a native app.
 - **Desktop app** — Native Electron builds for macOS, Windows, and Linux with auto-updates.
+- **Thread search** — Fuzzy search across titles, messages, and branch names. Cmd/Ctrl+K to find any conversation instantly.
 
 ## Why XBE Code over OpenCode?
 
