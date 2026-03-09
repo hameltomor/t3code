@@ -213,6 +213,7 @@ export default function Sidebar() {
   const markThreadUnread = useStore((store) => store.markThreadUnread);
   const toggleProject = useStore((store) => store.toggleProject);
   const clearComposerDraftForThread = useComposerDraftStore((store) => store.clearThreadDraft);
+  const composerDraftsByThreadId = useComposerDraftStore((store) => store.draftsByThreadId);
   const getDraftThreadByProjectId = useComposerDraftStore(
     (store) => store.getDraftThreadByProjectId,
   );
@@ -1182,6 +1183,8 @@ export default function Sidebar() {
                             hasPendingApprovals: pendingApprovalByThreadId.get(thread.id) === true,
                             hasPendingUserInput: pendingUserInputByThreadId.get(thread.id) === true,
                           });
+                          const composerDraft = composerDraftsByThreadId[thread.id];
+                          const hasDraftPrompt = composerDraft != null && composerDraft.prompt.length > 0;
                           const prStatus = prStatusIndicator(prByThreadId.get(thread.id) ?? null, forgeProviderByThreadId.get(thread.id));
                           const terminalStatus = terminalStatusFromRunningIds(
                             selectThreadTerminalState(terminalStateByThreadId, thread.id)
@@ -1253,6 +1256,12 @@ export default function Sidebar() {
                                         }`}
                                       />
                                       <span className="hidden md:inline">{threadStatus.label}</span>
+                                    </span>
+                                  )}
+                                  {hasDraftPrompt && !threadStatus && (
+                                    <span className="inline-flex items-center gap-1 text-[10px] text-orange-500 dark:text-orange-400">
+                                      <span className="h-1.5 w-1.5 rounded-full bg-orange-500 dark:bg-orange-400" />
+                                      <span className="hidden md:inline">Draft</span>
                                     </span>
                                   )}
                                   {renamingThreadId === thread.id ? (
