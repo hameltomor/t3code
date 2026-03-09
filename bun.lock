@@ -14,7 +14,7 @@
     },
     "apps/desktop": {
       "name": "@xbetools/desktop",
-      "version": "0.0.4-alpha.1",
+      "version": "0.0.5",
       "dependencies": {
         "effect": "catalog:",
         "electron": "40.6.0",
@@ -43,7 +43,7 @@
     },
     "apps/server": {
       "name": "xbe",
-      "version": "0.0.4-alpha.1",
+      "version": "0.0.5",
       "bin": {
         "xbe": "./dist/index.mjs",
       },
@@ -76,7 +76,7 @@
     },
     "apps/web": {
       "name": "@xbetools/web",
-      "version": "0.0.4-alpha.1",
+      "version": "0.0.5",
       "dependencies": {
         "@base-ui/react": "^1.2.0",
         "@lexical/react": "^0.41.0",
@@ -121,7 +121,7 @@
     },
     "packages/contracts": {
       "name": "@xbetools/contracts",
-      "version": "0.0.4-alpha.1",
+      "version": "0.0.5",
       "dependencies": {
         "effect": "catalog:",
       },

@@ -1,6 +1,6 @@
 {
   "name": "@xbetools/desktop",
-  "version": "0.0.4-alpha.1",
+  "version": "0.0.5",
   "private": true,
   "main": "dist-electron/main.js",
   "scripts": {
@@ -19,9 +19,9 @@
     "electron-updater": "^6.6.2"
   },
   "devDependencies": {
+    "@types/node": "catalog:",
     "@xbetools/contracts": "workspace:*",
     "@xbetools/shared": "workspace:*",
-    "@types/node": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:",
