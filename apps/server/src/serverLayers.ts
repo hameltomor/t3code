@@ -63,7 +63,10 @@ export function makeServerProviderLayer(): Layer.Layer<
     const codexAdapterLayer = makeCodexAdapterLive(
       nativeEventLogger ? { nativeEventLogger } : undefined,
     );
-    const claudeCodeAdapterLayer = makeClaudeCodeAdapterLive({ stateDir });
+    const claudeCodeAdapterLayer = makeClaudeCodeAdapterLive({
+      stateDir,
+      ...(nativeEventLogger ? { nativeEventLogger } : {}),
+    });
     const geminiAdapterLayer = makeGeminiAdapterLive({ stateDir });
     const adapterRegistryLayer = ProviderAdapterRegistryLive.pipe(
       Layer.provide(codexAdapterLayer),

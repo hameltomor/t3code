@@ -55,6 +55,20 @@ const PROVIDER = "claudeCode" as const;
 const CLAUDE_SETTING_SOURCES = ["user", "project", "local"] as const;
 const CLAUDE_CODE_PRESET = { type: "preset", preset: "claude_code" } as const;
 
+/**
+ * Strip env vars that cause the Claude Code CLI to refuse to start
+ * (e.g. when the XBE Code server is launched from within a Claude Code session,
+ * CLAUDECODE=1 is inherited and triggers the nested-session guard).
+ */
+const STRIPPED_ENV_KEYS = ["CLAUDECODE", "CLAUDE_CODE_SSE_PORT"];
+function sanitizedEnv(): Record<string, string | undefined> {
+  const env = { ...process.env };
+  for (const key of STRIPPED_ENV_KEYS) {
+    delete env[key];
+  }
+  return env;
+}
+
 type PromptQueueItem =
   | {
       readonly type: "message";
@@ -147,6 +161,35 @@ function toMessage(cause: unknown, fallback: string): string {
     return cause.message;
   }
   return fallback;
+}
+
+/**
+ * Extract extended error details from the Claude Agent SDK error.
+ * The SDK may attach `stderr`, `stdout`, `code`, or `exitCode` to the error
+ * when the underlying Claude Code process crashes.
+ */
+function extractProcessErrorDetail(cause: unknown): string | undefined {
+  if (!(cause instanceof Error)) return undefined;
+  const record = cause as unknown as Record<string, unknown>;
+  const parts: string[] = [];
+  if (typeof record.stderr === "string" && record.stderr.trim().length > 0) {
+    parts.push(`stderr: ${record.stderr.trim()}`);
+  }
+  if (typeof record.stdout === "string" && record.stdout.trim().length > 0) {
+    parts.push(`stdout: ${record.stdout.trim()}`);
+  }
+  if (typeof record.exitCode === "number") {
+    parts.push(`exitCode: ${record.exitCode}`);
+  } else if (typeof record.code === "number") {
+    parts.push(`code: ${record.code}`);
+  }
+  if (cause.cause !== undefined) {
+    const inner = cause.cause;
+    if (inner instanceof Error && inner.message.length > 0) {
+      parts.push(`cause: ${inner.message}`);
+    }
+  }
+  return parts.length > 0 ? parts.join("; ") : undefined;
 }
 
 function asRuntimeItemId(value: string): RuntimeItemId {
@@ -1349,7 +1392,16 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
             if (Cause.hasInterruptsOnly(cause) || context.stopped) {
               return;
             }
-            const message = toMessage(Cause.squash(cause), "Claude runtime stream failed.");
+            const squashed = Cause.squash(cause);
+            const baseMessage = toMessage(squashed, "Claude runtime stream failed.");
+            const detail = extractProcessErrorDetail(squashed);
+            const message = detail ? `${baseMessage} (${detail})` : baseMessage;
+            console.error(
+              `[ClaudeCodeAdapter] Stream error for thread ${context.session.threadId}:`,
+              baseMessage,
+              detail ?? "(no extended detail)",
+              squashed,
+            );
             yield* emitRuntimeError(context, message, cause);
             yield* completeTurn(context, "failed", message);
           }),
@@ -1633,7 +1685,7 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
           mcpServers: {},
           tools: CLAUDE_CODE_PRESET,
           systemPrompt: CLAUDE_CODE_PRESET,
-          env: process.env,
+          env: sanitizedEnv(),
           ...(input.cwd ? { additionalDirectories: [input.cwd] } : {}),
         };
 
@@ -1643,13 +1695,23 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
               prompt,
               options: queryOptions,
             }),
-          catch: (cause) =>
-            new ProviderAdapterProcessError({
+          catch: (cause) => {
+            const baseDetail = toMessage(cause, "Failed to start Claude runtime session.");
+            const processDetail = extractProcessErrorDetail(cause);
+            const detail = processDetail ? `${baseDetail} (${processDetail})` : baseDetail;
+            console.error(
+              `[ClaudeCodeAdapter] Failed to start session for thread ${threadId}:`,
+              baseDetail,
+              processDetail ?? "(no extended detail)",
+              cause,
+            );
+            return new ProviderAdapterProcessError({
               provider: PROVIDER,
               threadId,
-              detail: toMessage(cause, "Failed to start Claude runtime session."),
+              detail,
               cause,
-            }),
+            });
+          },
         });
 
         const session: ProviderSession = {
