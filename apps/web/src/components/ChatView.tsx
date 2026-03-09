@@ -149,6 +149,7 @@ import {
   XIcon,
   CopyIcon,
   CheckIcon,
+  ImagePlusIcon,
   ZapIcon,
 } from "lucide-react";
 import { Button } from "./ui/button";
@@ -713,6 +714,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const attachmentPreviewHandoffTimeoutByMessageIdRef = useRef<Record<string, number>>({});
   const sendInFlightRef = useRef(false);
   const dragDepthRef = useRef(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const terminalOpenByThreadRef = useRef<Record<string, boolean>>({});
   const setMessagesScrollContainerRef = useCallback((element: HTMLDivElement | null) => {
     messagesScrollRef.current = element;
@@ -2381,6 +2383,14 @@ export default function ChatView({ threadId }: ChatViewProps) {
     focusComposer();
   };
 
+  const onFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    addComposerImages(files);
+    focusComposer();
+    // Reset so re-selecting the same file triggers onChange again
+    event.target.value = "";
+  };
+
   const onRevertToTurnCount = useCallback(
     async (
       turnCount: number,
@@ -3855,8 +3865,26 @@ export default function ChatView({ threadId }: ChatViewProps) {
                   </Button>
                 </div>
 
-                {/* Right side: send / stop button */}
+                {/* Right side: attach + send / stop button */}
                 <div className="flex shrink-0 items-center gap-2">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={onFileInputChange}
+                  />
+                  {phase !== "running" && !activePendingProgress && pendingUserInputs.length === 0 && (
+                    <button
+                      type="button"
+                      className="flex size-8 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground/80"
+                      onClick={() => fileInputRef.current?.click()}
+                      aria-label="Attach images"
+                    >
+                      <ImagePlusIcon className="size-4" />
+                    </button>
+                  )}
                   {isPreparingWorktree ? (
                     <span className="text-muted-foreground/70 text-xs">Preparing worktree...</span>
                   ) : null}

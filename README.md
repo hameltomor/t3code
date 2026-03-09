@@ -27,6 +27,33 @@ A web GUI that puts multiple coding agents under one roof — all the power of t
 | **Multi-agent** | Codex + Claude Code + Gemini side by side | Single model per request | Gemini-first, limited others | Multiple models, own proxy |
 | **Run anywhere** | Browser, PWA, desktop app (macOS/Win/Linux) | Desktop only | Desktop only | Terminal + web |
 
+## XBE Code vs T3 Code (upstream fork)
+
+XBE Code is forked from [T3 Code](https://github.com/pingdotgg/t3code). The table below shows what has been added or changed since the fork.
+
+| Feature | **T3 Code** (upstream) | **XBE Code** (this repo) |
+|---|---|---|
+| **Agent: Codex** | Codex only | Codex (unchanged) |
+| **Agent: Claude Code** | Planned, not implemented | Fully integrated via `claude-agent-sdk` — extended thinking, tool approval, permission modes |
+| **Agent: Gemini** | Not present | Full Gemini CLI adapter — tool use, system instructions, project context injection |
+| **Forge: GitHub** | PR creation via `gh` CLI | PR creation via `gh` CLI (unchanged) |
+| **Forge: GitLab** | Not present | MR creation via `glab` CLI — auto-detected from remote URL |
+| **Notifications** | Not present | In-app notification center + Web Push (VAPID) for completed tasks, approvals, and input prompts |
+| **Thread search** | Not present | Fuzzy search (Fuse.js) across titles, messages, and branch names — Cmd/Ctrl+K |
+| **Multi-repo worktrees** | Single-repo worktrees only | Synchronized worktrees across multiple repos in one workspace — atomic create/rollback, orphan cleanup |
+| **PWA / mobile** | Browser access over network, no PWA | Installable PWA with web manifest, responsive down to 320 px, maskable icons |
+| **Image attachments** | Paste/drag-drop in composer, Codex-only delivery | Paste/drag-drop with real `inlineData` forwarding to all three providers, persistent attachment storage |
+| **Desktop app** | Electron with auto-updates | Electron with auto-updates, rebranded bundle ID and protocol scheme (`xbe://`) |
+| **Mobile-responsive UI** | Desktop-focused layout | Two-line mobile header, collapsible sidebar, touch-friendly controls |
+| **Workspace entry search** | Basic file listing | Subsequence-based fuzzy matching, LRU cache (15 s TTL), git check-ignore integration |
+| **Diff viewer** | Unified/split per-turn diffs | Same core + worker-pool parsing, LRU-cached rendered diffs, theme-aware cache keys |
+| **Terminal** | xterm.js, multiple per thread | Same core (unchanged) |
+| **Plan mode** | Interactive AI planning with step tracking | Same core (unchanged) |
+| **Project scripts** | Configurable commands with icons & shortcuts | Same core + `XBECODE_PROJECT_ROOT` / `XBECODE_WORKTREE_PATH` env vars |
+| **Checkpoint/revert** | `refs/t3/checkpoints` | `refs/xbe/checkpoints` (rebranded) |
+| **Event sourcing** | Full CQRS/event-sourcing with SQLite | Same architecture (unchanged) |
+| **Config & branding** | `@t3tools/*`, `~/.t3/`, `T3CODE_` env prefix | `@xbetools/*`, `~/.xbe/`, `XBECODE_` env prefix |
+
 ## How to use
 
 > [!WARNING]
