@@ -1,19 +1,31 @@
 # XBE Code
 
-XBE Code is a minimal web GUI for coding agents. Currently Codex-first, with Claude Code support coming soon.
+A web GUI that puts multiple coding agents under one roof — all the power of the terminal, none of the juggling. Run agents side by side, keep context, ship faster.
 
 > **Fork notice:** This project is a fork of [T3 Code](https://github.com/pingdotgg/t3code) by [Ping.gg](https://github.com/pingdotgg). The original project is licensed under its respective license. XBE Code is an independent rebranding and continuation with extended functionality.
+
+## Features
+
+- **Multi-agent** — Codex, Claude Code, and Gemini in a single interface. Switch models mid-conversation.
+- **Multi-repo workspaces** — Work across several repositories at once. Per-repo branch, status, and diff tracking out of the box.
+- **Git worktrees** — Spin up isolated branches per task with automatic creation, rollback on failure, and orphan cleanup.
+- **GitHub & GitLab** — Create PRs/MRs, view status, and push — all from the UI. Auto-detects your forge from the remote URL.
+- **Notification center** — In-app inbox plus Web Push alerts for completed tasks, approval requests, and input prompts.
+- **Image attachments** — Paste or upload images directly into the chat. They're persisted and forwarded to the agent.
+
+## Why XBE Code over OpenCode?
+
+| | **XBE Code** | **OpenCode** |
+|---|---|---|
+| **Cost** | Free. Uses your existing CLI accounts — no extra subscription. | $10–20/mo plans or pay-per-token through their proxy. |
+| **Your keys, your tokens** | Runs native CLIs (codex, claude, gemini) directly. Tokens go straight to the provider — no middleman. | Routes requests through OpenCode's own infrastructure. |
+| **Transparency** | Fully open source. Read every line, verify nothing leaves your machine, extend anything. | Open-source core, but model access flows through their services. |
+| **Security** | Code runs locally, calls go to the providers you already trust. Nothing to audit beyond what's in this repo. | Additional trust surface — your code context passes through a third-party relay. |
 
 ## How to use
 
 > [!WARNING]
-> You need to have [Codex CLI](https://github.com/openai/codex) installed and authorized for XBE Code to work.
-
-```bash
-npx xbe
-```
-
-You can also just install the desktop app. It's cooler.
+> You need at least one supported agent CLI installed and authorized: [Codex](https://github.com/openai/codex), [Claude Code](https://github.com/anthropics/claude-code), or [Gemini CLI](https://github.com/google-gemini/gemini-cli).
 
 ## Runtime setup
 
