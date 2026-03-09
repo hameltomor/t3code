@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ChevronDownIcon, GitBranchIcon } from "lucide-react";
 
 import { gitWorkspaceReposQueryOptions } from "~/lib/gitReactQuery";
-import { useStore } from "~/store";
+import { useSelectedRepoCwd } from "~/store";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "./ui/menu";
 import { Button } from "./ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
@@ -20,9 +20,7 @@ export default function RepoSwitcher({
   onSelectedRepoCwdChange,
 }: RepoSwitcherProps) {
   const { data } = useQuery(gitWorkspaceReposQueryOptions(workspaceRoot));
-  const selectedRepoCwd = useStore(
-    (store) => store.selectedRepoCwdByProject[projectId] ?? null,
-  );
+  const selectedRepoCwd = useSelectedRepoCwd(projectId);
 
   const repos = data?.repos ?? [];
 

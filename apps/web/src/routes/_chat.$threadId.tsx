@@ -6,7 +6,7 @@ import ChatView from "../components/ChatView";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { parseDiffRouteSearch, stripDiffSearchParams } from "../diffRouteSearch";
 import { useMediaQuery } from "../hooks/useMediaQuery";
-import { useStore } from "../store";
+import { useStore, useThreadExists } from "../store";
 import { Sheet, SheetPopup } from "../components/ui/sheet";
 import { Sidebar, SidebarInset, SidebarProvider, SidebarRail } from "~/components/ui/sidebar";
 
@@ -139,7 +139,7 @@ function ChatThreadRouteView() {
     select: (params) => ThreadId.makeUnsafe(params.threadId),
   });
   const search = Route.useSearch();
-  const threadExists = useStore((store) => store.threads.some((thread) => thread.id === threadId));
+  const threadExists = useThreadExists(threadId);
   const draftThreadExists = useComposerDraftStore(
     (store) => Object.hasOwn(store.draftThreadsByThreadId, threadId),
   );

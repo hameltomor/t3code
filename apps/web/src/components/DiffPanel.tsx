@@ -3,7 +3,7 @@ import { FileDiff, type FileDiffMetadata, Virtualizer } from "@pierre/diffs/reac
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { ThreadId, type TurnId } from "@xbetools/contracts";
-import { ChevronLeftIcon, ChevronRightIcon, Columns2Icon, Rows3Icon } from "lucide-react";
+import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, Columns2Icon, FileIcon, FolderIcon, Rows3Icon } from "lucide-react";
 import { type WheelEvent as ReactWheelEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { gitBranchesQueryOptions } from "~/lib/gitReactQuery";
 import { checkpointDiffQueryOptions } from "~/lib/providerReactQuery";
@@ -15,8 +15,14 @@ import { isElectron } from "../env";
 import { useTheme } from "../hooks/useTheme";
 import { buildPatchCacheKey } from "../lib/diffRendering";
 import { resolveDiffThemeName } from "../lib/diffRendering";
+import {
+  buildTurnDiffTree,
+  summarizeTurnDiffStats,
+  type TurnDiffTreeNode,
+  type TurnDiffStat,
+} from "../lib/turnDiffTree";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
-import { useStore } from "../store";
+import { useProject, useThread } from "../store";
 import { ToggleGroup, Toggle } from "./ui/toggle-group";
 
 type DiffRenderMode = "stacked" | "split";
@@ -148,6 +154,161 @@ function formatTurnChipTimestamp(isoDate: string): string {
   }).format(new Date(isoDate));
 }
 
+// ── File tree components ─────────────────────────────────────────────
+
+function DiffStatBadge({ stat }: { stat: TurnDiffStat | null }) {
+  if (!stat || (stat.additions === 0 && stat.deletions === 0)) return null;
+  return (
+    <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-2 font-mono text-[10px] leading-none">
+      {stat.additions > 0 && (
+        <span className="text-green-500/90">+{stat.additions}</span>
+      )}
+      {stat.deletions > 0 && (
+        <span className="text-red-400/90">&minus;{stat.deletions}</span>
+      )}
+    </span>
+  );
+}
+
+function FileTreeNode({
+  node,
+  depth,
+  onFileClick,
+  expandedPaths,
+  onToggle,
+}: {
+  node: TurnDiffTreeNode;
+  depth: number;
+  onFileClick: (path: string) => void;
+  expandedPaths: Set<string>;
+  onToggle: (path: string) => void;
+}) {
+  if (node.kind === "file") {
+    return (
+      <button
+        type="button"
+        className="flex w-full items-center gap-1.5 rounded-sm px-1.5 py-[3px] text-left text-[11px] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+        style={{ paddingLeft: `${depth * 12 + 6}px` }}
+        onClick={() => onFileClick(node.path)}
+        title={node.path}
+      >
+        <FileIcon className="size-3 shrink-0 opacity-60" />
+        <span className="min-w-0 truncate">{node.name}</span>
+        <DiffStatBadge stat={node.stat} />
+      </button>
+    );
+  }
+
+  const expanded = expandedPaths.has(node.path);
+  return (
+    <div>
+      <button
+        type="button"
+        className="flex w-full items-center gap-1.5 rounded-sm px-1.5 py-[3px] text-left text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+        style={{ paddingLeft: `${depth * 12 + 6}px` }}
+        onClick={() => onToggle(node.path)}
+      >
+        <ChevronDownIcon
+          className={cn(
+            "size-3 shrink-0 transition-transform duration-150",
+            !expanded && "-rotate-90",
+          )}
+        />
+        <FolderIcon className="size-3 shrink-0 opacity-60" />
+        <span className="min-w-0 truncate">{node.name}</span>
+        <DiffStatBadge stat={node.stat} />
+      </button>
+      {expanded &&
+        node.children.map((child) => (
+          <FileTreeNode
+            key={child.path}
+            node={child}
+            depth={depth + 1}
+            onFileClick={onFileClick}
+            expandedPaths={expandedPaths}
+            onToggle={onToggle}
+          />
+        ))}
+    </div>
+  );
+}
+
+function DiffFileTree({
+  files,
+  totalStat,
+  onFileClick,
+}: {
+  files: ReadonlyArray<import("../types").TurnDiffFileChange>;
+  totalStat: TurnDiffStat;
+  onFileClick: (path: string) => void;
+}) {
+  const tree = useMemo(() => buildTurnDiffTree(files), [files]);
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => {
+    // Expand all directories by default
+    const paths = new Set<string>();
+    function collectDirs(nodes: TurnDiffTreeNode[]) {
+      for (const node of nodes) {
+        if (node.kind === "directory") {
+          paths.add(node.path);
+          collectDirs(node.children);
+        }
+      }
+    }
+    collectDirs(tree);
+    return paths;
+  });
+  const [collapsed, setCollapsed] = useState(false);
+
+  const togglePath = useCallback((path: string) => {
+    setExpandedPaths((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  }, []);
+
+  return (
+    <div className="border-b border-border">
+      <button
+        type="button"
+        className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+        onClick={() => setCollapsed((prev) => !prev)}
+      >
+        <ChevronDownIcon
+          className={cn(
+            "size-3 shrink-0 transition-transform duration-150",
+            collapsed && "-rotate-90",
+          )}
+        />
+        <span>
+          {files.length} {files.length === 1 ? "file" : "files"} changed
+        </span>
+        <DiffStatBadge stat={totalStat} />
+      </button>
+      {!collapsed && (
+        <div className="max-h-[200px] overflow-y-auto px-1 pb-1.5">
+          {tree.map((node) => (
+            <FileTreeNode
+              key={node.path}
+              node={node}
+              depth={0}
+              onFileClick={onFileClick}
+              expandedPaths={expandedPaths}
+              onToggle={togglePath}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── DiffPanel ────────────────────────────────────────────────────────
+
 interface DiffPanelProps {
   mode?: "inline" | "sheet" | "sidebar";
 }
@@ -168,13 +329,9 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   });
   const diffSearch = useSearch({ strict: false, select: (search) => parseDiffRouteSearch(search) });
   const activeThreadId = routeThreadId;
-  const activeThread = useStore((store) =>
-    activeThreadId ? store.threads.find((thread) => thread.id === activeThreadId) : undefined,
-  );
+  const activeThread = useThread(activeThreadId);
   const activeProjectId = activeThread?.projectId ?? null;
-  const activeProject = useStore((store) =>
-    activeProjectId ? store.projects.find((project) => project.id === activeProjectId) : undefined,
-  );
+  const activeProject = useProject(activeProjectId);
   const activeCwd = activeThread?.worktreePath ?? activeProject?.cwd;
   const gitBranchesQuery = useQuery(gitBranchesQueryOptions(activeCwd ?? null));
   const isGitRepo = gitBranchesQuery.data?.isRepo ?? true;
@@ -288,6 +445,39 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
       }),
     );
   }, [renderablePatch]);
+
+  // Compute file tree summary from the turn diff summaries (not the rendered patch).
+  // When a single turn is selected, use its files; for the full conversation, aggregate all.
+  const treeFiles = useMemo(() => {
+    if (selectedTurn) return selectedTurn.files;
+    if (orderedTurnDiffSummaries.length === 0) return [];
+    // Aggregate across all turns, keeping latest stats per path.
+    const byPath = new Map<string, (typeof orderedTurnDiffSummaries)[0]["files"][0]>();
+    for (const summary of orderedTurnDiffSummaries) {
+      for (const file of summary.files) {
+        const existing = byPath.get(file.path);
+        if (existing) {
+          byPath.set(file.path, {
+            ...file,
+            additions: (existing.additions ?? 0) + (file.additions ?? 0),
+            deletions: (existing.deletions ?? 0) + (file.deletions ?? 0),
+          });
+        } else {
+          byPath.set(file.path, file);
+        }
+      }
+    }
+    return Array.from(byPath.values());
+  }, [selectedTurn, orderedTurnDiffSummaries]);
+  const treeFileStat = useMemo(() => summarizeTurnDiffStats(treeFiles), [treeFiles]);
+
+  const scrollToFile = useCallback((filePath: string) => {
+    if (!patchViewportRef.current) return;
+    const target = Array.from(
+      patchViewportRef.current.querySelectorAll<HTMLElement>("[data-diff-file-path]"),
+    ).find((element) => element.dataset.diffFilePath === filePath);
+    target?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, []);
 
   useEffect(() => {
     if (!selectedFilePath || !patchViewportRef.current) {
@@ -544,6 +734,13 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
         </div>
       ) : (
         <>
+          {treeFiles.length > 0 && (
+            <DiffFileTree
+              files={treeFiles}
+              totalStat={treeFileStat}
+              onFileClick={scrollToFile}
+            />
+          )}
           <div
             ref={patchViewportRef}
             className="diff-panel-viewport min-h-0 min-w-0 flex-1 overflow-hidden"

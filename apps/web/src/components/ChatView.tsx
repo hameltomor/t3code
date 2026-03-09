@@ -93,7 +93,7 @@ import {
   setPendingUserInputCustomAnswer,
   type PendingUserInputDraftAnswer,
 } from "../pendingUserInput";
-import { useStore } from "../store";
+import { useProject, useSelectedRepoCwd, useStore, useThread } from "../store";
 import {
   buildPlanImplementationThreadTitle,
   buildPlanImplementationPrompt,
@@ -605,8 +605,7 @@ interface ChatViewProps {
 
 export default function ChatView({ threadId }: ChatViewProps) {
   const { open: sidebarOpen } = useSidebar();
-  const threads = useStore((store) => store.threads);
-  const projects = useStore((store) => store.projects);
+  const serverThread = useThread(threadId);
   const markThreadVisited = useStore((store) => store.markThreadVisited);
   const syncServerReadModel = useStore((store) => store.syncServerReadModel);
   const setStoreThreadError = useStore((store) => store.setError);
@@ -722,6 +721,23 @@ export default function ChatView({ threadId }: ChatViewProps) {
     setMessagesScrollElement(element);
   }, []);
 
+  // Detect when the composer is too narrow for full controls layout (e.g. when diff panel is open).
+  // This supplements CSS `sm:` breakpoints which are viewport-based and can't account for the
+  // diff sidebar consuming horizontal space.
+  const COMPOSER_COMPACT_THRESHOLD = 480;
+  const [composerCompact, setComposerCompact] = useState(false);
+  useEffect(() => {
+    const form = composerFormRef.current;
+    if (!form) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setComposerCompact(entry.contentRect.width < COMPOSER_COMPACT_THRESHOLD);
+      }
+    });
+    observer.observe(form);
+    return () => observer.disconnect();
+  }, []);
+
   const terminalState = useTerminalStateStore((state) =>
     selectThreadTerminalState(state.terminalStateByThreadId, threadId),
   );
@@ -757,8 +773,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
     [removeComposerDraftImage, threadId],
   );
 
-  const serverThread = threads.find((t) => t.id === threadId);
-  const fallbackDraftProject = projects.find((project) => project.id === draftThread?.projectId);
+  const draftProjectId = draftThread?.projectId ?? null;
+  const fallbackDraftProject = useProject(draftProjectId);
   const localDraftError = serverThread ? null : (localDraftErrorsByThreadId[threadId] ?? null);
   const localDraftThread = useMemo(
     () =>
@@ -787,7 +803,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const activeThreadId = activeThread?.id ?? null;
   const activeLatestTurn = activeThread?.latestTurn ?? null;
   const latestTurnSettled = isLatestTurnSettled(activeLatestTurn, activeThread?.session ?? null);
-  const activeProject = projects.find((p) => p.id === activeThread?.projectId);
+  const activeProject = useProject(activeThread?.projectId);
 
   useEffect(() => {
     if (!activeThread?.id) return;
@@ -1356,7 +1372,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const setThreadError = useCallback(
     (targetThreadId: ThreadId | null, error: string | null) => {
       if (!targetThreadId) return;
-      if (threads.some((thread) => thread.id === targetThreadId)) {
+      if (useStore.getState().threads.some((thread) => thread.id === targetThreadId)) {
         setStoreThreadError(targetThreadId, error);
         return;
       }
@@ -1370,7 +1386,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
         };
       });
     },
-    [setStoreThreadError, threads],
+    [setStoreThreadError],
   );
 
   const focusComposer = useCallback(() => {
@@ -3807,8 +3823,20 @@ export default function ChatView({ threadId }: ChatViewProps) {
                 />
               </div>
             ) : (
-              <div className="flex flex-wrap items-center justify-between gap-2 px-2.5 pb-2.5 sm:flex-nowrap sm:gap-0 sm:px-3 sm:pb-3">
-                <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:min-w-max sm:overflow-visible">
+              <div
+                className={cn(
+                  "flex items-center justify-between px-2.5 pb-2.5 sm:px-3 sm:pb-3",
+                  composerCompact ? "gap-2" : "gap-2 sm:gap-0",
+                )}
+              >
+                <div
+                  className={cn(
+                    "flex min-w-0 flex-1 items-center gap-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+                    composerCompact
+                      ? "overflow-x-auto"
+                      : "overflow-x-auto sm:min-w-max sm:overflow-visible",
+                  )}
+                >
                   {/* Provider/model picker */}
                   <ProviderModelPicker
                     provider={selectedProvider}
@@ -3821,7 +3849,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
 
                   {selectedProvider === "codex" && selectedEffort != null ? (
                     <>
-                      <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
+                      {!composerCompact && (
+                        <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
+                      )}
                       <CodexTraitsPicker
                         effort={selectedEffort}
                         fastModeEnabled={selectedCodexFastModeEnabled}
@@ -3833,12 +3863,17 @@ export default function ChatView({ threadId }: ChatViewProps) {
                   ) : null}
 
                   {/* Divider */}
-                  <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
+                  {!composerCompact && (
+                    <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
+                  )}
 
                   {/* Interaction mode toggle */}
                   <Button
                     variant="ghost"
-                    className="shrink-0 whitespace-nowrap px-2 text-muted-foreground/70 hover:text-foreground/80 sm:px-3"
+                    className={cn(
+                      "shrink-0 whitespace-nowrap text-muted-foreground/70 hover:text-foreground/80",
+                      composerCompact ? "px-2" : "px-2 sm:px-3",
+                    )}
                     size="sm"
                     type="button"
                     onClick={toggleInteractionMode}
@@ -3849,18 +3884,25 @@ export default function ChatView({ threadId }: ChatViewProps) {
                     }
                   >
                     <BotIcon />
-                    <span className="sr-only sm:not-sr-only">
-                      {interactionMode === "plan" ? "Plan" : "Chat"}
-                    </span>
+                    {!composerCompact && (
+                      <span className="sr-only sm:not-sr-only">
+                        {interactionMode === "plan" ? "Plan" : "Chat"}
+                      </span>
+                    )}
                   </Button>
 
                   {/* Divider */}
-                  <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
+                  {!composerCompact && (
+                    <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
+                  )}
 
                   {/* Runtime mode toggle */}
                   <Button
                     variant="ghost"
-                    className="shrink-0 whitespace-nowrap px-2 text-muted-foreground/70 hover:text-foreground/80 sm:px-3"
+                    className={cn(
+                      "shrink-0 whitespace-nowrap text-muted-foreground/70 hover:text-foreground/80",
+                      composerCompact ? "px-2" : "px-2 sm:px-3",
+                    )}
                     size="sm"
                     type="button"
                     onClick={() =>
@@ -3875,9 +3917,11 @@ export default function ChatView({ threadId }: ChatViewProps) {
                     }
                   >
                     {runtimeMode === "full-access" ? <LockOpenIcon /> : <LockIcon />}
-                    <span className="sr-only sm:not-sr-only">
-                      {runtimeMode === "full-access" ? "Full access" : "Supervised"}
-                    </span>
+                    {!composerCompact && (
+                      <span className="sr-only sm:not-sr-only">
+                        {runtimeMode === "full-access" ? "Full access" : "Supervised"}
+                      </span>
+                    )}
                   </Button>
                 </div>
 
@@ -4211,9 +4255,7 @@ const ChatHeader = memo(function ChatHeader({
     ? truncateTitle(activeProjectName, MAX_HEADER_PROJECT_NAME_LENGTH)
     : null;
   const setSelectedRepoCwd = useStore((store) => store.setSelectedRepoCwd);
-  const selectedRepoCwd = useStore(
-    (store) => (activeProjectId ? store.selectedRepoCwdByProject[activeProjectId] : null) ?? null,
-  );
+  const selectedRepoCwd = useSelectedRepoCwd(activeProjectId);
   // Query workspace repos from the effective CWD (worktree path if in worktree,
   // otherwise project root) so git actions target worktree copies, not originals.
   const workspaceReposQueryCwd = gitCwd ?? activeProjectCwd;

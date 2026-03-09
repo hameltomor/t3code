@@ -1,6 +1,7 @@
-import { Fragment, type ReactNode, createElement, useEffect } from "react";
+import { Fragment, type ReactNode, createElement, useCallback, useEffect } from "react";
 import {
   DEFAULT_MODEL_BY_PROVIDER,
+  type ProjectId,
   type ProviderKind,
   ThreadId,
   type OrchestrationReadModel,
@@ -12,6 +13,7 @@ import {
   resolveModelSlugForProvider,
 } from "@xbetools/shared/model";
 import { create } from "zustand";
+import { useShallow } from "zustand/react/shallow";
 import { type ChatMessage, type Project, type Thread } from "./types";
 
 // ── State ────────────────────────────────────────────────────────────
@@ -450,6 +452,60 @@ export const useStore = create<AppStore>((set) => ({
 
 // Persist on every state change
 useStore.subscribe((state) => persistState(state));
+
+// ── Granular selector hooks ──────────────────────────────────────────
+//
+// Prefer these over selecting entire `threads`/`projects` arrays.
+// They only trigger re-renders when the specific item changes, not
+// when unrelated threads or projects are mutated.
+
+/** Select a single thread by ID. Returns `undefined` when not found. */
+export function useThread(threadId: ThreadId | null | undefined): Thread | undefined {
+  return useStore(
+    useCallback(
+      (store: AppStore) =>
+        threadId ? store.threads.find((t) => t.id === threadId) : undefined,
+      [threadId],
+    ),
+  );
+}
+
+/** Check whether a thread exists without subscribing to its contents. */
+export function useThreadExists(threadId: ThreadId): boolean {
+  return useStore(
+    useCallback(
+      (store: AppStore) => store.threads.some((t) => t.id === threadId),
+      [threadId],
+    ),
+  );
+}
+
+/** Select a single project by ID. Returns `undefined` when not found. */
+export function useProject(projectId: ProjectId | null | undefined): Project | undefined {
+  return useStore(
+    useCallback(
+      (store: AppStore) =>
+        projectId ? store.projects.find((p) => p.id === projectId) : undefined,
+      [projectId],
+    ),
+  );
+}
+
+/** Select the per-project selected repo CWD. */
+export function useSelectedRepoCwd(projectId: ProjectId | null | undefined): string | null {
+  return useStore(
+    useCallback(
+      (store: AppStore) =>
+        projectId ? (store.selectedRepoCwdByProject[projectId] ?? null) : null,
+      [projectId],
+    ),
+  );
+}
+
+/** Batch-select multiple store actions without re-rendering on state changes. */
+export function useStoreActions<T>(selector: (store: AppStore) => T): T {
+  return useStore(useShallow(selector));
+}
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
