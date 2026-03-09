@@ -563,6 +563,9 @@ describe("TerminalManager", () => {
       shellResolver: () => "/definitely/missing-shell -l",
     });
     ptyAdapter.spawnFailures.push(new Error("posix_spawnp failed."));
+    // Push a second failure so the $SHELL env var candidate also fails,
+    // ensuring the retry reaches the hardcoded fallback shells.
+    ptyAdapter.spawnFailures.push(new Error("posix_spawnp failed."));
 
     const snapshot = await manager.open(openInput());
 

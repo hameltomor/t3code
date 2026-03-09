@@ -590,7 +590,8 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
                 provider: PROVIDER,
                 createdAt: observedAt,
                 method: sdkNativeMethod(message),
-                ...(typeof message.session_id === "string"
+                threadId: context.session.threadId,
+              ...(typeof message.session_id === "string"
                   ? { providerThreadId: message.session_id }
                   : {}),
                 ...(context.turnState ? { turnId: asCanonicalTurnId(context.turnState.turnId) } : {}),
