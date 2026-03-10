@@ -1,8 +1,9 @@
 // Service worker for PWA installability, push notifications, and offline support.
-// Bump SW_VERSION when deploying changes — cache names include the version
-// so old caches are cleaned up automatically on activation.
+// SW_VERSION is injected at build time by the swVersion plugin in vite.config.ts.
+// Every release bumps package.json version → plugin rewrites this value → browser
+// detects a new service worker → update banner appears automatically.
 
-const SW_VERSION = 2;
+const SW_VERSION = "__SW_VERSION__";
 const OFFLINE_CACHE = `xbe-offline-v${SW_VERSION}`;
 const APP_SHELL_CACHE = `xbe-app-shell-v${SW_VERSION}`;
 const OFFLINE_URL = "/offline.html";
