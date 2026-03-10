@@ -159,7 +159,7 @@ function formatTurnChipTimestamp(isoDate: string): string {
 function DiffStatBadge({ stat }: { stat: TurnDiffStat | null }) {
   if (!stat || (stat.additions === 0 && stat.deletions === 0)) return null;
   return (
-    <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-2 font-mono text-[10px] leading-none">
+    <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-2 font-mono text-xs leading-none sm:text-[10px]">
       {stat.additions > 0 && (
         <span className="text-green-500/90">+{stat.additions}</span>
       )}
@@ -187,12 +187,12 @@ function FileTreeNode({
     return (
       <button
         type="button"
-        className="flex w-full items-center gap-1.5 rounded-sm px-1.5 py-[3px] text-left text-[11px] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+        className="flex w-full items-center gap-2 rounded-sm px-1.5 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground sm:gap-1.5 sm:py-[3px] sm:text-[11px]"
         style={{ paddingLeft: `${depth * 12 + 6}px` }}
         onClick={() => onFileClick(node.path)}
         title={node.path}
       >
-        <FileIcon className="size-3 shrink-0 opacity-60" />
+        <FileIcon className="size-4 shrink-0 opacity-60 sm:size-3" />
         <span className="min-w-0 truncate">{node.name}</span>
         <DiffStatBadge stat={node.stat} />
       </button>
@@ -204,17 +204,17 @@ function FileTreeNode({
     <div>
       <button
         type="button"
-        className="flex w-full items-center gap-1.5 rounded-sm px-1.5 py-[3px] text-left text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+        className="flex w-full items-center gap-2 rounded-sm px-1.5 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground sm:gap-1.5 sm:py-[3px] sm:text-[11px]"
         style={{ paddingLeft: `${depth * 12 + 6}px` }}
         onClick={() => onToggle(node.path)}
       >
         <ChevronDownIcon
           className={cn(
-            "size-3 shrink-0 transition-transform duration-150",
+            "size-4 shrink-0 transition-transform duration-150 sm:size-3",
             !expanded && "-rotate-90",
           )}
         />
-        <FolderIcon className="size-3 shrink-0 opacity-60" />
+        <FolderIcon className="size-4 shrink-0 opacity-60 sm:size-3" />
         <span className="min-w-0 truncate">{node.name}</span>
         <DiffStatBadge stat={node.stat} />
       </button>
@@ -275,12 +275,12 @@ function DiffFileTree({
     <div className="border-b border-border">
       <button
         type="button"
-        className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+        className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground sm:gap-1.5 sm:py-1.5 sm:text-[11px]"
         onClick={() => setCollapsed((prev) => !prev)}
       >
         <ChevronDownIcon
           className={cn(
-            "size-3 shrink-0 transition-transform duration-150",
+            "size-4 shrink-0 transition-transform duration-150 sm:size-3",
             collapsed && "-rotate-90",
           )}
         />
@@ -290,7 +290,7 @@ function DiffFileTree({
         <DiffStatBadge stat={totalStat} />
       </button>
       {!collapsed && (
-        <div className="max-h-[200px] overflow-y-auto px-1 pb-1.5">
+        <div className="max-h-[300px] overflow-y-auto px-1 pb-1.5 sm:max-h-[200px]">
           {tree.map((node) => (
             <FileTreeNode
               key={node.path}
@@ -332,7 +332,12 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   const activeThread = useThread(activeThreadId);
   const activeProjectId = activeThread?.projectId ?? null;
   const activeProject = useProject(activeProjectId);
-  const activeCwd = activeThread?.worktreePath ?? activeProject?.cwd;
+  // For multi-repo workspaces, worktreePath is a synthetic root (not a git repo).
+  // Use the first worktree entry's path (a real git repo), mirroring server-side
+  // resolveThreadWorkspaceCwd() logic from checkpointing/Utils.ts.
+  const activeCwd = activeThread?.worktreeEntries?.[0]?.worktreePath
+    ?? activeThread?.worktreePath
+    ?? activeProject?.cwd;
   const gitBranchesQuery = useQuery(gitBranchesQueryOptions(activeCwd ?? null));
   const isGitRepo = gitBranchesQuery.data?.isRepo ?? true;
   const { turnDiffSummaries, inferredCheckpointTurnCountByTurnId } =
@@ -597,7 +602,7 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
         <button
           type="button"
           className={cn(
-            "absolute left-0 top-1/2 z-20 inline-flex size-6 -translate-y-1/2 items-center justify-center rounded-md border bg-background/90 text-muted-foreground transition-colors",
+            "absolute left-0 top-1/2 z-20 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-md border bg-background/90 text-muted-foreground transition-colors sm:size-6",
             canScrollTurnStripLeft
               ? "border-border/70 hover:border-border hover:text-foreground"
               : "cursor-not-allowed border-border/40 text-muted-foreground/40",
@@ -606,12 +611,12 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
           disabled={!canScrollTurnStripLeft}
           aria-label="Scroll turn list left"
         >
-          <ChevronLeftIcon className="size-3.5" />
+          <ChevronLeftIcon className="size-4 sm:size-3.5" />
         </button>
         <button
           type="button"
           className={cn(
-            "absolute right-0 top-1/2 z-20 inline-flex size-6 -translate-y-1/2 items-center justify-center rounded-md border bg-background/90 text-muted-foreground transition-colors",
+            "absolute right-0 top-1/2 z-20 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-md border bg-background/90 text-muted-foreground transition-colors sm:size-6",
             canScrollTurnStripRight
               ? "border-border/70 hover:border-border hover:text-foreground"
               : "cursor-not-allowed border-border/40 text-muted-foreground/40",
@@ -620,11 +625,11 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
           disabled={!canScrollTurnStripRight}
           aria-label="Scroll turn list right"
         >
-          <ChevronRightIcon className="size-3.5" />
+          <ChevronRightIcon className="size-4 sm:size-3.5" />
         </button>
         <div
           ref={turnStripRef}
-          className="turn-chip-strip flex gap-1 overflow-x-auto px-8 py-0.5"
+          className="turn-chip-strip flex gap-1.5 overflow-x-auto px-10 py-1 sm:gap-1 sm:px-8 sm:py-0.5"
           onWheel={onTurnStripWheel}
         >
           <button
@@ -635,13 +640,13 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
           >
             <div
               className={cn(
-                "rounded-md border px-2 py-1 text-left transition-colors",
+                "rounded-md border px-3 py-1.5 text-left transition-colors sm:px-2 sm:py-1",
                 selectedTurnId === null
                   ? "border-border bg-accent text-accent-foreground"
                   : "border-border/70 bg-background/70 text-muted-foreground/80 hover:border-border hover:text-foreground/80",
               )}
             >
-              <div className="text-[10px] leading-tight font-medium">All turns</div>
+              <div className="text-sm leading-tight font-medium sm:text-[10px]">All turns</div>
             </div>
           </button>
           {orderedTurnDiffSummaries.map((summary) => (
@@ -655,20 +660,20 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
             >
               <div
                 className={cn(
-                  "rounded-md border px-2 py-1 text-left transition-colors",
+                  "rounded-md border px-3 py-1.5 text-left transition-colors sm:px-2 sm:py-1",
                   summary.turnId === selectedTurn?.turnId
                     ? "border-border bg-accent text-accent-foreground"
                     : "border-border/70 bg-background/70 text-muted-foreground/80 hover:border-border hover:text-foreground/80",
                 )}
               >
                 <div className="flex items-center gap-1">
-                  <span className="text-[10px] leading-tight font-medium">
+                  <span className="text-sm leading-tight font-medium sm:text-[10px]">
                     Turn{" "}
                     {summary.checkpointTurnCount ??
                       inferredCheckpointTurnCountByTurnId[summary.turnId] ??
                       "?"}
                   </span>
-                  <span className="text-[9px] leading-tight opacity-70">
+                  <span className="text-xs leading-tight opacity-70 sm:text-[9px]">
                     {formatTurnChipTimestamp(summary.completedAt)}
                   </span>
                 </div>
@@ -690,17 +695,17 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
         }}
       >
         <Toggle aria-label="Stacked diff view" value="stacked">
-          <Rows3Icon className="size-3" />
+          <Rows3Icon className="size-4 sm:size-3" />
         </Toggle>
         <Toggle aria-label="Split diff view" value="split">
-          <Columns2Icon className="size-3" />
+          <Columns2Icon className="size-4 sm:size-3" />
         </Toggle>
       </ToggleGroup>
     </>
   );
   const headerRowClassName = cn(
     "flex items-center justify-between gap-2 px-4",
-    shouldUseDragRegion ? "drag-region h-[52px] border-b border-border" : "h-12",
+    shouldUseDragRegion ? "drag-region h-[52px] border-b border-border" : "h-14 sm:h-12",
   );
 
   return (
@@ -721,15 +726,15 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
       )}
 
       {!activeThread ? (
-        <div className="flex flex-1 items-center justify-center px-5 text-center text-xs text-muted-foreground/70">
+        <div className="flex flex-1 items-center justify-center px-5 text-center text-sm text-muted-foreground/70 sm:text-xs">
           Select a thread to inspect turn diffs.
         </div>
       ) : !isGitRepo ? (
-        <div className="flex flex-1 items-center justify-center px-5 text-center text-xs text-muted-foreground/70">
+        <div className="flex flex-1 items-center justify-center px-5 text-center text-sm text-muted-foreground/70 sm:text-xs">
           Turn diffs are unavailable because this project is not a git repository.
         </div>
       ) : orderedTurnDiffSummaries.length === 0 ? (
-        <div className="flex flex-1 items-center justify-center px-5 text-center text-xs text-muted-foreground/70">
+        <div className="flex flex-1 items-center justify-center px-5 text-center text-sm text-muted-foreground/70 sm:text-xs">
           No completed turns yet.
         </div>
       ) : (
@@ -747,11 +752,11 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
           >
             {checkpointDiffError && !renderablePatch && (
               <div className="px-3">
-                <p className="mb-2 text-[11px] text-red-500/80">{checkpointDiffError}</p>
+                <p className="mb-2 text-sm text-red-500/80 sm:text-[11px]">{checkpointDiffError}</p>
               </div>
             )}
             {!renderablePatch ? (
-              <div className="flex h-full items-center justify-center px-3 py-2 text-xs text-muted-foreground/70">
+              <div className="flex h-full items-center justify-center px-3 py-2 text-sm text-muted-foreground/70 sm:text-xs">
                 <p>
                   {isLoadingCheckpointDiff
                     ? "Loading checkpoint diff..."
@@ -805,8 +810,8 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
             ) : (
               <div className="h-full overflow-auto p-2">
                 <div className="space-y-2">
-                  <p className="text-[11px] text-muted-foreground/75">{renderablePatch.reason}</p>
-                  <pre className="max-h-[72vh] overflow-auto rounded-md border border-border/70 bg-background/70 p-3 font-mono text-[11px] leading-relaxed text-muted-foreground/90">
+                  <p className="text-sm text-muted-foreground/75 sm:text-[11px]">{renderablePatch.reason}</p>
+                  <pre className="max-h-[72vh] overflow-auto rounded-md border border-border/70 bg-background/70 p-3 font-mono text-sm leading-relaxed text-muted-foreground/90 sm:text-[11px]">
                     {renderablePatch.text}
                   </pre>
                 </div>

@@ -102,14 +102,13 @@ export default function BranchToolbar({
     <div className="flex min-w-0 items-center gap-1 sm:gap-2 border-l border-border pl-2 sm:pl-3 ml-1 sm:ml-2">
       <div className="flex shrink-0 items-center gap-2">
         {envLocked || activeWorktreePath ? (
-          <span className="border border-transparent px-[calc(--spacing(2)-1px)] text-sm font-medium text-muted-foreground/70 sm:text-xs">
+          <span className="inline-flex items-center rounded-md border border-border bg-transparent px-2 text-xs font-medium text-muted-foreground">
             {activeWorktreePath ? "Worktree" : "Local"}
           </span>
         ) : (
           <Button
             type="button"
-            variant="ghost"
-            className="text-muted-foreground/70 hover:text-foreground/80"
+            variant="outline"
             size="xs"
             onClick={() => onEnvModeChange(effectiveEnvMode === "local" ? "worktree" : "local")}
           >

@@ -35,7 +35,7 @@ const DiffPanelSheet = (props: {
         side="right"
         showCloseButton={false}
         keepMounted
-        className="w-[min(88vw,820px)] max-w-[820px] p-0"
+        className="w-full max-w-none p-0 sm:w-[min(88vw,820px)] sm:max-w-[820px]"
       >
         {props.children}
       </SheetPopup>
