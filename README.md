@@ -32,8 +32,8 @@ A web GUI that puts multiple coding agents under one roof — all the power of t
     <td align="center"><strong>macOS</strong></td>
     <td align="center">Apple Silicon (M1/M2/M3/M4)</td>
     <td align="center">
-      <a href="https://github.com/x-b-e/xbe-code/releases/latest/download/XBE-Code-arm64.dmg">
-        <img src="https://img.shields.io/badge/Download-.dmg_(arm64)-ff006e?style=for-the-badge&logo=apple&logoColor=white" alt="macOS Apple Silicon" />
+      <a href="https://github.com/x-b-e/xbe-code/releases/latest/download/XBE-Code-arm64.zip">
+        <img src="https://img.shields.io/badge/Download-.zip_(arm64)-ff006e?style=for-the-badge&logo=apple&logoColor=white" alt="macOS Apple Silicon" />
       </a>
     </td>
   </tr>
@@ -41,8 +41,8 @@ A web GUI that puts multiple coding agents under one roof — all the power of t
     <td align="center"><strong>macOS</strong></td>
     <td align="center">Intel</td>
     <td align="center">
-      <a href="https://github.com/x-b-e/xbe-code/releases/latest/download/XBE-Code-x64.dmg">
-        <img src="https://img.shields.io/badge/Download-.dmg_(x64)-ff006e?style=for-the-badge&logo=apple&logoColor=white" alt="macOS Intel" />
+      <a href="https://github.com/x-b-e/xbe-code/releases/latest/download/XBE-Code-x64.zip">
+        <img src="https://img.shields.io/badge/Download-.zip_(x64)-ff006e?style=for-the-badge&logo=apple&logoColor=white" alt="macOS Intel" />
       </a>
     </td>
   </tr>
