@@ -12,6 +12,7 @@ import {
   resolveModelSlug,
   resolveModelSlugForProvider,
 } from "@xbetools/shared/model";
+import { Debouncer } from "@tanstack/react-pacer";
 import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 import { type ChatMessage, type Project, type Thread } from "./types";
@@ -28,6 +29,7 @@ export interface AppState {
 
 const PERSISTED_STATE_KEY = "xbecode:renderer-state:v8";
 const LEGACY_PERSISTED_STATE_KEYS = [
+  "xbecode:renderer-state:v7",
   "xbecode:renderer-state:v6",
   "xbecode:renderer-state:v5",
   "xbecode:renderer-state:v4",
@@ -97,6 +99,7 @@ function persistState(state: AppState): void {
     // Ignore quota/storage errors to avoid breaking chat UX.
   }
 }
+const debouncedPersistState = new Debouncer(persistState, { wait: 500 });
 
 // ── Pure helpers ──────────────────────────────────────────────────────
 
@@ -450,8 +453,15 @@ export const useStore = create<AppStore>((set) => ({
     set((state) => setSelectedRepoCwd(state, projectId, repoCwd)),
 }));
 
-// Persist on every state change
-useStore.subscribe((state) => persistState(state));
+// Persist state changes with debouncing to avoid localStorage thrashing
+useStore.subscribe((state) => debouncedPersistState.maybeExecute(state));
+
+// Flush pending writes synchronously before page unload to prevent data loss.
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeunload", () => {
+    debouncedPersistState.flush();
+  });
+}
 
 // ── Granular selector hooks ──────────────────────────────────────────
 //

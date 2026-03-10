@@ -14,12 +14,43 @@ import {
   DEFAULT_RUNTIME_MODE,
   type ChatImageAttachment,
 } from "./types";
+import { Debouncer } from "@tanstack/react-pacer";
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { createJSONStorage, persist, type PersistStorage, type StorageValue } from "zustand/middleware";
 import { readNativeApi } from "./nativeApi";
 
 export const COMPOSER_DRAFT_STORAGE_KEY = "xbecode:composer-drafts:v1";
+const COMPOSER_PERSIST_DEBOUNCE_MS = 300;
 export type DraftThreadEnvMode = "local" | "worktree";
+
+interface DebouncedPersistStorage<S> extends PersistStorage<S> {
+  flush: () => void;
+}
+
+function createDebouncedPersistStorage<S>(
+  baseStorage: PersistStorage<S>,
+): DebouncedPersistStorage<S> {
+  const debouncedSetItem = new Debouncer(
+    (name: string, value: StorageValue<S>) => {
+      baseStorage.setItem(name, value);
+    },
+    { wait: COMPOSER_PERSIST_DEBOUNCE_MS },
+  );
+
+  return {
+    getItem: (name) => baseStorage.getItem(name),
+    setItem: (name, value) => {
+      debouncedSetItem.maybeExecute(name, value);
+    },
+    removeItem: (name) => {
+      debouncedSetItem.cancel();
+      baseStorage.removeItem(name);
+    },
+    flush: () => {
+      debouncedSetItem.flush();
+    },
+  };
+}
 
 export interface PersistedComposerImageAttachment {
   id: string;
@@ -43,7 +74,6 @@ interface PersistedComposerThreadDraftState {
   interactionMode?: ProviderInteractionMode | null;
   effort?: CodexReasoningEffort | null;
   codexFastMode?: boolean | null;
-  serviceTier?: string | null;
 }
 
 interface PersistedDraftThreadState {
@@ -390,9 +420,7 @@ function normalizePersistedComposerDraftState(value: unknown): PersistedComposer
       effortCandidate && REASONING_EFFORT_VALUES.has(effortCandidate as CodexReasoningEffort)
         ? (effortCandidate as CodexReasoningEffort)
         : null;
-    const codexFastMode =
-      draftCandidate.codexFastMode === true ||
-      (typeof draftCandidate.serviceTier === "string" && draftCandidate.serviceTier === "fast");
+    const codexFastMode = draftCandidate.codexFastMode === true;
     if (
       prompt.length === 0 &&
       attachments.length === 0 &&
@@ -666,6 +694,10 @@ export async function hydrateDraftsFromServer(projectId: ProjectId): Promise<voi
     // Server unavailable — local state is the source of truth
   }
 }
+
+const composerDraftStorage = createDebouncedPersistStorage(
+  createJSONStorage<PersistedComposerDraftStoreState>(() => localStorage)!,
+);
 
 export const useComposerDraftStore = create<ComposerDraftStoreState>()(
   persist(
@@ -1325,7 +1357,7 @@ export const useComposerDraftStore = create<ComposerDraftStoreState>()(
     {
       name: COMPOSER_DRAFT_STORAGE_KEY,
       version: 1,
-      storage: createJSONStorage(() => localStorage),
+      storage: composerDraftStorage,
       partialize: (state) => {
         const persistedDraftsByThreadId: PersistedComposerDraftStoreState["draftsByThreadId"] = {};
         for (const [threadId, draft] of Object.entries(state.draftsByThreadId)) {
@@ -1392,6 +1424,13 @@ export const useComposerDraftStore = create<ComposerDraftStoreState>()(
     },
   ),
 );
+
+// Flush pending draft writes before page unload to prevent data loss.
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeunload", () => {
+    composerDraftStorage.flush();
+  });
+}
 
 export function useComposerThreadDraft(threadId: ThreadId): ComposerThreadDraftState {
   return useComposerDraftStore((state) => state.draftsByThreadId[threadId] ?? EMPTY_THREAD_DRAFT);

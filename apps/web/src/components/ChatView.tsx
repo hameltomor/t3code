@@ -98,6 +98,8 @@ import {
   buildPlanImplementationThreadTitle,
   buildPlanImplementationPrompt,
   buildProposedPlanMarkdownFilename,
+  downloadPlanAsTextFile,
+  normalizePlanMarkdownForExport,
   proposedPlanTitle,
   resolvePlanFollowUpSubmission,
 } from "../proposedPlan";
@@ -130,6 +132,7 @@ import {
   shortcutLabelForCommand,
 } from "../keybindings";
 import ChatMarkdown from "./ChatMarkdown";
+import { shouldUseCompactComposerFooter } from "./composerFooterLayout";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "./ui/alert";
 import {
@@ -151,7 +154,7 @@ import {
   CopyIcon,
   CheckIcon,
   ImagePlusIcon,
-  ZapIcon,
+  PanelRightIcon,
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -196,6 +199,7 @@ import {
 } from "./ui/dialog";
 import { toastManager } from "./ui/toast";
 import { decodeProjectScriptKeybindingRule } from "~/lib/projectScriptKeybindings";
+import PlanSidebar from "./PlanSidebar";
 import ProjectScriptsControl, { type NewProjectScriptInput } from "./ProjectScriptsControl";
 import {
   commandForProjectScript,
@@ -213,9 +217,6 @@ import {
   getAppModelOptions,
   getCustomModelsForProvider,
   resolveAppModelSelection,
-  resolveAppServiceTier,
-  shouldShowFastTierIcon,
-  type AppServiceTier,
   useAppSettings,
 } from "../appSettings";
 import {
@@ -302,22 +303,6 @@ function workToneClass(tone: "thinking" | "tool" | "info" | "error"): string {
   if (tone === "tool") return "text-muted-foreground/70";
   if (tone === "thinking") return "text-muted-foreground/50";
   return "text-muted-foreground/40";
-}
-
-function normalizePlanMarkdownForExport(planMarkdown: string): string {
-  return `${planMarkdown.trimEnd()}\n`;
-}
-
-function downloadTextFile(filename: string, contents: string): void {
-  const blob = new Blob([contents], { type: "text/markdown;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  window.setTimeout(() => {
-    URL.revokeObjectURL(url);
-  }, 0);
 }
 
 interface ExpandedImageItem {
@@ -434,7 +419,6 @@ type ComposerCommandItem =
       model: ModelSlug;
       label: string;
       description: string;
-      showFastBadge: boolean;
     };
 
 type SendPhase = "idle" | "preparing-worktree" | "sending-turn";
@@ -454,6 +438,18 @@ function readFileAsDataUrl(file: File): Promise<string> {
     });
     reader.readAsDataURL(file);
   });
+}
+
+function buildProviderOptionsFromSettings(settings: AppSettings) {
+  const codexBinaryPath = settings.codexBinaryPath.trim();
+  const codexHomePath = settings.codexHomePath.trim();
+  if (!codexBinaryPath && !codexHomePath) return undefined;
+  return {
+    codex: {
+      ...(codexBinaryPath ? { binaryPath: codexBinaryPath } : {}),
+      ...(codexHomePath ? { homePath: codexHomePath } : {}),
+    },
+  };
 }
 
 function buildTemporaryWorktreeBranchName(): string {
@@ -545,9 +541,6 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
         </Badge>
       ) : null}
       <span className="flex min-w-0 items-center gap-1.5 truncate">
-        {props.item.type === "model" && props.item.showFastBadge ? (
-          <ZapIcon className="size-3.5 shrink-0 text-amber-500" />
-        ) : null}
         <span className="truncate">{props.item.label}</span>
       </span>
       <span className="truncate text-muted-foreground/70 text-xs">{props.item.description}</span>
@@ -724,14 +717,14 @@ export default function ChatView({ threadId }: ChatViewProps) {
   // Detect when the composer is too narrow for full controls layout (e.g. when diff panel is open).
   // This supplements CSS `sm:` breakpoints which are viewport-based and can't account for the
   // diff sidebar consuming horizontal space.
-  const COMPOSER_COMPACT_THRESHOLD = 480;
-  const [composerCompact, setComposerCompact] = useState(false);
+  const [composerFormWidth, setComposerFormWidth] = useState<number | null>(null);
+  const [planSidebarOpen, setPlanSidebarOpen] = useState(false);
   useEffect(() => {
     const form = composerFormRef.current;
     if (!form) return;
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        setComposerCompact(entry.contentRect.width < COMPOSER_COMPACT_THRESHOLD);
+        setComposerFormWidth(entry.contentRect.width);
       }
     });
     observer.observe(form);
@@ -795,10 +788,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     composerDraft.interactionMode ?? activeThread?.interactionMode ?? DEFAULT_INTERACTION_MODE;
   const isServerThread = serverThread !== undefined;
   const isLocalDraftThread = !isServerThread && localDraftThread !== undefined;
-  const diffSearch = useMemo(
-    () => parseDiffRouteSearch(rawSearch as Record<string, unknown>),
-    [rawSearch],
-  );
+  const diffSearch = rawSearch;
   const diffOpen = diffSearch.diff === "1";
   const activeThreadId = activeThread?.id ?? null;
   const activeLatestTurn = activeThread?.latestTurn ?? null;
@@ -831,8 +821,6 @@ export default function ChatView({ threadId }: ChatViewProps) {
       activeThread.messages.length > 0 ||
       activeThread.session !== null),
   );
-  const selectedServiceTierSetting = settings.codexServiceTier;
-  const selectedServiceTier = resolveAppServiceTier(selectedServiceTierSetting);
   const inferredProvider =
     inferProviderForModel(activeThread?.model ?? activeProject?.model ?? null) ?? null;
   const lockedProvider: ProviderKind | null = hasThreadStarted
@@ -977,6 +965,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
     interactionMode === "plan" &&
     latestTurnSettled &&
     activeProposedPlan !== null;
+  const composerCompact = shouldUseCompactComposerFooter(composerFormWidth, {
+    hasWideActions: showPlanFollowUpPrompt,
+  });
   const activePendingApproval = pendingApprovals[0] ?? null;
   const isComposerApprovalState = activePendingApproval !== null;
   const hasComposerHeader =
@@ -1292,10 +1283,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
         model: slug,
         label: name,
         description: `${providerLabel} · ${slug}`,
-        showFastBadge:
-          provider === "codex" && shouldShowFastTierIcon(slug, selectedServiceTierSetting),
       }));
-  }, [composerTrigger, searchableModelOptions, selectedServiceTierSetting, workspaceEntries]);
+  }, [composerTrigger, searchableModelOptions, workspaceEntries]);
   const composerMenuOpen = Boolean(composerTrigger);
   const activeComposerMenuItem = useMemo(
     () =>
@@ -1649,6 +1638,20 @@ export default function ChatView({ threadId }: ChatViewProps) {
         previousScripts: activeProject.scripts,
         nextScripts,
         keybinding: input.keybinding,
+        keybindingCommand: commandForProjectScript(scriptId),
+      });
+    },
+    [activeProject, persistProjectScripts],
+  );
+  const deleteProjectScript = useCallback(
+    async (scriptId: string) => {
+      if (!activeProject) return;
+      const nextScripts = activeProject.scripts.filter((script) => script.id !== scriptId);
+      await persistProjectScripts({
+        projectId: activeProject.id,
+        projectCwd: activeProject.cwd,
+        previousScripts: activeProject.scripts,
+        nextScripts,
         keybindingCommand: commandForProjectScript(scriptId),
       });
     },
@@ -2721,10 +2724,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
           attachments: turnAttachments,
         },
         model: selectedModel || undefined,
-        serviceTier: selectedServiceTier,
         ...(selectedModelOptionsForDispatch
           ? { modelOptions: selectedModelOptionsForDispatch }
           : {}),
+        providerOptions: buildProviderOptionsFromSettings(settings),
         provider: selectedProvider,
         assistantDeliveryMode: settings.enableAssistantStreaming ? "streaming" : "buffered",
         runtimeMode,
@@ -3074,6 +3077,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
           ...(selectedModelOptionsForDispatch
             ? { modelOptions: selectedModelOptionsForDispatch }
             : {}),
+          providerOptions: buildProviderOptionsFromSettings(settings),
           assistantDeliveryMode: settings.enableAssistantStreaming ? "streaming" : "buffered",
           runtimeMode,
           interactionMode: nextInteractionMode,
@@ -3107,7 +3111,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       selectedProvider,
       setComposerDraftInteractionMode,
       setThreadError,
-      settings.enableAssistantStreaming,
+      settings,
     ],
   );
 
@@ -3174,6 +3178,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
           ...(selectedModelOptionsForDispatch
             ? { modelOptions: selectedModelOptionsForDispatch }
             : {}),
+          providerOptions: buildProviderOptionsFromSettings(settings),
           assistantDeliveryMode: settings.enableAssistantStreaming ? "streaming" : "buffered",
           runtimeMode,
           interactionMode: "default",
@@ -3224,7 +3229,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     selectedModel,
     selectedModelOptionsForDispatch,
     selectedProvider,
-    settings.enableAssistantStreaming,
+    settings,
     syncServerReadModel,
   ]);
 
@@ -3558,6 +3563,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   }
 
   return (
+    <div className="flex min-h-0 min-w-0 flex-1">
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
       {/* Top bar */}
       <header
@@ -3589,6 +3595,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
           }}
           onAddProjectScript={saveProjectScript}
           onUpdateProjectScript={updateProjectScript}
+          onDeleteProjectScript={deleteProjectScript}
           onToggleDiff={onToggleDiff}
           branchToolbar={
             isGitRepo ? (
@@ -3609,8 +3616,6 @@ export default function ChatView({ threadId }: ChatViewProps) {
         error={activeThread.error}
         onDismiss={() => setThreadError(activeThread.id, null)}
       />
-      <PlanModePanel activePlan={activePlan} />
-
       {/* Messages */}
       <div
         ref={setMessagesScrollContainerRef}
@@ -3843,7 +3848,6 @@ export default function ChatView({ threadId }: ChatViewProps) {
                     model={selectedModelForPickerWithCustomFallback}
                     lockedProvider={lockedProvider}
                     modelOptionsByProvider={modelOptionsByProvider}
-                    serviceTierSetting={selectedServiceTierSetting}
                     onProviderModelChange={onProviderModelSelect}
                   />
 
@@ -3890,6 +3894,32 @@ export default function ChatView({ threadId }: ChatViewProps) {
                       </span>
                     )}
                   </Button>
+
+                  {/* Plan sidebar toggle */}
+                  {(activePlan || activeProposedPlan) && (
+                    <>
+                      {!composerCompact && (
+                        <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
+                      )}
+                      <Button
+                        variant="ghost"
+                        className={cn(
+                          "shrink-0 whitespace-nowrap text-muted-foreground/70 hover:text-foreground/80",
+                          composerCompact ? "px-2" : "px-2 sm:px-3",
+                          planSidebarOpen && "text-foreground/80",
+                        )}
+                        size="sm"
+                        type="button"
+                        onClick={() => setPlanSidebarOpen((prev) => !prev)}
+                        title={planSidebarOpen ? "Hide plan sidebar" : "Show plan sidebar"}
+                      >
+                        <PanelRightIcon />
+                        {!composerCompact && (
+                          <span className="sr-only sm:not-sr-only">Plan</span>
+                        )}
+                      </Button>
+                    </>
+                  )}
 
                   {/* Divider */}
                   {!composerCompact && (
@@ -4203,6 +4233,15 @@ export default function ChatView({ threadId }: ChatViewProps) {
         </div>
       )}
     </div>
+    {planSidebarOpen && (
+      <PlanSidebar
+        activePlan={activePlan}
+        activeProposedPlan={activeProposedPlan}
+        markdownCwd={gitCwd ?? undefined}
+        onClose={() => setPlanSidebarOpen(false)}
+      />
+    )}
+    </div>
   );
 }
 
@@ -4224,6 +4263,7 @@ interface ChatHeaderProps {
   onRunProjectScript: (script: ProjectScript) => void;
   onAddProjectScript: (input: NewProjectScriptInput) => Promise<void>;
   onUpdateProjectScript: (scriptId: string, input: NewProjectScriptInput) => Promise<void>;
+  onDeleteProjectScript: (scriptId: string) => Promise<void>;
   onToggleDiff: () => void;
   branchToolbar?: React.ReactNode;
 }
@@ -4248,6 +4288,7 @@ const ChatHeader = memo(function ChatHeader({
   onRunProjectScript,
   onAddProjectScript,
   onUpdateProjectScript,
+  onDeleteProjectScript,
   onToggleDiff,
   branchToolbar,
 }: ChatHeaderProps) {
@@ -4301,6 +4342,7 @@ const ChatHeader = memo(function ChatHeader({
               onRunScript={onRunProjectScript}
               onAddScript={onAddProjectScript}
               onUpdateScript={onUpdateProjectScript}
+              onDeleteScript={onDeleteProjectScript}
             />
           </div>
         )}
@@ -4497,55 +4539,6 @@ const ComposerPendingApprovalActions = memo(function ComposerPendingApprovalActi
         Approve once
       </Button>
     </>
-  );
-});
-
-interface PlanModePanelProps {
-  activePlan: ReturnType<typeof deriveActivePlanState>;
-}
-
-const PlanModePanel = memo(function PlanModePanel({ activePlan }: PlanModePanelProps) {
-  if (!activePlan) return null;
-
-  return (
-    <div className="pt-3 mx-auto max-w-3xl">
-      <div className="rounded-xl border border-border/70 bg-muted/30 p-4">
-        <div className="flex items-center gap-2">
-          <Badge variant="secondary">Plan</Badge>
-          <span className="text-xs text-muted-foreground">
-            Updated {formatTimestamp(activePlan.createdAt)}
-          </span>
-        </div>
-        {activePlan.explanation ? (
-          <p className="mt-2 text-sm text-muted-foreground">{activePlan.explanation}</p>
-        ) : null}
-        <div className="mt-3 space-y-2">
-          {activePlan.steps.map((step) => (
-            <div
-              key={`${step.status}:${step.step}`}
-              className="flex items-start gap-3 rounded-lg border border-border/60 bg-background/80 px-3 py-2"
-            >
-              <Badge
-                variant={
-                  step.status === "completed"
-                    ? "default"
-                    : step.status === "inProgress"
-                      ? "secondary"
-                      : "outline"
-                }
-              >
-                {step.status === "inProgress"
-                  ? "In progress"
-                  : step.status === "completed"
-                    ? "Done"
-                    : "Pending"}
-              </Badge>
-              <div className="min-w-0 flex-1 text-sm">{step.step}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
   );
 });
 
@@ -5054,7 +5047,7 @@ const ProposedPlanCard = memo(function ProposedPlanCard({
   const saveContents = normalizePlanMarkdownForExport(planMarkdown);
 
   const handleDownload = () => {
-    downloadTextFile(downloadFilename, saveContents);
+    downloadPlanAsTextFile(downloadFilename, saveContents);
   };
 
   const openSaveDialog = () => {
@@ -5832,7 +5825,6 @@ const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   model: ModelSlug;
   lockedProvider: ProviderKind | null;
   modelOptionsByProvider: Record<ProviderKind, ReadonlyArray<{ slug: string; name: string }>>;
-  serviceTierSetting: AppServiceTier;
   disabled?: boolean;
   onProviderModelChange: (provider: ProviderKind, model: ModelSlug) => void;
 }) {
@@ -5865,9 +5857,6 @@ const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       >
         <span className="flex min-w-0 items-center gap-2">
           <ProviderIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground/70" />
-          {props.provider === "codex" && shouldShowFastTierIcon(props.model, props.serviceTierSetting) ? (
-            <ZapIcon className="size-3.5 shrink-0 text-amber-500" />
-          ) : null}
           <span className="truncate">{selectedModelLabel}</span>
           <ChevronDownIcon aria-hidden="true" className="size-3 opacity-60" />
         </span>
@@ -5910,10 +5899,6 @@ const ProviderModelPicker = memo(function ProviderModelPicker(props: {
                         value={modelOption.slug}
                         onClick={() => setIsMenuOpen(false)}
                       >
-                        {option.value === "codex" &&
-                        shouldShowFastTierIcon(modelOption.slug, props.serviceTierSetting) ? (
-                          <ZapIcon className="size-3.5 shrink-0 text-amber-500" />
-                        ) : null}
                         {modelOption.name}
                       </MenuRadioItem>
                     ))}

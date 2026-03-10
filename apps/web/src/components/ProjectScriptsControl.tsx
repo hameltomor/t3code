@@ -29,6 +29,15 @@ import { shortcutLabelForCommand } from "~/keybindings";
 import { isMacPlatform } from "~/lib/utils";
 import { Button } from "./ui/button";
 import {
+  AlertDialog,
+  AlertDialogClose,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogPopup,
+  AlertDialogTitle,
+} from "./ui/alert-dialog";
+import {
   Dialog,
   DialogDescription,
   DialogFooter,
@@ -84,6 +93,7 @@ interface ProjectScriptsControlProps {
   onRunScript: (script: ProjectScript) => void;
   onAddScript: (input: NewProjectScriptInput) => Promise<void> | void;
   onUpdateScript: (scriptId: string, input: NewProjectScriptInput) => Promise<void> | void;
+  onDeleteScript?: (scriptId: string) => Promise<void> | void;
 }
 
 function normalizeShortcutKeyToken(key: string): string | null {
@@ -144,10 +154,12 @@ export default function ProjectScriptsControl({
   onRunScript,
   onAddScript,
   onUpdateScript,
+  onDeleteScript,
 }: ProjectScriptsControlProps) {
   const addScriptFormId = React.useId();
   const [editingScriptId, setEditingScriptId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [name, setName] = useState("");
   const [command, setCommand] = useState("");
   const [icon, setIcon] = useState<ProjectScriptIcon>("play");
@@ -245,6 +257,17 @@ export default function ProjectScriptsControl({
     setKeybinding(keybindingValueForCommand(keybindings, commandForProjectScript(script.id)) ?? "");
     setValidationError(null);
     setDialogOpen(true);
+  };
+
+  const confirmDeleteScript = async () => {
+    if (!editingScriptId || !onDeleteScript) return;
+    try {
+      await onDeleteScript(editingScriptId);
+    } catch {
+      // handled by caller
+    }
+    setDeleteConfirmOpen(false);
+    setDialogOpen(false);
   };
 
   return (
@@ -440,6 +463,16 @@ export default function ProjectScriptsControl({
             </form>
           </DialogPanel>
           <DialogFooter>
+            {isEditing && onDeleteScript && (
+              <Button
+                type="button"
+                variant="destructive"
+                className="mr-auto"
+                onClick={() => setDeleteConfirmOpen(true)}
+              >
+                Delete
+              </Button>
+            )}
             <Button
               type="button"
               variant="outline"
@@ -455,6 +488,22 @@ export default function ProjectScriptsControl({
           </DialogFooter>
         </DialogPopup>
       </Dialog>
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogPopup>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete action?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove the action and its keybinding.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
+            <Button variant="destructive" onClick={confirmDeleteScript}>
+              Delete
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogPopup>
+      </AlertDialog>
     </>
   );
 }

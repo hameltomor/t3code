@@ -1002,7 +1002,7 @@ export default function Sidebar() {
   const wordmark = (
     <div className="flex items-center gap-3 md:gap-2">
       <SidebarTrigger className="shrink-0 size-9 md:size-7 md:hidden" />
-      <div className="flex min-w-0 flex-1 items-center gap-1.5 md:gap-1 md:mt-2 md:ml-1">
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 md:gap-1 md:mt-1.5 md:ml-1">
         <a
           href="https://www.x-b-e.com/"
           target="_blank"
@@ -1022,9 +1022,9 @@ export default function Sidebar() {
     <>
       {isElectron ? (
         <>
-          <SidebarHeader className="drag-region h-[52px] flex-row items-center gap-2 px-4 py-0 pl-[82px]">
+          <SidebarHeader className="drag-region h-[52px] flex-row items-center gap-2 px-4 py-0 pl-[90px]">
             {wordmark}
-            <div className="ml-auto mt-2" />
+            <div className="ml-auto mt-1.5" />
             {showDesktopUpdateButton && (
               <Tooltip>
                 <TooltipTrigger
@@ -1034,7 +1034,7 @@ export default function Sidebar() {
                       aria-label={desktopUpdateTooltip}
                       aria-disabled={desktopUpdateButtonDisabled || undefined}
                       disabled={desktopUpdateButtonDisabled}
-                      className={`inline-flex size-7 mt-2 items-center justify-center rounded-md text-muted-foreground transition-colors ${desktopUpdateButtonInteractivityClasses} ${desktopUpdateButtonClasses}`}
+                      className={`inline-flex size-7 mt-1.5 items-center justify-center rounded-md text-muted-foreground transition-colors ${desktopUpdateButtonInteractivityClasses} ${desktopUpdateButtonClasses}`}
                       onClick={handleDesktopUpdateButtonClick}
                     >
                       <RocketIcon className="size-3.5" />

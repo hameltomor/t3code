@@ -341,10 +341,45 @@ export const checkGeminiProviderStatus: Effect.Effect<ServerProviderStatus> = Ef
 export const ProviderHealthLive = Layer.effect(
   ProviderHealth,
   Effect.gen(function* () {
-    const codexStatus = yield* checkCodexProviderStatus;
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+
+    // Gemini check is synchronous (env-var only), resolve immediately.
     const geminiStatus = yield* checkGeminiProviderStatus;
+
+    let cachedStatuses: ReadonlyArray<ServerProviderStatus> = [
+      {
+        provider: CODEX_PROVIDER,
+        status: "warning",
+        available: false,
+        authStatus: "unknown",
+        checkedAt: new Date().toISOString(),
+        message: "Checking Codex CLI availability...",
+      },
+      geminiStatus,
+    ];
+
+    // Run Codex health check in the background so it doesn't block startup.
+    checkCodexProviderStatus.pipe(
+      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      Effect.runPromise,
+    ).then((codexStatus) => {
+      cachedStatuses = [codexStatus, geminiStatus];
+    }).catch(() => {
+      cachedStatuses = [
+        {
+          provider: CODEX_PROVIDER,
+          status: "error",
+          available: false,
+          authStatus: "unknown",
+          checkedAt: new Date().toISOString(),
+          message: "Failed to check Codex CLI status.",
+        },
+        geminiStatus,
+      ];
+    });
+
     return {
-      getStatuses: Effect.succeed([codexStatus, geminiStatus]),
+      getStatuses: Effect.sync(() => cachedStatuses),
     } satisfies ProviderHealthShape;
   }),
 );
