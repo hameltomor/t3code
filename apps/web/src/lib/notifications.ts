@@ -1,5 +1,6 @@
 import type { AppNotification } from "@xbetools/contracts";
 import { getAppSettingsSnapshot } from "../appSettings";
+import { APP_DISPLAY_NAME } from "../branding";
 
 // ---------------------------------------------------------------------------
 // Platform detection
@@ -160,6 +161,46 @@ export async function showNativeNotification(notification: AppNotification): Pro
     });
   } catch {
     // Service worker not available or notification permission not granted
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Title badge — shows unread count in browser tab title: "(3) XBE Code"
+// ---------------------------------------------------------------------------
+
+export function setTitleBadge(count: number): void {
+  document.title = count > 0 ? `(${count}) ${APP_DISPLAY_NAME}` : APP_DISPLAY_NAME;
+}
+
+// ---------------------------------------------------------------------------
+// App badge — shows unread count on PWA icon in taskbar/dock
+// ---------------------------------------------------------------------------
+
+export function updateAppBadge(count: number): void {
+  if (!("setAppBadge" in navigator)) return;
+  try {
+    if (count > 0) {
+      void (navigator as Navigator & { setAppBadge: (n: number) => Promise<void> }).setAppBadge(count);
+    } else {
+      void (navigator as Navigator & { clearAppBadge: () => Promise<void> }).clearAppBadge();
+    }
+  } catch {
+    // Badging API not available or not in secure context
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Clear stale native notifications (when user returns to app)
+// ---------------------------------------------------------------------------
+
+export async function clearStaleNativeNotifications(): Promise<void> {
+  try {
+    const registration = await navigator.serviceWorker?.ready;
+    if (!registration) return;
+    const notifications = await registration.getNotifications();
+    for (const n of notifications) n.close();
+  } catch {
+    // Service worker not available
   }
 }
 

@@ -241,10 +241,19 @@ const makeCheckpointStore = Effect.gen(function* () {
         });
       }
 
+      const diffArgs = ["diff", "--patch", "--minimal", "--no-color"];
+      if (input.pathPrefix) {
+        diffArgs.push(
+          `--src-prefix=a/${input.pathPrefix}`,
+          `--dst-prefix=b/${input.pathPrefix}`,
+        );
+      }
+      diffArgs.push(fromCommitOid, toCommitOid);
+
       const result = yield* git.execute({
         operation,
         cwd: input.cwd,
-        args: ["diff", "--patch", "--minimal", "--no-color", fromCommitOid, toCommitOid],
+        args: diffArgs,
       });
 
       return result.stdout;

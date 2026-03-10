@@ -5,7 +5,7 @@ import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { ThreadId, type TurnId } from "@xbetools/contracts";
 import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, Columns2Icon, FileIcon, FolderIcon, Rows3Icon, XIcon } from "lucide-react";
 import { type WheelEvent as ReactWheelEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { gitBranchesQueryOptions } from "~/lib/gitReactQuery";
+import { gitBranchesQueryOptions, gitWorkspaceReposQueryOptions } from "~/lib/gitReactQuery";
 import { checkpointDiffQueryOptions } from "~/lib/providerReactQuery";
 import { cn } from "~/lib/utils";
 import { readNativeApi } from "../nativeApi";
@@ -340,7 +340,24 @@ export default function DiffPanel({ mode = "inline", onClose }: DiffPanelProps) 
     ?? activeThread?.worktreePath
     ?? activeProject?.cwd;
   const gitBranchesQuery = useQuery(gitBranchesQueryOptions(activeCwd ?? null));
-  const isGitRepo = gitBranchesQuery.data?.isRepo ?? true;
+  const directIsGitRepo = gitBranchesQuery.data?.isRepo ?? true;
+  // For multi-repo workspaces where activeCwd is the workspace root (not a git repo),
+  // check for sub-repos to determine git capability.
+  const workspaceReposQuery = useQuery(
+    gitWorkspaceReposQueryOptions(
+      !directIsGitRepo ? (activeProject?.cwd ?? null) : null,
+    ),
+  );
+  const isMultiRepoWorkspace =
+    (workspaceReposQuery.data?.repos?.length ?? 0) > 1 ||
+    (workspaceReposQuery.data?.repos?.length === 1 &&
+      !workspaceReposQuery.data?.repos[0]?.isRoot);
+  const isGitRepo = directIsGitRepo || isMultiRepoWorkspace;
+  // For multi-repo workspaces, "open in editor" needs the workspace root as base
+  // since diff file paths are prefixed with repo names (e.g., "horizon/src/file.ts").
+  const editorBaseCwd = isMultiRepoWorkspace
+    ? (activeProject?.cwd ?? activeCwd)
+    : activeCwd;
   const { turnDiffSummaries, inferredCheckpointTurnCountByTurnId } =
     useTurnDiffSummaries(activeThread);
   const orderedTurnDiffSummaries = useMemo(
@@ -499,12 +516,13 @@ export default function DiffPanel({ mode = "inline", onClose }: DiffPanelProps) 
     (filePath: string) => {
       const api = readNativeApi();
       if (!api) return;
-      const targetPath = activeCwd ? resolvePathLinkTarget(filePath, activeCwd) : filePath;
+      const baseCwd = editorBaseCwd ?? activeCwd;
+      const targetPath = baseCwd ? resolvePathLinkTarget(filePath, baseCwd) : filePath;
       void api.shell.openInEditor(targetPath, preferredTerminalEditor()).catch((error) => {
         console.warn("Failed to open diff file in editor.", error);
       });
     },
-    [activeCwd],
+    [editorBaseCwd, activeCwd],
   );
 
   const selectTurn = (turnId: TurnId) => {

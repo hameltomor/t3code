@@ -76,6 +76,10 @@ class FakeClaudeQuery implements AsyncIterable<SDKMessage> {
     this.finish();
   };
 
+  readonly mcpServerStatus = async () => [];
+  readonly toggleMcpServer = async () => {};
+  readonly reconnectMcpServer = async () => {};
+
   [Symbol.asyncIterator](): AsyncIterator<SDKMessage> {
     return {
       next: () => {

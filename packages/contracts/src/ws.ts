@@ -44,6 +44,12 @@ import { KeybindingRule } from "./keybindings";
 import { ProjectSearchEntriesInput, ProjectWriteFileInput } from "./project";
 import { OpenInEditorInput } from "./editor";
 import { DRAFT_WS_METHODS, DraftDeleteInput, DraftListInput, DraftSaveInput } from "./draft";
+import {
+  MCP_WS_METHODS,
+  McpGetStatusInput,
+  McpToggleServerInput,
+  McpReconnectServerInput,
+} from "./mcp";
 
 // ── WebSocket RPC Method Names ───────────────────────────────────────
 
@@ -99,6 +105,11 @@ export const WS_METHODS = {
   draftsSave: DRAFT_WS_METHODS.save,
   draftsList: DRAFT_WS_METHODS.list,
   draftsDelete: DRAFT_WS_METHODS.delete,
+
+  // MCP methods (Claude Code provider)
+  mcpGetStatus: MCP_WS_METHODS.getStatus,
+  mcpToggleServer: MCP_WS_METHODS.toggleServer,
+  mcpReconnectServer: MCP_WS_METHODS.reconnectServer,
 } as const;
 
 // ── Push Event Channels ──────────────────────────────────────────────
@@ -181,6 +192,11 @@ const WebSocketRequestBody = Schema.Union([
   tagRequestBody(WS_METHODS.draftsSave, DraftSaveInput),
   tagRequestBody(WS_METHODS.draftsList, DraftListInput),
   tagRequestBody(WS_METHODS.draftsDelete, DraftDeleteInput),
+
+  // MCP methods
+  tagRequestBody(WS_METHODS.mcpGetStatus, McpGetStatusInput),
+  tagRequestBody(WS_METHODS.mcpToggleServer, McpToggleServerInput),
+  tagRequestBody(WS_METHODS.mcpReconnectServer, McpReconnectServerInput),
 ]);
 
 export const WebSocketRequest = Schema.Struct({

@@ -12,6 +12,10 @@
  * @module ProviderService
  */
 import type {
+  McpGetStatusInput,
+  McpGetStatusResult,
+  McpReconnectServerInput,
+  McpToggleServerInput,
   ProviderInterruptTurnInput,
   ProviderKind,
   ProviderRespondToRequestInput,
@@ -105,6 +109,30 @@ export interface ProviderServiceShape {
    * Fan-out is owned by ProviderService (not by a standalone event-bus service).
    */
   readonly streamEvents: Stream.Stream<ProviderRuntimeEvent>;
+
+  // ── MCP methods ─────────────────────────────────────────────────────
+
+  /**
+   * Get MCP server status for an active provider session.
+   * Returns empty servers array for providers that don't support MCP.
+   */
+  readonly getMcpStatus: (
+    input: McpGetStatusInput,
+  ) => Effect.Effect<McpGetStatusResult, ProviderServiceError>;
+
+  /**
+   * Toggle an MCP server enabled/disabled.
+   */
+  readonly toggleMcpServer: (
+    input: McpToggleServerInput,
+  ) => Effect.Effect<void, ProviderServiceError>;
+
+  /**
+   * Reconnect a failed MCP server.
+   */
+  readonly reconnectMcpServer: (
+    input: McpReconnectServerInput,
+  ) => Effect.Effect<void, ProviderServiceError>;
 }
 
 /**

@@ -635,6 +635,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
   const pushSubscriptionRepository = yield* ProjectionPushSubscriptionRepository;
   const webPushService = yield* WebPushService;
   const draftRepository = yield* ProjectionDraftRepository;
+  const providerService = yield* ProviderService;
 
   const subscriptionsScope = yield* Scope.make("sequential");
   yield* Effect.addFinalizer(() => Scope.close(subscriptionsScope, Exit.void));
@@ -1075,6 +1076,23 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
       case WS_METHODS.draftsDelete: {
         const { threadId } = request.body;
         yield* draftRepository.deleteByThreadId({ threadId });
+        return {};
+      }
+
+      case WS_METHODS.mcpGetStatus: {
+        const body = stripRequestTag(request.body);
+        return yield* providerService.getMcpStatus(body);
+      }
+
+      case WS_METHODS.mcpToggleServer: {
+        const body = stripRequestTag(request.body);
+        yield* providerService.toggleMcpServer(body);
+        return {};
+      }
+
+      case WS_METHODS.mcpReconnectServer: {
+        const body = stripRequestTag(request.body);
+        yield* providerService.reconnectMcpServer(body);
         return {};
       }
 

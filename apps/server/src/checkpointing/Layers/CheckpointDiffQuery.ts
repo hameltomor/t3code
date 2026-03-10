@@ -8,7 +8,7 @@ import { Effect, Layer, Schema } from "effect";
 
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { CheckpointInvariantError, CheckpointUnavailableError } from "../Errors.ts";
-import { checkpointRefForThreadTurn, resolveThreadWorkspaceCwd } from "../Utils.ts";
+import { checkpointRefForThreadTurn, resolveCheckpointTargets } from "../Utils.ts";
 import { CheckpointStore } from "../Services/CheckpointStore.ts";
 import {
   CheckpointDiffQuery,
@@ -61,14 +61,14 @@ const make = Effect.gen(function* () {
         });
       }
 
-      const workspaceCwd = resolveThreadWorkspaceCwd({
+      const checkpointTargets = resolveCheckpointTargets({
         thread,
         projects: snapshot.projects,
       });
-      if (!workspaceCwd) {
+      if (checkpointTargets.length === 0) {
         return yield* new CheckpointInvariantError({
           operation,
-          detail: `Workspace path missing for thread '${input.threadId}' when computing turn diff.`,
+          detail: `No git repositories found for thread '${input.threadId}' when computing turn diff.`,
         });
       }
 
@@ -101,42 +101,45 @@ const make = Effect.gen(function* () {
         });
       }
 
-      const [fromExists, toExists] = yield* Effect.all(
-        [
-          checkpointStore.hasCheckpointRef({
-            cwd: workspaceCwd,
-            checkpointRef: fromCheckpointRef,
-          }),
-          checkpointStore.hasCheckpointRef({
-            cwd: workspaceCwd,
-            checkpointRef: toCheckpointRef,
-          }),
-        ],
-        { concurrency: "unbounded" },
-      );
+      // Compute diff across all repo targets, skipping repos where refs are missing.
+      const patches: string[] = [];
+      for (const target of checkpointTargets) {
+        const [fromExists, toExists] = yield* Effect.all(
+          [
+            checkpointStore.hasCheckpointRef({
+              cwd: target.cwd,
+              checkpointRef: fromCheckpointRef,
+            }),
+            checkpointStore.hasCheckpointRef({
+              cwd: target.cwd,
+              checkpointRef: toCheckpointRef,
+            }),
+          ],
+          { concurrency: "unbounded" },
+        );
+        if (!fromExists || !toExists) continue;
 
-      if (!fromExists) {
-        return yield* new CheckpointUnavailableError({
-          threadId: input.threadId,
-          turnCount: input.fromTurnCount,
-          detail: `Filesystem checkpoint is unavailable for turn ${input.fromTurnCount}.`,
+        const repoDiff = yield* checkpointStore.diffCheckpoints({
+          cwd: target.cwd,
+          fromCheckpointRef,
+          toCheckpointRef,
+          fallbackFromToHead: false,
+          pathPrefix: target.pathPrefix,
         });
+        if (repoDiff.trim().length > 0) {
+          patches.push(repoDiff);
+        }
       }
 
-      if (!toExists) {
+      if (patches.length === 0) {
         return yield* new CheckpointUnavailableError({
           threadId: input.threadId,
           turnCount: input.toTurnCount,
-          detail: `Filesystem checkpoint is unavailable for turn ${input.toTurnCount}.`,
+          detail: `Filesystem checkpoints are unavailable for the requested turn range.`,
         });
       }
 
-      const diff = yield* checkpointStore.diffCheckpoints({
-        cwd: workspaceCwd,
-        fromCheckpointRef,
-        toCheckpointRef,
-        fallbackFromToHead: false,
-      });
+      const diff = patches.join("\n");
 
       const turnDiff: OrchestrationGetTurnDiffResultType = {
         threadId: input.threadId,

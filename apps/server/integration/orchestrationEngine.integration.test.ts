@@ -807,7 +807,7 @@ it.live("reverts to an earlier checkpoint and trims checkpoint projections + git
 );
 
 it.live(
-  "appends checkpoint.revert.failed activity when revert is requested without an active session",
+  "reverts to turn 0 without an active session using thread workspace CWD",
   () =>
     withHarness((harness) =>
       Effect.gen(function* () {
@@ -821,24 +821,9 @@ it.live(
           createdAt: nowIso(),
         });
 
-        const thread = yield* harness.waitForThread(THREAD_ID, (entry) =>
-          entry.activities.some(
-            (activity) =>
-              activity.kind === "checkpoint.revert.failed" &&
-              typeof activity.payload === "object" &&
-              activity.payload !== null,
-          ),
-        );
-        const failureActivity = thread.activities.find(
-          (activity) => activity.kind === "checkpoint.revert.failed",
-        );
-        assert.equal(failureActivity !== undefined, true);
-        assert.equal(
-          String(
-            (failureActivity?.payload as { readonly detail?: string } | undefined)?.detail,
-          ).includes("No active provider session"),
-          true,
-        );
+        // Revert succeeds without an active session because checkpoint targets
+        // are resolved from the thread's worktreePath / project workspace root.
+        yield* harness.waitForDomainEvent((event) => event.type === "thread.reverted");
       }),
     ),
 );

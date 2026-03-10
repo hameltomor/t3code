@@ -1203,6 +1203,9 @@ describe("WebSocket Server", () => {
       getCapabilities: () => Effect.succeed({ sessionModelSwitch: "in-session" }),
       rollbackConversation: () => unsupported(),
       streamEvents: Stream.fromPubSub(runtimeEventPubSub),
+      getMcpStatus: () => unsupported(),
+      toggleMcpServer: () => unsupported(),
+      reconnectMcpServer: () => unsupported(),
     };
     const providerLayer = Layer.succeed(ProviderService, providerService);
 

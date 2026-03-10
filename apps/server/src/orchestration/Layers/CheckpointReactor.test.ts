@@ -92,6 +92,9 @@ function createProviderServiceHarness(
     getCapabilities: () => Effect.succeed({ sessionModelSwitch: "in-session" }),
     rollbackConversation,
     streamEvents: Stream.fromPubSub(runtimeEventPubSub),
+    getMcpStatus: () => unsupported(),
+    toggleMcpServer: () => unsupported(),
+    reconnectMcpServer: () => unsupported(),
   };
 
   const emit = (event: LegacyProviderRuntimeEvent): void => {
@@ -651,7 +654,7 @@ describe("CheckpointReactor", () => {
     );
   });
 
-  it("continues processing runtime events after a single checkpoint runtime failure", async () => {
+  it("resolves checkpoint targets from thread workspace when provider session CWD is non-git", async () => {
     const nonRepositorySessionCwd = fs.mkdtempSync(
       path.join(os.tmpdir(), "t3-checkpoint-runtime-non-repo-"),
     );
@@ -681,33 +684,25 @@ describe("CheckpointReactor", () => {
       }),
     );
 
+    // Even though provider session CWD is not a git repo, checkpoint targets
+    // are resolved from the thread's worktreePath (which IS a git repo).
     harness.provider.emit({
       type: "turn.completed",
       eventId: EventId.makeUnsafe("evt-runtime-capture-failure"),
       provider: "codex",
-      
+
       createdAt: new Date().toISOString(),
       threadId: ThreadId.makeUnsafe("thread-1"),
       turnId: asTurnId("turn-runtime-failure"),
       payload: { state: "completed" },
     });
 
-    harness.provider.emit({
-      type: "turn.started",
-      eventId: EventId.makeUnsafe("evt-turn-started-after-runtime-failure"),
-      provider: "codex",
-      
-      createdAt: new Date().toISOString(),
-      threadId: ThreadId.makeUnsafe("thread-1"),
-      turnId: asTurnId("turn-after-runtime-failure"),
-    });
-
     await waitForGitRefExists(
       harness.cwd,
-      checkpointRefForThreadTurn(ThreadId.makeUnsafe("thread-1"), 0),
+      checkpointRefForThreadTurn(ThreadId.makeUnsafe("thread-1"), 1),
     );
     expect(
-      gitRefExists(harness.cwd, checkpointRefForThreadTurn(ThreadId.makeUnsafe("thread-1"), 0)),
+      gitRefExists(harness.cwd, checkpointRefForThreadTurn(ThreadId.makeUnsafe("thread-1"), 1)),
     ).toBe(true);
   });
 

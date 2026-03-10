@@ -52,6 +52,12 @@ import type {
   VapidPublicKeyResult,
 } from "./notification";
 import type { DraftListResult, DraftSaveInput } from "./draft";
+import type {
+  McpGetStatusInput,
+  McpGetStatusResult,
+  McpToggleServerInput,
+  McpReconnectServerInput,
+} from "./mcp";
 import { EditorId } from "./editor";
 
 export interface ContextMenuItem<T extends string = string> {
@@ -188,5 +194,10 @@ export interface NativeApi {
     save: (input: DraftSaveInput) => Promise<void>;
     list: (projectId: string) => Promise<DraftListResult>;
     delete: (threadId: string) => Promise<void>;
+  };
+  mcp: {
+    getStatus: (input: McpGetStatusInput) => Promise<McpGetStatusResult>;
+    toggleServer: (input: McpToggleServerInput) => Promise<void>;
+    reconnectServer: (input: McpReconnectServerInput) => Promise<void>;
   };
 }

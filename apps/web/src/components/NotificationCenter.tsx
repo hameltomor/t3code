@@ -5,17 +5,21 @@ import type { AppNotification } from "@xbetools/contracts";
 
 import { readNativeApi } from "../nativeApi";
 import {
+  clearStaleNativeNotifications,
   getDeniedPermissionInstructions,
   getNotificationPermission,
   isIOSSafariBrowser,
   installPushSubscriptionChangeListener,
   playNotificationSound,
   requestNotificationPermission,
+  setTitleBadge,
   showNativeNotification,
   subscribeToPush,
   supportsNotifications,
   supportsPush,
+  updateAppBadge,
 } from "../lib/notifications";
+import { getAppVisibility, onAppBecameActive } from "../hooks/useAppVisibility";
 import { useAppSettings } from "../appSettings";
 import { cn } from "~/lib/utils";
 import {
@@ -289,19 +293,45 @@ export function NotificationBell() {
 
     const unsub = api.notifications.onNotification((notification) => {
       const isActiveThread = activeThreadIdRef.current === notification.threadId;
+      const visibility = getAppVisibility();
 
-      if (isActiveThread) {
-        // User is viewing this thread — mark as read immediately, no sound/alert
+      if (isActiveThread && visibility === "active") {
+        // User is actively viewing this thread — mark as read, no alerts
         const now = new Date().toISOString();
         const readNotification = { ...notification, readAt: now };
         setNotifications((prev) => [readNotification, ...prev].slice(0, 200));
         void api.notifications.markRead(notification.notificationId);
       } else {
+        // Not viewing this thread, or app is not active — alert the user
         setNotifications((prev) => [notification, ...prev].slice(0, 200));
-        setUnreadCount((prev) => prev + 1);
-        playNotificationSound();
-        void showNativeNotification(notification);
+        setUnreadCount((prev) => {
+          const next = prev + 1;
+          // Update external badges with the new count
+          setTitleBadge(next);
+          updateAppBadge(next);
+          return next;
+        });
+
+        if (visibility === "hidden") {
+          // Tab hidden / minimized / switched app — OS notification only, no sound
+          void showNativeNotification(notification);
+        } else {
+          // Visible (active on different thread, or passive) — play sound
+          playNotificationSound();
+        }
       }
+    });
+
+    // Clear badges when user returns to the app
+    const unsubBecameActive = onAppBecameActive(() => {
+      setUnreadCount((current) => {
+        // If user is viewing a thread, its notifications will be marked read
+        // by the activeThreadId effect — just sync badges to current count
+        setTitleBadge(current);
+        updateAppBadge(current);
+        return current;
+      });
+      void clearStaleNativeNotifications();
     });
 
     // Re-register push subscription if the browser rotates it
@@ -309,6 +339,7 @@ export function NotificationBell() {
 
     return () => {
       unsub();
+      unsubBecameActive();
       unsubPushChange();
     };
   }, [fetchUnreadCount]);
@@ -322,6 +353,8 @@ export function NotificationBell() {
       void api.notifications.markReadByThread(activeThreadId).then(() =>
         api.notifications.unreadCount().then((result) => {
           setUnreadCount(result.count);
+          setTitleBadge(result.count);
+          updateAppBadge(result.count);
         }),
       );
     }
@@ -374,6 +407,8 @@ export function NotificationBell() {
       prev.map((n) => (n.readAt ? n : { ...n, readAt: new Date().toISOString() })),
     );
     setUnreadCount(0);
+    setTitleBadge(0);
+    updateAppBadge(0);
   }, []);
 
   return (

@@ -1,5 +1,10 @@
+import { readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
+
 import { Encoding } from "effect";
 import { CheckpointRef, ProjectId, type ThreadId } from "@xbetools/contracts";
+
+import { isGitRepository } from "../git/isRepo.ts";
 
 export const CHECKPOINT_REFS_PREFIX = "refs/xbe/checkpoints";
 
@@ -13,13 +18,86 @@ type ThreadCwdInput = {
   readonly thread: {
     readonly projectId: ProjectId;
     readonly worktreePath: string | null;
-    readonly worktreeEntries?: ReadonlyArray<{ readonly worktreePath: string }>;
+    readonly worktreeEntries?: ReadonlyArray<{
+      readonly worktreePath: string;
+      readonly name?: string;
+    }>;
   };
   readonly projects: ReadonlyArray<{
     readonly id: ProjectId;
     readonly workspaceRoot: string;
   }>;
 };
+
+export interface CheckpointTarget {
+  /** Absolute path to a real git repository. */
+  readonly cwd: string;
+  /** Path prefix for diff output (e.g., "horizon/" or "" for single-repo). */
+  readonly pathPrefix: string;
+}
+
+/**
+ * Resolve all checkpoint targets for a thread.
+ *
+ * For single-repo projects: returns a single target with empty prefix.
+ * For multi-repo workspaces: returns one target per discovered git repo,
+ * each with a `repoName/` prefix so diffs can be combined.
+ */
+export function resolveCheckpointTargets(input: ThreadCwdInput): CheckpointTarget[] {
+  // 1. Multi-repo worktree entries — each entry is a real git repo.
+  const entries = input.thread.worktreeEntries;
+  if (entries && entries.length > 0) {
+    return entries
+      .filter((entry): entry is typeof entry & { worktreePath: string } => !!entry.worktreePath)
+      .map((entry) => ({
+        cwd: entry.worktreePath,
+        pathPrefix: entry.name ? `${entry.name}/` : "",
+      }));
+  }
+
+  // 2. Single worktree.
+  const worktreeCwd = input.thread.worktreePath ?? undefined;
+  if (worktreeCwd) {
+    if (isGitRepository(worktreeCwd)) {
+      return [{ cwd: worktreeCwd, pathPrefix: "" }];
+    }
+    // Worktree path is a synthetic root without entries — discover repos.
+    return discoverCheckpointTargets(worktreeCwd);
+  }
+
+  // 3. Fallback to project workspace root.
+  const workspaceRoot = input.projects.find(
+    (project) => project.id === input.thread.projectId,
+  )?.workspaceRoot;
+  if (!workspaceRoot) return [];
+
+  if (isGitRepository(workspaceRoot)) {
+    return [{ cwd: workspaceRoot, pathPrefix: "" }];
+  }
+
+  return discoverCheckpointTargets(workspaceRoot);
+}
+
+/** Discover git repos under a non-git root directory (depth 1). */
+function discoverCheckpointTargets(root: string): CheckpointTarget[] {
+  const targets: CheckpointTarget[] = [];
+  try {
+    for (const entry of readdirSync(root)) {
+      if (entry.startsWith(".") || entry === "node_modules") continue;
+      const childPath = join(root, entry);
+      try {
+        if (statSync(childPath).isDirectory() && isGitRepository(childPath)) {
+          targets.push({ cwd: childPath, pathPrefix: `${entry}/` });
+        }
+      } catch {
+        /* skip inaccessible */
+      }
+    }
+  } catch {
+    /* root unreadable */
+  }
+  return targets;
+}
 
 /**
  * Resolve the effective git working directory for checkpoint/diff operations.

@@ -32,6 +32,8 @@ export interface DiffCheckpointsInput {
   readonly fromCheckpointRef: CheckpointRef;
   readonly toCheckpointRef: CheckpointRef;
   readonly fallbackFromToHead?: boolean;
+  /** When set, prefixes diff output paths (e.g., "horizon/") via --src-prefix/--dst-prefix. */
+  readonly pathPrefix?: string;
 }
 
 export interface DeleteCheckpointRefsInput {

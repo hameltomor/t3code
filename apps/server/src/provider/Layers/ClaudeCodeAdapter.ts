@@ -22,6 +22,8 @@ import {
   type CanonicalItemType,
   type CanonicalRequestType,
   EventId,
+  type McpServerStatusItem,
+  type McpTool,
   type ProviderApprovalDecision,
   ProviderItemId,
   type ProviderRuntimeEvent,
@@ -132,12 +134,25 @@ interface ClaudeSessionContext {
   stopped: boolean;
 }
 
+interface McpServerStatusFromSdk {
+  name: string;
+  status: "connected" | "failed" | "needs-auth" | "pending" | "disabled";
+  serverInfo?: { name: string; version: string };
+  error?: string;
+  config?: unknown;
+  scope?: string;
+  tools?: { name: string; description?: string; annotations?: { readOnly?: boolean; destructive?: boolean; openWorld?: boolean } }[];
+}
+
 interface ClaudeQueryRuntime extends AsyncIterable<SDKMessage> {
   readonly interrupt: () => Promise<void>;
   readonly setModel: (model?: string) => Promise<void>;
   readonly setPermissionMode: (mode: PermissionMode) => Promise<void>;
   readonly setMaxThinkingTokens: (maxThinkingTokens: number | null) => Promise<void>;
   readonly close: () => void;
+  readonly mcpServerStatus: () => Promise<McpServerStatusFromSdk[]>;
+  readonly toggleMcpServer: (serverName: string, enabled: boolean) => Promise<void>;
+  readonly reconnectMcpServer: (serverName: string) => Promise<void>;
 }
 
 export interface ClaudeCodeAdapterLiveOptions {
@@ -1984,6 +1999,74 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
       ).pipe(Effect.tap(() => Queue.shutdown(runtimeEventQueue))),
     );
 
+    const getMcpServerStatus: ClaudeCodeAdapterShape["getMcpServerStatus"] = (threadId) =>
+      Effect.gen(function* () {
+        const context = yield* requireSession(threadId);
+        const sdkStatuses = yield* Effect.tryPromise({
+          try: () => context.query.mcpServerStatus(),
+          catch: (cause) =>
+            new ProviderAdapterRequestError({
+              provider: PROVIDER,
+              method: "mcpServerStatus",
+              detail: `Failed to query MCP server status: ${String(cause)}`,
+              cause,
+            }),
+        });
+        return sdkStatuses.map(
+          (s): McpServerStatusItem => ({
+            name: s.name,
+            status: s.status,
+            scope: s.scope ?? undefined,
+            error: s.error ?? undefined,
+            serverInfo: s.serverInfo ?? undefined,
+            tools: s.tools?.map(
+              (t): McpTool => ({
+                name: t.name,
+                description: t.description ?? undefined,
+                annotations: t.annotations ?? undefined,
+              }),
+            ),
+          }),
+        );
+      });
+
+    const toggleMcpServer: ClaudeCodeAdapterShape["toggleMcpServer"] = (
+      threadId,
+      serverName,
+      enabled,
+    ) =>
+      Effect.gen(function* () {
+        const context = yield* requireSession(threadId);
+        yield* Effect.tryPromise({
+          try: () => context.query.toggleMcpServer(serverName, enabled),
+          catch: (cause) =>
+            new ProviderAdapterRequestError({
+              provider: PROVIDER,
+              method: "toggleMcpServer",
+              detail: `Failed to toggle MCP server '${serverName}': ${String(cause)}`,
+              cause,
+            }),
+        });
+      });
+
+    const reconnectMcpServer: ClaudeCodeAdapterShape["reconnectMcpServer"] = (
+      threadId,
+      serverName,
+    ) =>
+      Effect.gen(function* () {
+        const context = yield* requireSession(threadId);
+        yield* Effect.tryPromise({
+          try: () => context.query.reconnectMcpServer(serverName),
+          catch: (cause) =>
+            new ProviderAdapterRequestError({
+              provider: PROVIDER,
+              method: "reconnectMcpServer",
+              detail: `Failed to reconnect MCP server '${serverName}': ${String(cause)}`,
+              cause,
+            }),
+        });
+      });
+
     return {
       provider: PROVIDER,
       capabilities: {
@@ -2001,6 +2084,9 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
       hasSession,
       stopAll,
       streamEvents: Stream.fromQueue(runtimeEventQueue),
+      getMcpServerStatus,
+      toggleMcpServer,
+      reconnectMcpServer,
     } satisfies ClaudeCodeAdapterShape;
   });
 }

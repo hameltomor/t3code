@@ -12,6 +12,9 @@
 import {
   NonNegativeInt,
   ThreadId,
+  McpGetStatusInput,
+  McpToggleServerInput,
+  McpReconnectServerInput,
   ProviderInterruptTurnInput,
   ProviderRespondToRequestInput,
   ProviderRespondToUserInputInput,
@@ -508,6 +511,67 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
         });
       });
 
+    const getMcpStatus: ProviderServiceShape["getMcpStatus"] = (rawInput) =>
+      Effect.gen(function* () {
+        const input = yield* decodeInputOrValidationError({
+          operation: "ProviderService.getMcpStatus",
+          schema: McpGetStatusInput,
+          payload: rawInput,
+        });
+        const routed = yield* resolveRoutableSession({
+          threadId: input.threadId,
+          operation: "ProviderService.getMcpStatus",
+          allowRecovery: false,
+        });
+        if (!routed.isActive || !routed.adapter.getMcpServerStatus) {
+          return { threadId: input.threadId, servers: [] };
+        }
+        const servers = yield* routed.adapter.getMcpServerStatus(input.threadId);
+        return { threadId: input.threadId, servers };
+      });
+
+    const toggleMcpServer: ProviderServiceShape["toggleMcpServer"] = (rawInput) =>
+      Effect.gen(function* () {
+        const input = yield* decodeInputOrValidationError({
+          operation: "ProviderService.toggleMcpServer",
+          schema: McpToggleServerInput,
+          payload: rawInput,
+        });
+        const routed = yield* resolveRoutableSession({
+          threadId: input.threadId,
+          operation: "ProviderService.toggleMcpServer",
+          allowRecovery: false,
+        });
+        if (!routed.isActive || !routed.adapter.toggleMcpServer) {
+          return yield* toValidationError(
+            "ProviderService.toggleMcpServer",
+            `MCP toggle is not supported for thread '${input.threadId}'.`,
+          );
+        }
+        yield* routed.adapter.toggleMcpServer(input.threadId, input.serverName, input.enabled);
+      });
+
+    const reconnectMcpServer: ProviderServiceShape["reconnectMcpServer"] = (rawInput) =>
+      Effect.gen(function* () {
+        const input = yield* decodeInputOrValidationError({
+          operation: "ProviderService.reconnectMcpServer",
+          schema: McpReconnectServerInput,
+          payload: rawInput,
+        });
+        const routed = yield* resolveRoutableSession({
+          threadId: input.threadId,
+          operation: "ProviderService.reconnectMcpServer",
+          allowRecovery: false,
+        });
+        if (!routed.isActive || !routed.adapter.reconnectMcpServer) {
+          return yield* toValidationError(
+            "ProviderService.reconnectMcpServer",
+            `MCP reconnect is not supported for thread '${input.threadId}'.`,
+          );
+        }
+        yield* routed.adapter.reconnectMcpServer(input.threadId, input.serverName);
+      });
+
     const runStopAll = () =>
       Effect.gen(function* () {
         const threadIds = yield* directory.listThreadIds();
@@ -550,6 +614,9 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
       listSessions,
       getCapabilities,
       rollbackConversation,
+      getMcpStatus,
+      toggleMcpServer,
+      reconnectMcpServer,
       streamEvents: Stream.fromPubSub(runtimeEventPubSub),
     } satisfies ProviderServiceShape;
   });
