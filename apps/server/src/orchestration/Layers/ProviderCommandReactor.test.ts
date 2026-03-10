@@ -189,9 +189,6 @@ describe("ProviderCommandReactor", () => {
         }),
       rollbackConversation: () => unsupported(),
       streamEvents: Stream.fromPubSub(runtimeEventPubSub),
-      getMcpStatus: () => unsupported(),
-      toggleMcpServer: () => unsupported(),
-      reconnectMcpServer: () => unsupported(),
     };
 
     const orchestrationLayer = OrchestrationEngineLive.pipe(

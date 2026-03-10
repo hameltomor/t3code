@@ -137,7 +137,6 @@ import {
 } from "../keybindings";
 import ChatMarkdown from "./ChatMarkdown";
 import { shouldUseCompactComposerFooter } from "./composerFooterLayout";
-import { McpStatusPanel } from "./McpStatusPanel";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "./ui/alert";
 import {
@@ -3628,12 +3627,6 @@ export default function ChatView({ threadId }: ChatViewProps) {
         error={activeThread.error}
         onDismiss={() => setThreadError(activeThread.id, null)}
       />
-      {activeThread.session?.provider === "claudeCode" && (
-        <McpStatusPanel
-          threadId={activeThread.id}
-          sessionStatus={activeThread.session?.status ?? null}
-        />
-      )}
       {/* Messages */}
       <div
         ref={setMessagesScrollContainerRef}

@@ -234,11 +234,6 @@ export function createWsNativeApi(): NativeApi {
       list: (projectId) => transport.request(WS_METHODS.draftsList, { projectId }),
       delete: (threadId) => transport.request(WS_METHODS.draftsDelete, { threadId }),
     },
-    mcp: {
-      getStatus: (input) => transport.request(WS_METHODS.mcpGetStatus, input),
-      toggleServer: (input) => transport.request(WS_METHODS.mcpToggleServer, input),
-      reconnectServer: (input) => transport.request(WS_METHODS.mcpReconnectServer, input),
-    },
   };
 
   instance = { api, transport };

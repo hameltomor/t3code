@@ -76,10 +76,6 @@ class FakeClaudeQuery implements AsyncIterable<SDKMessage> {
     this.finish();
   };
 
-  readonly mcpServerStatus = async () => [];
-  readonly toggleMcpServer = async () => {};
-  readonly reconnectMcpServer = async () => {};
-
   [Symbol.asyncIterator](): AsyncIterator<SDKMessage> {
     return {
       next: () => {
@@ -249,7 +245,7 @@ describe("ClaudeCodeAdapterLive", () => {
     );
   });
 
-  it.effect("loads Claude Code presets while isolating ambient MCP configuration", () => {
+  it.effect("loads Claude Code presets and discovers MCP servers from CLI config", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
       const adapter = yield* ClaudeCodeAdapter;
@@ -262,7 +258,7 @@ describe("ClaudeCodeAdapterLive", () => {
       const createInput = harness.getLastCreateQueryInput();
       assert.deepEqual(createInput?.options.settingSources, ["user", "project", "local"]);
       assert.equal(createInput?.options.strictMcpConfig, true);
-      assert.deepEqual(createInput?.options.mcpServers, {});
+      assert.equal(typeof createInput?.options.mcpServers, "object");
       assert.deepEqual(createInput?.options.tools, {
         type: "preset",
         preset: "claude_code",

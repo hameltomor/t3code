@@ -92,9 +92,6 @@ function createProviderServiceHarness(
     getCapabilities: () => Effect.succeed({ sessionModelSwitch: "in-session" }),
     rollbackConversation,
     streamEvents: Stream.fromPubSub(runtimeEventPubSub),
-    getMcpStatus: () => unsupported(),
-    toggleMcpServer: () => unsupported(),
-    reconnectMcpServer: () => unsupported(),
   };
 
   const emit = (event: LegacyProviderRuntimeEvent): void => {

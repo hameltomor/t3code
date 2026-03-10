@@ -8,6 +8,7 @@
  */
 import {
   type CanUseTool,
+  type McpServerConfig,
   query,
   type Options as ClaudeQueryOptions,
   type PermissionMode,
@@ -17,13 +18,14 @@ import {
   type SDKResultMessage,
   type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as os from "node:os";
 import {
   ApprovalRequestId,
   type CanonicalItemType,
   type CanonicalRequestType,
   EventId,
-  type McpServerStatusItem,
-  type McpTool,
   type ProviderApprovalDecision,
   ProviderItemId,
   type ProviderRuntimeEvent,
@@ -69,6 +71,61 @@ function sanitizedEnv(): Record<string, string | undefined> {
     delete env[key];
   }
   return env;
+}
+
+/**
+ * Discover MCP server configs from the Claude CLI's internal storage.
+ *
+ * The Claude CLI stores MCP configs in `~/.claude.json`, NOT in the
+ * `~/.claude/settings.json` files that `settingSources` reads from.
+ *
+ * - User-scope servers: `~/.claude.json` → top-level `mcpServers`
+ * - Local-scope servers: `~/.claude.json` → `projects[cwd].mcpServers`
+ * - Project-scope servers: `{cwd}/.mcp.json` → `mcpServers`
+ */
+function discoverClaudeCliMcpServers(cwd: string | undefined): Record<string, McpServerConfig> {
+  const merged: Record<string, McpServerConfig> = {};
+
+  // 1. Read ~/.claude.json for user-scope and local-scope servers
+  const claudeJsonPath = path.join(os.homedir(), ".claude.json");
+  try {
+    const raw = fs.readFileSync(claudeJsonPath, "utf-8");
+    const data = JSON.parse(raw) as {
+      mcpServers?: Record<string, McpServerConfig>;
+      projects?: Record<string, { mcpServers?: Record<string, McpServerConfig> }>;
+    };
+
+    // User-scope MCP servers
+    if (data.mcpServers) {
+      Object.assign(merged, data.mcpServers);
+    }
+
+    // Local-scope MCP servers (project-specific, private to user)
+    if (cwd && data.projects) {
+      const projectConfig = data.projects[cwd];
+      if (projectConfig?.mcpServers) {
+        Object.assign(merged, projectConfig.mcpServers);
+      }
+    }
+  } catch {
+    // File doesn't exist or is invalid JSON — not an error
+  }
+
+  // 2. Read {cwd}/.mcp.json for project-scope servers
+  if (cwd) {
+    const mcpJsonPath = path.join(cwd, ".mcp.json");
+    try {
+      const raw = fs.readFileSync(mcpJsonPath, "utf-8");
+      const data = JSON.parse(raw) as { mcpServers?: Record<string, McpServerConfig> };
+      if (data.mcpServers) {
+        Object.assign(merged, data.mcpServers);
+      }
+    } catch {
+      // File doesn't exist or is invalid JSON — not an error
+    }
+  }
+
+  return merged;
 }
 
 type PromptQueueItem =
@@ -134,25 +191,12 @@ interface ClaudeSessionContext {
   stopped: boolean;
 }
 
-interface McpServerStatusFromSdk {
-  name: string;
-  status: "connected" | "failed" | "needs-auth" | "pending" | "disabled";
-  serverInfo?: { name: string; version: string };
-  error?: string;
-  config?: unknown;
-  scope?: string;
-  tools?: { name: string; description?: string; annotations?: { readOnly?: boolean; destructive?: boolean; openWorld?: boolean } }[];
-}
-
 interface ClaudeQueryRuntime extends AsyncIterable<SDKMessage> {
   readonly interrupt: () => Promise<void>;
   readonly setModel: (model?: string) => Promise<void>;
   readonly setPermissionMode: (mode: PermissionMode) => Promise<void>;
   readonly setMaxThinkingTokens: (maxThinkingTokens: number | null) => Promise<void>;
   readonly close: () => void;
-  readonly mcpServerStatus: () => Promise<McpServerStatusFromSdk[]>;
-  readonly toggleMcpServer: (serverName: string, enabled: boolean) => Promise<void>;
-  readonly reconnectMcpServer: (serverName: string) => Promise<void>;
 }
 
 export interface ClaudeCodeAdapterLiveOptions {
@@ -1707,7 +1751,7 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
           canUseTool,
           settingSources: [...CLAUDE_SETTING_SOURCES],
           strictMcpConfig: true,
-          mcpServers: {},
+          mcpServers: discoverClaudeCliMcpServers(input.cwd),
           tools: CLAUDE_CODE_PRESET,
           systemPrompt: CLAUDE_CODE_PRESET,
           env: sanitizedEnv(),
@@ -1999,74 +2043,6 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
       ).pipe(Effect.tap(() => Queue.shutdown(runtimeEventQueue))),
     );
 
-    const getMcpServerStatus: ClaudeCodeAdapterShape["getMcpServerStatus"] = (threadId) =>
-      Effect.gen(function* () {
-        const context = yield* requireSession(threadId);
-        const sdkStatuses = yield* Effect.tryPromise({
-          try: () => context.query.mcpServerStatus(),
-          catch: (cause) =>
-            new ProviderAdapterRequestError({
-              provider: PROVIDER,
-              method: "mcpServerStatus",
-              detail: `Failed to query MCP server status: ${String(cause)}`,
-              cause,
-            }),
-        });
-        return sdkStatuses.map(
-          (s): McpServerStatusItem => ({
-            name: s.name,
-            status: s.status,
-            scope: s.scope ?? undefined,
-            error: s.error ?? undefined,
-            serverInfo: s.serverInfo ?? undefined,
-            tools: s.tools?.map(
-              (t): McpTool => ({
-                name: t.name,
-                description: t.description ?? undefined,
-                annotations: t.annotations ?? undefined,
-              }),
-            ),
-          }),
-        );
-      });
-
-    const toggleMcpServer: ClaudeCodeAdapterShape["toggleMcpServer"] = (
-      threadId,
-      serverName,
-      enabled,
-    ) =>
-      Effect.gen(function* () {
-        const context = yield* requireSession(threadId);
-        yield* Effect.tryPromise({
-          try: () => context.query.toggleMcpServer(serverName, enabled),
-          catch: (cause) =>
-            new ProviderAdapterRequestError({
-              provider: PROVIDER,
-              method: "toggleMcpServer",
-              detail: `Failed to toggle MCP server '${serverName}': ${String(cause)}`,
-              cause,
-            }),
-        });
-      });
-
-    const reconnectMcpServer: ClaudeCodeAdapterShape["reconnectMcpServer"] = (
-      threadId,
-      serverName,
-    ) =>
-      Effect.gen(function* () {
-        const context = yield* requireSession(threadId);
-        yield* Effect.tryPromise({
-          try: () => context.query.reconnectMcpServer(serverName),
-          catch: (cause) =>
-            new ProviderAdapterRequestError({
-              provider: PROVIDER,
-              method: "reconnectMcpServer",
-              detail: `Failed to reconnect MCP server '${serverName}': ${String(cause)}`,
-              cause,
-            }),
-        });
-      });
-
     return {
       provider: PROVIDER,
       capabilities: {
@@ -2084,9 +2060,6 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
       hasSession,
       stopAll,
       streamEvents: Stream.fromQueue(runtimeEventQueue),
-      getMcpServerStatus,
-      toggleMcpServer,
-      reconnectMcpServer,
     } satisfies ClaudeCodeAdapterShape;
   });
 }

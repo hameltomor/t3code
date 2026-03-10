@@ -1079,23 +1079,6 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
         return {};
       }
 
-      case WS_METHODS.mcpGetStatus: {
-        const body = stripRequestTag(request.body);
-        return yield* providerService.getMcpStatus(body);
-      }
-
-      case WS_METHODS.mcpToggleServer: {
-        const body = stripRequestTag(request.body);
-        yield* providerService.toggleMcpServer(body);
-        return {};
-      }
-
-      case WS_METHODS.mcpReconnectServer: {
-        const body = stripRequestTag(request.body);
-        yield* providerService.reconnectMcpServer(body);
-        return {};
-      }
-
       default: {
         const _exhaustiveCheck: never = request.body;
         return yield* new RouteRequestError({

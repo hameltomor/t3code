@@ -9,7 +9,6 @@
  */
 import type {
   ApprovalRequestId,
-  McpServerStatusItem,
   ProviderApprovalDecision,
   ProviderKind,
   ProviderUserInputAnswers,
@@ -129,31 +128,4 @@ export interface ProviderAdapterShape<TError> {
    * Canonical runtime event stream emitted by this adapter.
    */
   readonly streamEvents: Stream.Stream<ProviderRuntimeEvent>;
-
-  // ── Optional MCP methods (provider-specific) ────────────────────────
-
-  /**
-   * Get MCP server status for an active session.
-   * Only implemented by providers that support MCP (e.g. Claude Code).
-   */
-  readonly getMcpServerStatus?: (
-    threadId: ThreadId,
-  ) => Effect.Effect<ReadonlyArray<McpServerStatusItem>, TError>;
-
-  /**
-   * Toggle an MCP server enabled/disabled for an active session.
-   */
-  readonly toggleMcpServer?: (
-    threadId: ThreadId,
-    serverName: string,
-    enabled: boolean,
-  ) => Effect.Effect<void, TError>;
-
-  /**
-   * Reconnect a failed MCP server for an active session.
-   */
-  readonly reconnectMcpServer?: (
-    threadId: ThreadId,
-    serverName: string,
-  ) => Effect.Effect<void, TError>;
 }
