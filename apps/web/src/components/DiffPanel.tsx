@@ -3,7 +3,7 @@ import { FileDiff, type FileDiffMetadata, Virtualizer } from "@pierre/diffs/reac
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { ThreadId, type TurnId } from "@xbetools/contracts";
-import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, Columns2Icon, FileIcon, FolderIcon, Rows3Icon } from "lucide-react";
+import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, Columns2Icon, FileIcon, FolderIcon, Rows3Icon, XIcon } from "lucide-react";
 import { type WheelEvent as ReactWheelEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { gitBranchesQueryOptions } from "~/lib/gitReactQuery";
 import { checkpointDiffQueryOptions } from "~/lib/providerReactQuery";
@@ -311,11 +311,12 @@ function DiffFileTree({
 
 interface DiffPanelProps {
   mode?: "inline" | "sheet" | "sidebar";
+  onClose?: () => void;
 }
 
 export { DiffWorkerPoolProvider } from "./DiffWorkerPoolProvider";
 
-export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
+export default function DiffPanel({ mode = "inline", onClose }: DiffPanelProps) {
   const navigate = useNavigate();
   const { resolvedTheme } = useTheme();
   const [diffRenderMode, setDiffRenderMode] = useState<DiffRenderMode>("stacked");
@@ -592,6 +593,16 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   const shouldUseDragRegion = isElectron && mode !== "sheet";
   const headerRow = (
     <>
+      {onClose && (
+        <button
+          type="button"
+          className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:size-7"
+          onClick={onClose}
+          aria-label="Close diff panel"
+        >
+          <XIcon className="size-5 sm:size-4" />
+        </button>
+      )}
       <div className="relative min-w-0 flex-1 [-webkit-app-region:no-drag]">
         {canScrollTurnStripLeft && (
           <div className="pointer-events-none absolute inset-y-0 left-8 z-10 w-7 bg-linear-to-r from-card to-transparent" />

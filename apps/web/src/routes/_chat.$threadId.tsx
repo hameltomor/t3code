@@ -215,7 +215,7 @@ function ChatThreadRouteView() {
       </SidebarInset>
       <DiffPanelSheet diffOpen={diffOpen} onCloseDiff={closeDiff}>
         <Suspense fallback={<DiffLoadingFallback inline={false} />}>
-          <DiffPanel mode="sheet" />
+          <DiffPanel mode="sheet" onClose={closeDiff} />
         </Suspense>
       </DiffPanelSheet>
     </>
