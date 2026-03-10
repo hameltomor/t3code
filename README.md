@@ -91,7 +91,7 @@ xbe
   </a>
 </p>
 
-> **Fork notice:** This project is a fork of [T3 Code](https://github.com/pingdotgg/t3code) by [Ping.gg](https://github.com/pingdotgg). The original project is licensed under its respective license. XBE Code is an independent rebranding and continuation with extended functionality.
+> **Fork notice:** This project is a fork of [T3 Code](https://github.com/pingdotgg/t3code) by [Ping.gg](https://github.com/pingdotgg). XBE Code is a proprietary internal tool of XBE and is not licensed for external use.
 
 ## Features
 
