@@ -137,6 +137,7 @@ import {
 } from "../keybindings";
 import ChatMarkdown from "./ChatMarkdown";
 import { shouldUseCompactComposerFooter } from "./composerFooterLayout";
+import { McpStatusPanel } from "./McpStatusPanel";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "./ui/alert";
 import {
@@ -3627,6 +3628,12 @@ export default function ChatView({ threadId }: ChatViewProps) {
         error={activeThread.error}
         onDismiss={() => setThreadError(activeThread.id, null)}
       />
+      {activeThread.session?.provider === "claudeCode" && (
+        <McpStatusPanel
+          threadId={activeThread.id}
+          sessionStatus={activeThread.session?.status ?? null}
+        />
+      )}
       {/* Messages */}
       <div
         ref={setMessagesScrollContainerRef}
@@ -4323,10 +4330,10 @@ const ChatHeader = memo(function ChatHeader({
 
   return (
     <div className="flex min-w-0 flex-1 flex-row items-center gap-2 sm:gap-2">
-      <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden sm:gap-3">
+      <div className="flex min-w-0 items-center gap-1.5 overflow-hidden sm:gap-3">
         <SidebarTrigger className="size-7 shrink-0 md:hidden" />
         <h2
-          className="max-w-32 sm:max-w-none min-w-0 shrink truncate text-sm font-medium text-foreground"
+          className="max-w-32 sm:max-w-48 min-w-0 shrink truncate text-sm font-medium text-foreground"
           title={activeThreadTitle}
         >
           {activeThreadTitle}
@@ -4383,7 +4390,9 @@ const ChatHeader = memo(function ChatHeader({
               />
             </div>
           )}
-          {activeProjectName && <GitActionsControl gitCwd={gitActionsRepoCwd} activeThreadId={activeThreadId} />}
+          <div className="hidden @sm/header-actions:contents">
+            {activeProjectName && <GitActionsControl gitCwd={gitActionsRepoCwd} activeThreadId={activeThreadId} />}
+          </div>
           <Tooltip>
             <TooltipTrigger
               render={
@@ -4408,7 +4417,9 @@ const ChatHeader = memo(function ChatHeader({
                   : "Toggle diff panel"}
             </TooltipPopup>
           </Tooltip>
-          {isGitCapable && branchToolbar}
+          <div className="hidden @md/header-actions:contents">
+            {isGitCapable && branchToolbar}
+          </div>
         </div>
       ) : (
         /* Mobile: compact layout with overflow sheet */
