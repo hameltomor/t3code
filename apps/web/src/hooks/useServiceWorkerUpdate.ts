@@ -91,12 +91,17 @@ export function useServiceWorkerUpdate(): ServiceWorkerUpdateState {
 
   const activateUpdate = useCallback(() => {
     const worker = waitingWorkerRef.current;
-    if (!worker) return;
-    activatedByThisTabRef.current = true;
-    // ServiceWorker.postMessage() doesn't accept targetOrigin (different API from Window.postMessage).
-    // oxlint(unicorn/require-post-message-target-origin) -- not applicable to SW.
-    worker.postMessage({ type: "SKIP_WAITING" }); // eslint-disable-line unicorn/require-post-message-target-origin
-    // The controllerchange listener above will reload the page.
+    if (worker) {
+      activatedByThisTabRef.current = true;
+      // ServiceWorker.postMessage() doesn't accept targetOrigin (different API from Window.postMessage).
+      // oxlint(unicorn/require-post-message-target-origin) -- not applicable to SW.
+      worker.postMessage({ type: "SKIP_WAITING" }); // eslint-disable-line unicorn/require-post-message-target-origin
+    }
+    // Fallback: if controllerchange doesn't fire within 300ms (e.g. the
+    // waiting worker was already promoted to active, or the ref is stale),
+    // reload anyway. The SW uses a network-first strategy so a reload
+    // always picks up fresh assets from the server.
+    setTimeout(() => window.location.reload(), 300);
   }, []);
 
   return { updateAvailable, activateUpdate };
