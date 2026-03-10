@@ -2,6 +2,14 @@ import type { OrchestrationLatestTurn, ProviderInteractionMode } from "@xbetools
 import type { ProposedPlan, ThreadSession } from "../types";
 import { findLatestProposedPlan, isLatestTurnSettled } from "../session-logic";
 
+export const THREAD_SELECTION_SAFE_SELECTOR =
+  "[data-thread-item], [data-thread-selection-safe]";
+
+export function shouldClearThreadSelectionOnMouseDown(target: HTMLElement | null): boolean {
+  if (target === null) return true;
+  return !target.closest(THREAD_SELECTION_SAFE_SELECTOR);
+}
+
 export interface ThreadStatusPill {
   label:
     | "Working"
