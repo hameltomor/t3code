@@ -44,19 +44,21 @@ export function UpdateBanner({ update }: { update: AppUpdateInfo }) {
   return (
     <div
       className={cn(
-        // Fixed top banner below the header, centered with max width.
-        "fixed z-50 top-3 left-1/2 -translate-x-1/2 w-full max-w-lg animate-banner-in-top",
-        // Horizontal padding so it doesn't touch edges on mobile.
-        "px-4 md:px-0",
+        // Mobile: full-width top banner flush to screen edge (standard mobile notification UX).
+        "fixed z-50 top-0 inset-x-0 animate-banner-in-top",
+        "px-3 pt-[env(safe-area-inset-top)]",
+        // Desktop (md+): top-right toast position, constrained width (standard desktop notification UX).
+        "md:inset-x-auto md:right-4 md:left-auto md:top-4 md:w-full md:max-w-sm md:px-0",
       )}
       data-slot="update-banner"
       role="status"
     >
       <div
         className={cn(
-          // Card styling following XBE styleguide — centered floating card.
-          "flex items-center gap-3 rounded-lg border bg-popover px-4 py-3 text-popover-foreground shadow-lg/5",
-          "md:px-5",
+          // Mobile: edge-to-edge card with no rounding, subtle bottom border.
+          "flex items-center gap-3 rounded-none border-b bg-popover px-4 py-3 text-popover-foreground shadow-md/5",
+          // Desktop: floating card with rounding and full border.
+          "md:rounded-lg md:border md:px-5 md:shadow-lg/5",
           // Dark mode: border contrast instead of shadow.
           "dark:shadow-none",
         )}
