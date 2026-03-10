@@ -1411,7 +1411,7 @@ export default function Sidebar() {
                 type="button"
                 className="flex-1 rounded-md bg-primary px-3 md:px-2 py-2.5 md:py-1 text-sm md:text-xs font-medium text-primary-foreground transition-colors duration-150 hover:bg-primary/90"
                 onClick={handleAddProject}
-                disabled={isAddingProject}
+                disabled={newCwd.trim().length === 0 || isAddingProject}
               >
                 {isAddingProject ? "Adding..." : "Add"}
               </button>
