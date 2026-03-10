@@ -118,6 +118,7 @@ import {
   type TurnDiffSummary,
 } from "../types";
 import { basenameOfPath, getVscodeIconUrlForEntry } from "../vscode-icons";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useTheme } from "../hooks/useTheme";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import {
@@ -211,6 +212,16 @@ import {
   projectScriptIdFromCommand,
   setupProjectScript,
 } from "~/projectScripts";
+import {
+  Sheet,
+  SheetTrigger,
+  SheetPopup,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+  SheetPanel,
+  SheetClose,
+} from "./ui/sheet";
 import { Toggle } from "./ui/toggle";
 import { SidebarTrigger, useSidebar } from "./ui/sidebar";
 import { newCommandId, newMessageId, newThreadId } from "~/lib/utils";
@@ -725,10 +736,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
   useEffect(() => {
     const form = composerFormRef.current;
     if (!form) return;
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        setComposerFormWidth(entry.contentRect.width);
-      }
+    setComposerFormWidth(form.clientWidth);
+    const observer = new ResizeObserver(() => {
+      setComposerFormWidth(form.clientWidth);
     });
     observer.observe(form);
     return () => observer.disconnect();
@@ -3601,14 +3611,12 @@ export default function ChatView({ threadId }: ChatViewProps) {
           onDeleteProjectScript={deleteProjectScript}
           onToggleDiff={onToggleDiff}
           branchToolbar={
-            isGitRepo ? (
-              <BranchToolbar
-                threadId={activeThread.id}
-                onEnvModeChange={onEnvModeChange}
-                envLocked={envLocked}
-                onComposerFocusRequest={scheduleComposerFocus}
-              />
-            ) : undefined
+            <BranchToolbar
+              threadId={activeThread.id}
+              onEnvModeChange={onEnvModeChange}
+              envLocked={envLocked}
+              onComposerFocusRequest={scheduleComposerFocus}
+            />
           }
         />
       </header>
@@ -3832,6 +3840,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
               </div>
             ) : (
               <div
+                data-chat-composer-footer="true"
                 className={cn(
                   "flex items-center justify-between px-2.5 pb-2.5 sm:px-3 sm:pb-3",
                   composerCompact ? "gap-2" : "gap-2 sm:gap-0",
@@ -3959,7 +3968,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
                 </div>
 
                 {/* Right side: attach + send / stop button */}
-                <div className="flex shrink-0 items-center gap-2">
+                <div data-chat-composer-actions="right" className="flex shrink-0 items-center gap-2">
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -4309,13 +4318,15 @@ const ChatHeader = memo(function ChatHeader({
     workspaceRepos.length > 1 || (workspaceRepos.length === 1 && !workspaceRepos[0]!.isRoot);
   // For GitActionsControl: use selected repo cwd when multi-repo, otherwise normal gitCwd
   const gitActionsRepoCwd = isMultiRepo ? (selectedRepoCwd ?? workspaceRepos[0]?.path ?? null) : gitCwd;
+  const isDesktop = useMediaQuery("(min-width: 640px)");
+  const isGitCapable = isGitRepo || isMultiRepo;
 
   return (
     <div className="flex min-w-0 flex-1 flex-row items-center gap-2 sm:gap-2">
-      <div className="flex min-w-0 items-center gap-1.5 overflow-hidden sm:flex-1 sm:gap-3">
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden sm:gap-3">
         <SidebarTrigger className="size-7 shrink-0 md:hidden" />
         <h2
-          className="max-w-12 sm:max-w-none min-w-0 shrink truncate text-sm font-medium text-foreground"
+          className="max-w-32 sm:max-w-none min-w-0 shrink truncate text-sm font-medium text-foreground"
           title={activeThreadTitle}
         >
           {activeThreadTitle}
@@ -4323,81 +4334,149 @@ const ChatHeader = memo(function ChatHeader({
         {activeProjectName && truncatedProjectName && (
           <Badge
             variant="outline"
-            className="max-w-18 sm:max-w-32 min-w-0 shrink-0 justify-start overflow-hidden"
+            className="min-w-0 shrink justify-start overflow-hidden"
             title={activeProjectName}
           >
             <span className="block truncate">{truncatedProjectName}</span>
           </Badge>
         )}
-        {activeProjectName && !isGitRepo && !isMultiRepo && (
+        {activeProjectName && !isGitCapable && (
           <Badge variant="outline" className="hidden sm:inline-flex shrink-0 text-[10px] text-amber-700">
             No Git
           </Badge>
         )}
       </div>
-      <div className="@container/header-actions flex min-w-0 flex-1 items-center justify-end gap-1 overflow-hidden sm:gap-2 @sm/header-actions:gap-3">
-        {activeProjectScripts && (
-          <div className="hidden @lg/header-actions:contents">
-            <ProjectScriptsControl
-              scripts={activeProjectScripts}
-              keybindings={keybindings}
-              preferredScriptId={preferredScriptId}
-              onRunScript={onRunProjectScript}
-              onAddScript={onAddProjectScript}
-              onUpdateScript={onUpdateProjectScript}
-              onDeleteScript={onDeleteProjectScript}
+
+      {isDesktop ? (
+        /* Desktop: inline actions with container query progressive disclosure */
+        <div className="@container/header-actions flex min-w-0 flex-1 items-center justify-end gap-1 overflow-hidden sm:gap-2 @sm/header-actions:gap-3">
+          {activeProjectScripts && (
+            <div className="hidden @lg/header-actions:contents">
+              <ProjectScriptsControl
+                scripts={activeProjectScripts}
+                keybindings={keybindings}
+                preferredScriptId={preferredScriptId}
+                onRunScript={onRunProjectScript}
+                onAddScript={onAddProjectScript}
+                onUpdateScript={onUpdateProjectScript}
+                onDeleteScript={onDeleteProjectScript}
+              />
+            </div>
+          )}
+          {activeProjectName && (
+            <div className="hidden @lg/header-actions:contents">
+              <OpenInPicker
+                keybindings={keybindings}
+                availableEditors={availableEditors}
+                openInCwd={openInCwd}
+              />
+            </div>
+          )}
+          {activeProjectName && isMultiRepo && activeProjectId && workspaceReposQueryCwd && (
+            <div className="min-w-0 [&_button]:max-w-24 [&_button]:@sm/header-actions:max-w-48">
+              <RepoSwitcher
+                projectId={activeProjectId}
+                workspaceRoot={workspaceReposQueryCwd}
+                onSelectedRepoCwdChange={(repoCwd) => {
+                  if (activeProjectId) setSelectedRepoCwd(activeProjectId, repoCwd);
+                }}
+              />
+            </div>
+          )}
+          {activeProjectName && <GitActionsControl gitCwd={gitActionsRepoCwd} activeThreadId={activeThreadId} />}
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Toggle
+                  className="shrink-0"
+                  pressed={diffOpen}
+                  onPressedChange={onToggleDiff}
+                  aria-label="Toggle diff panel"
+                  variant="outline"
+                  size="xs"
+                  disabled={!isGitCapable}
+                >
+                  <DiffIcon className="size-3" />
+                </Toggle>
+              }
             />
-          </div>
-        )}
-        {activeProjectName && (
-          <div className="hidden @lg/header-actions:contents">
-            <OpenInPicker
-              keybindings={keybindings}
-              availableEditors={availableEditors}
-              openInCwd={openInCwd}
-            />
-          </div>
-        )}
-        {activeProjectName && isMultiRepo && activeProjectId && workspaceReposQueryCwd && (
-          <div className="min-w-0 [&_button]:max-w-24 [&_button]:@sm/header-actions:max-w-48">
-            <RepoSwitcher
-              projectId={activeProjectId}
-              workspaceRoot={workspaceReposQueryCwd}
-              onSelectedRepoCwdChange={(repoCwd) => {
-                if (activeProjectId) setSelectedRepoCwd(activeProjectId, repoCwd);
-              }}
-            />
-          </div>
-        )}
-        {activeProjectName && <GitActionsControl gitCwd={gitActionsRepoCwd} activeThreadId={activeThreadId} />}
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Toggle
-                className="shrink-0"
-                pressed={diffOpen}
-                onPressedChange={onToggleDiff}
-                aria-label="Toggle diff panel"
-                variant="outline"
-                size="xs"
-                disabled={!isGitRepo}
-              >
-                <DiffIcon className="size-3" />
-              </Toggle>
-            }
-          />
-          <TooltipPopup side="bottom">
-            {!isGitRepo
-              ? "Diff panel is unavailable because this project is not a git repository."
-              : diffToggleShortcutLabel
-                ? `Toggle diff panel (${diffToggleShortcutLabel})`
-                : "Toggle diff panel"}
-          </TooltipPopup>
-        </Tooltip>
-        {branchToolbar}
-        <div className="shrink-0">
-          <NotificationBell />
+            <TooltipPopup side="bottom">
+              {!isGitCapable
+                ? "Diff panel is unavailable because this project is not a git repository."
+                : diffToggleShortcutLabel
+                  ? `Toggle diff panel (${diffToggleShortcutLabel})`
+                  : "Toggle diff panel"}
+            </TooltipPopup>
+          </Tooltip>
+          {isGitCapable && branchToolbar}
         </div>
+      ) : (
+        /* Mobile: compact layout with overflow sheet */
+        <div className="flex shrink-0 items-center gap-1">
+          <Sheet>
+            <SheetTrigger
+              render={
+                <Button variant="outline" size="xs" aria-label="Thread actions">
+                  <EllipsisIcon className="size-3" />
+                </Button>
+              }
+            />
+            <SheetPopup side="bottom">
+              <SheetHeader>
+                <SheetTitle>Thread actions</SheetTitle>
+                <SheetDescription className="sr-only">Actions for the current thread</SheetDescription>
+              </SheetHeader>
+              <SheetPanel>
+                <div className="flex flex-col gap-4">
+                  {isGitCapable && branchToolbar && (
+                    <div className="flex flex-col gap-2">
+                      <span className="text-xs font-medium text-muted-foreground">Branch</span>
+                      <div className="flex items-center gap-2">{branchToolbar}</div>
+                    </div>
+                  )}
+                  {activeProjectName && isMultiRepo && activeProjectId && workspaceReposQueryCwd && (
+                    <div className="flex flex-col gap-2">
+                      <span className="text-xs font-medium text-muted-foreground">Repository</span>
+                      <RepoSwitcher
+                        projectId={activeProjectId}
+                        workspaceRoot={workspaceReposQueryCwd}
+                        onSelectedRepoCwdChange={(repoCwd) => {
+                          if (activeProjectId) setSelectedRepoCwd(activeProjectId, repoCwd);
+                        }}
+                      />
+                    </div>
+                  )}
+                  {activeProjectName && (
+                    <div className="flex flex-col gap-2">
+                      <span className="text-xs font-medium text-muted-foreground">Git</span>
+                      <GitActionsControl gitCwd={gitActionsRepoCwd} activeThreadId={activeThreadId} />
+                    </div>
+                  )}
+                  <div className="flex flex-col gap-2">
+                    <span className="text-xs font-medium text-muted-foreground">Diff</span>
+                    <SheetClose
+                      render={
+                        <Button
+                          variant={diffOpen ? "secondary" : "outline"}
+                          size="sm"
+                          className="w-full justify-start"
+                          onClick={onToggleDiff}
+                          disabled={!isGitCapable}
+                        >
+                          <DiffIcon className="size-3.5" />
+                          {diffOpen ? "Hide diff panel" : "Show diff panel"}
+                        </Button>
+                      }
+                    />
+                  </div>
+                </div>
+              </SheetPanel>
+            </SheetPopup>
+          </Sheet>
+        </div>
+      )}
+      <div className="shrink-0">
+        <NotificationBell />
       </div>
     </div>
   );

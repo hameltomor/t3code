@@ -223,7 +223,7 @@ export function resolveQuickAction(
       return { label: "Commit & push", disabled: false, kind: "run_action", action: "commit_push" };
     }
     return {
-      label: `Commit, push & create ${reviewRequestNoun(forgeProvider)}`,
+      label: `Commit, push & ${reviewRequestNoun(forgeProvider)}`,
       disabled: false,
       kind: "run_action",
       action: "commit_push_pr",
@@ -246,7 +246,7 @@ export function resolveQuickAction(
       return { label: "Push", disabled: false, kind: "run_action", action: "commit_push" };
     }
     return {
-      label: `Push & create ${reviewRequestNoun(forgeProvider)}`,
+      label: `Push & ${reviewRequestNoun(forgeProvider)}`,
       disabled: false,
       kind: "run_action",
       action: "commit_push_pr",
@@ -275,7 +275,7 @@ export function resolveQuickAction(
       return { label: "Push", disabled: false, kind: "run_action", action: "commit_push" };
     }
     return {
-      label: `Push & create ${reviewRequestNoun(forgeProvider)}`,
+      label: `Push & ${reviewRequestNoun(forgeProvider)}`,
       disabled: false,
       kind: "run_action",
       action: "commit_push_pr",
@@ -327,18 +327,18 @@ export function resolveDefaultBranchActionDialogCopy(input: {
     };
   }
 
-  const createNoun = `create ${reviewRequestNoun(input.forgeProvider ?? "unknown")}`;
+  const shortNoun = reviewRequestNoun(input.forgeProvider ?? "unknown");
   if (input.includesCommit) {
     return {
-      title: `Commit, push & ${createNoun} from default branch?`,
+      title: `Commit, push & ${shortNoun} from default branch?`,
       description: `This action will commit, push, and create a ${noun}${suffix}`,
-      continueLabel: `Commit, push & ${createNoun}`,
+      continueLabel: `Commit, push & ${shortNoun}`,
     };
   }
   return {
-    title: `Push & ${createNoun} from default branch?`,
+    title: `Push & ${shortNoun} from default branch?`,
     description: `This action will push local commits and create a ${noun}${suffix}`,
-    continueLabel: `Push & ${createNoun}`,
+    continueLabel: `Push & ${shortNoun}`,
   };
 }
 
