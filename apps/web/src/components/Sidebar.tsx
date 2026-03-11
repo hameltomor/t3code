@@ -76,6 +76,7 @@ import {
 } from "../worktreeCleanup";
 import { isNonEmpty as isNonEmptyString } from "effect/String";
 import { useThreadSearch, getProjectThreadsForSearch } from "../hooks/useThreadSearch";
+import { NotificationBell } from "./NotificationCenter";
 
 const EMPTY_KEYBINDINGS: ResolvedKeybindingsConfig = [];
 const THREAD_PREVIEW_LIMIT = 6;
@@ -196,7 +197,7 @@ function ProjectFavicon({ cwd }: { cwd: string }) {
   const src = `${serverHttpOrigin}/api/project-favicon?cwd=${encodeURIComponent(cwd)}`;
 
   if (status === "error") {
-    return <FolderIcon className="size-3.5 shrink-0 text-muted-foreground/50" />;
+    return <FolderIcon className="size-3.5 shrink-0 text-muted-foreground-secondary" />;
   }
 
   return (
@@ -1176,13 +1177,16 @@ export default function Sidebar() {
       ) : (
         <SidebarHeader className="flex-row items-center gap-3 px-4 py-2 md:gap-2.5 md:px-4 md:py-3">
           {wordmark}
+          <div className="ml-auto md:hidden">
+            <NotificationBell />
+          </div>
         </SidebarHeader>
       )}
 
       <SidebarContent className="gap-0">
         <div className="px-3 md:px-2 pt-2 pb-1">
           <div className="relative">
-            <SearchIcon className="pointer-events-none absolute left-2.5 md:left-2 top-1/2 size-4 md:size-3.5 -translate-y-1/2 text-muted-foreground/50" />
+            <SearchIcon className="pointer-events-none absolute left-2.5 md:left-2 top-1/2 size-4 md:size-3.5 -translate-y-1/2 text-muted-foreground-secondary" />
             <input
               ref={searchInputRef}
               type="search"
@@ -1199,7 +1203,7 @@ export default function Sidebar() {
                   }
                 }
               }}
-              className="h-12 md:h-7 w-full rounded-md border border-input bg-background pl-8 md:pl-7 pr-8 md:pr-7 text-sm md:text-xs text-foreground placeholder:text-muted-foreground/50 outline-none ring-ring/24 transition-shadow focus:border-ring focus:ring-[3px] dark:bg-input/32 [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none"
+              className="h-12 md:h-7 w-full rounded-md border border-input bg-background pl-8 md:pl-7 pr-8 md:pr-7 text-sm md:text-xs text-foreground placeholder:text-muted-foreground-secondary outline-none ring-ring/24 transition-shadow focus:border-ring focus:ring-[3px] dark:bg-input/32 [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none"
             />
             {searchQuery && (
               <button
@@ -1208,7 +1212,7 @@ export default function Sidebar() {
                   setSearchQuery("");
                   searchInputRef.current?.focus();
                 }}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground/50 hover:text-foreground"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground-secondary hover:text-foreground"
               >
                 <XIcon className="size-3" />
               </button>
@@ -1453,7 +1457,7 @@ export default function Sidebar() {
                                   )}
                                   <span
                                     className={`text-xs md:text-[10px] ${
-                                      isHighlighted ? "text-foreground/65" : "text-muted-foreground/40"
+                                      isHighlighted ? "text-foreground/65" : "text-muted-foreground-secondary"
                                     }`}
                                   >
                                     {formatRelativeTime(thread.createdAt)}
@@ -1469,7 +1473,7 @@ export default function Sidebar() {
                             <SidebarMenuSubButton
                               render={<button type="button" />}
                               size="sm"
-                              className="h-12 md:h-6 w-full translate-x-0 justify-start px-3 md:px-2 text-left text-xs md:text-[10px] text-muted-foreground/60 hover:bg-accent hover:text-muted-foreground/80"
+                              className="h-12 md:h-6 w-full translate-x-0 justify-start px-3 md:px-2 text-left text-xs md:text-[10px] text-muted-foreground-secondary hover:bg-accent hover:text-muted-foreground/80"
                               onClick={() => {
                                 expandThreadListForProject(project.id);
                               }}
@@ -1483,7 +1487,7 @@ export default function Sidebar() {
                             <SidebarMenuSubButton
                               render={<button type="button" />}
                               size="sm"
-                              className="h-12 md:h-6 w-full translate-x-0 justify-start px-3 md:px-2 text-left text-xs md:text-[10px] text-muted-foreground/60 hover:bg-accent hover:text-muted-foreground/80"
+                              className="h-12 md:h-6 w-full translate-x-0 justify-start px-3 md:px-2 text-left text-xs md:text-[10px] text-muted-foreground-secondary hover:bg-accent hover:text-muted-foreground/80"
                               onClick={() => {
                                 collapseThreadListForProject(project.id);
                               }}
@@ -1501,13 +1505,13 @@ export default function Sidebar() {
           </SidebarMenu>
 
           {isSearching && threads.length > 0 && filteredThreadIdSet?.size === 0 && (
-            <div className="px-2 pt-4 text-center text-xs text-muted-foreground/60">
+            <div className="px-2 pt-4 text-center text-xs text-muted-foreground-secondary">
               No threads matching &ldquo;{searchQuery.trim()}&rdquo;
             </div>
           )}
 
           {projects.length === 0 && !addingProject && !isSearching && (
-            <div className="px-2 pt-4 text-center text-xs text-muted-foreground/60">
+            <div className="px-2 pt-4 text-center text-xs text-muted-foreground-secondary">
               No projects yet.
               <br />
               Add one to get started.
@@ -1524,7 +1528,7 @@ export default function Sidebar() {
               Add project
             </p>
             <input
-              className="mb-2 w-full rounded-md border border-border bg-secondary px-3 md:px-2 py-3 md:py-1.5 font-mono text-sm md:text-xs text-foreground placeholder:text-muted-foreground/40 focus:border-ring focus:outline-none"
+              className="mb-2 w-full rounded-md border border-border bg-secondary px-3 md:px-2 py-3 md:py-1.5 font-mono text-sm md:text-xs text-foreground placeholder:text-muted-foreground-secondary focus:border-ring focus:outline-none"
               placeholder="/path/to/project"
               value={newCwd}
               onChange={(event) => setNewCwd(event.target.value)}

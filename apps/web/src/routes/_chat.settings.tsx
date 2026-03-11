@@ -258,7 +258,7 @@ function SettingsRouteView() {
                         <span className="text-xs">{option.description}</span>
                       </span>
                       {selected ? (
-                        <span className="rounded bg-primary/14 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+                        <span className="rounded border border-primary/30 bg-primary/8 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-foreground dark:text-primary dark:border-transparent dark:bg-primary/14">
                           Selected
                         </span>
                       ) : null}

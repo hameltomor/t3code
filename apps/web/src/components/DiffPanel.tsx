@@ -161,10 +161,10 @@ function DiffStatBadge({ stat }: { stat: TurnDiffStat | null }) {
   return (
     <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-2 font-mono text-xs leading-none sm:text-[10px]">
       {stat.additions > 0 && (
-        <span className="text-green-500/90">+{stat.additions}</span>
+        <span className="text-green-700 dark:text-green-500/90">+{stat.additions}</span>
       )}
       {stat.deletions > 0 && (
-        <span className="text-red-400/90">&minus;{stat.deletions}</span>
+        <span className="text-red-700 dark:text-red-400/90">&minus;{stat.deletions}</span>
       )}
     </span>
   );
@@ -634,7 +634,7 @@ export default function DiffPanel({ mode = "inline", onClose }: DiffPanelProps) 
             "absolute left-0 top-1/2 z-20 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-md border bg-background/90 text-muted-foreground transition-colors sm:size-6",
             canScrollTurnStripLeft
               ? "border-border/70 hover:border-border hover:text-foreground"
-              : "cursor-not-allowed border-border/40 text-muted-foreground/40",
+              : "cursor-not-allowed border-border/40 text-muted-foreground-secondary",
           )}
           onClick={() => scrollTurnStripBy(-180)}
           disabled={!canScrollTurnStripLeft}
@@ -648,7 +648,7 @@ export default function DiffPanel({ mode = "inline", onClose }: DiffPanelProps) 
             "absolute right-0 top-1/2 z-20 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-md border bg-background/90 text-muted-foreground transition-colors sm:size-6",
             canScrollTurnStripRight
               ? "border-border/70 hover:border-border hover:text-foreground"
-              : "cursor-not-allowed border-border/40 text-muted-foreground/40",
+              : "cursor-not-allowed border-border/40 text-muted-foreground-secondary",
           )}
           onClick={() => scrollTurnStripBy(180)}
           disabled={!canScrollTurnStripRight}
@@ -781,7 +781,7 @@ export default function DiffPanel({ mode = "inline", onClose }: DiffPanelProps) 
           >
             {checkpointDiffError && !renderablePatch && (
               <div className="px-3">
-                <p className="mb-2 text-sm text-red-500/80 sm:text-[11px]">{checkpointDiffError}</p>
+                <p className="mb-2 text-sm text-destructive sm:text-[11px]">{checkpointDiffError}</p>
               </div>
             )}
             {!renderablePatch ? (

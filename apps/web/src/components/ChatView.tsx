@@ -315,8 +315,8 @@ function readLastInvokedScriptByProjectFromStorage(): Record<string, string> {
 function workToneClass(tone: "thinking" | "tool" | "info" | "error"): string {
   if (tone === "error") return "text-rose-300/50 dark:text-rose-300/50";
   if (tone === "tool") return "text-muted-foreground/70";
-  if (tone === "thinking") return "text-muted-foreground/50";
-  return "text-muted-foreground/40";
+  if (tone === "thinking") return "text-muted-foreground-secondary";
+  return "text-muted-foreground-secondary";
 }
 
 interface ExpandedImageItem {
@@ -3550,7 +3550,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   // Empty state: no active thread
   if (!activeThread) {
     return (
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background text-muted-foreground/40">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background text-muted-foreground-secondary">
         {!isElectron && (
           <header className="border-b border-border px-3 py-2 md:hidden">
             <div className="flex items-center gap-2">
@@ -3563,7 +3563,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
         {isElectron && (
           <div className={cn("drag-region flex h-[52px] shrink-0 items-center border-b border-border pr-5", sidebarOpen ? "pl-5" : "pl-[82px]")}>
             <SidebarTrigger className="mr-3 size-7 shrink-0" />
-            <span className="text-xs text-muted-foreground/50">No active thread</span>
+            <span className="text-xs text-muted-foreground-secondary">No active thread</span>
           </div>
         )}
         <div className="flex flex-1 items-center justify-center">
@@ -4416,7 +4416,7 @@ const ChatHeader = memo(function ChatHeader({
         </div>
       ) : (
         /* Mobile: compact layout with overflow sheet */
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="ml-auto flex shrink-0 items-center gap-1">
           <Sheet>
             <SheetTrigger
               render={
@@ -4852,7 +4852,7 @@ const EditableUserMessageBubble = memo(function EditableUserMessageBubble(props:
               aria-label="Edit message"
             />
             <div className="flex items-center justify-between gap-2">
-              <p className="text-[10px] text-muted-foreground/55">Ctrl/Cmd+Enter to send</p>
+              <p className="text-[10px] text-muted-foreground-secondary">Ctrl/Cmd+Enter to send</p>
               <div className="flex items-center gap-1.5">
                 <Button
                   type="button"
@@ -5606,13 +5606,13 @@ const MessagesTimeline = memo(function MessagesTimeline({
           return (
             <div className="rounded-lg border border-border/80 bg-card/45 px-3 py-2">
               <div className="mb-1.5 flex items-center justify-between gap-3">
-                <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground/65">
+                <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground-secondary">
                   {groupLabel}
                 </p>
                 {hasOverflow && (
                   <button
                     type="button"
-                    className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground/55 transition-colors duration-150 hover:text-muted-foreground/80"
+                    className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground-secondary transition-colors duration-150 hover:text-muted-foreground/80"
                     onClick={() => onToggleWorkGroup(groupId)}
                   >
                     {isExpanded ? "Show less" : `Show ${hiddenCount} more`}
@@ -5622,7 +5622,7 @@ const MessagesTimeline = memo(function MessagesTimeline({
               <div className="space-y-1">
                 {visibleEntries.map((workEntry) => (
                   <div key={`work-row:${workEntry.id}`} className="flex items-start gap-2 py-0.5">
-                    <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/30" />
+                    <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground-faint" />
                     <div className="min-w-0 flex-1 py-[2px]">
                       <p className={`text-[11px] leading-relaxed ${workToneClass(workEntry.tone)}`}>
                         {workEntry.label}
@@ -5644,7 +5644,7 @@ const MessagesTimeline = memo(function MessagesTimeline({
                             </span>
                           ))}
                           {workEntry.changedFiles.length > 6 && (
-                            <span className="px-1 text-[10px] text-muted-foreground/65">
+                            <span className="px-1 text-[10px] text-muted-foreground-secondary">
                               +{workEntry.changedFiles.length - 6} more
                             </span>
                           )}
@@ -5723,7 +5723,7 @@ const MessagesTimeline = memo(function MessagesTimeline({
                   return (
                     <div className="mt-2 rounded-lg border border-border/80 bg-card/45 p-2.5">
                       <div className="mb-1.5 flex items-center justify-between gap-2">
-                        <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground/65">
+                        <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground-secondary">
                           <span>Changed files ({changedFileCountLabel})</span>
                           {hasNonZeroStat(summaryStat) && (
                             <>
@@ -5767,7 +5767,7 @@ const MessagesTimeline = memo(function MessagesTimeline({
                     </div>
                   );
                 })()}
-                <p className="mt-1.5 text-[10px] text-muted-foreground/30">
+                <p className="mt-1.5 text-[10px] text-muted-foreground-secondary">
                   {formatMessageMeta(
                     row.message.createdAt,
                     row.message.streaming
@@ -5792,12 +5792,12 @@ const MessagesTimeline = memo(function MessagesTimeline({
 
       {row.kind === "working" && (
         <div className="flex items-center gap-2 py-0.5 pl-1.5">
-          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/30" />
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground-faint" />
           <div className="flex items-center gap-2 pt-1 text-[11px] text-muted-foreground/70">
             <span className="inline-flex items-center gap-[3px]">
-              <span className="h-1 w-1 rounded-full bg-muted-foreground/30 animate-pulse" />
-              <span className="h-1 w-1 rounded-full bg-muted-foreground/30 animate-pulse [animation-delay:200ms]" />
-              <span className="h-1 w-1 rounded-full bg-muted-foreground/30 animate-pulse [animation-delay:400ms]" />
+              <span className="h-1 w-1 rounded-full bg-muted-foreground-faint animate-pulse" />
+              <span className="h-1 w-1 rounded-full bg-muted-foreground-faint animate-pulse [animation-delay:200ms]" />
+              <span className="h-1 w-1 rounded-full bg-muted-foreground-faint animate-pulse [animation-delay:400ms]" />
             </span>
             <span>
               {row.createdAt
@@ -5813,7 +5813,7 @@ const MessagesTimeline = memo(function MessagesTimeline({
   if (!hasMessages && !isWorking) {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-sm text-muted-foreground/30">
+        <p className="text-sm text-muted-foreground-secondary">
           Send a message to start the conversation.
         </p>
       </div>

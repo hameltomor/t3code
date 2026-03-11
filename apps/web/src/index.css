@@ -22,6 +22,8 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-muted-foreground-secondary: var(--muted-foreground-secondary);
+  --color-muted-foreground-faint: var(--muted-foreground-faint);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
@@ -147,6 +149,8 @@
   /* Neutral */
   --muted: #f1f5f9;
   --muted-foreground: #374151;
+  --muted-foreground-secondary: #6b7280; /* gray-500 — 4.6:1 on white, readable secondary text */
+  --muted-foreground-faint: #9ca3af;     /* gray-400 — 2.9:1 on white, decorative only */
   --destructive: #d4183d;
   --destructive-foreground: #ffffff;
 
@@ -213,6 +217,8 @@
     /* Neutral */
     --muted: #2a2a2a;
     --muted-foreground: #d1d5db;
+    --muted-foreground-secondary: #9ca3af; /* gray-400 — 7.4:1 on #0a0a0a */
+    --muted-foreground-faint: #6b7280;     /* gray-500 — 3.7:1 on #0a0a0a, decorative only */
     --destructive: #d4183d;
     --destructive-foreground: #ffffff;
 

@@ -43,7 +43,9 @@ Design system extracted from [x-b-e.com](https://www.x-b-e.com/) for use in XBE 
 | `--accent` | `#ff006e` | Accent highlights |
 | `--accent-foreground` | `#ffffff` | Text on accent |
 | `--muted` | `#f1f5f9` | Muted backgrounds |
-| `--muted-foreground` | `#374151` | Subdued text (gray-600) |
+| `--muted-foreground` | `#374151` | Subdued text (gray-700, 9.8:1 on white) |
+| `--muted-foreground-secondary` | `#6b7280` | Secondary text, hints, descriptions (gray-500, 4.6:1 on white) |
+| `--muted-foreground-faint` | `#9ca3af` | Decorative only — dots, separators (gray-400, 2.9:1) |
 | `--destructive` | `#d4183d` | Error/destructive actions |
 | `--destructive-foreground` | `#ffffff` | Text on destructive |
 | `--border` | `#0000001a` | Default borders (black 10% opacity) |
@@ -69,7 +71,9 @@ Design system extracted from [x-b-e.com](https://www.x-b-e.com/) for use in XBE 
 | `--accent` | `#ff006e` | Accent highlights |
 | `--accent-foreground` | `#ffffff` | Text on accent |
 | `--muted` | `#2a2a2a` | Muted backgrounds |
-| `--muted-foreground` | `#d1d5db` | Subdued text (gray-300) |
+| `--muted-foreground` | `#d1d5db` | Subdued text (gray-300, 14.6:1 on #0a0a0a) |
+| `--muted-foreground-secondary` | `#9ca3af` | Secondary text, hints, descriptions (gray-400, 7.4:1 on #0a0a0a) |
+| `--muted-foreground-faint` | `#6b7280` | Decorative only — dots, separators (gray-500, 3.7:1) |
 | `--destructive` | `#d4183d` | Error/destructive actions |
 | `--destructive-foreground` | `#ffffff` | Text on destructive |
 | `--border` | `#ffffff1a` | Default borders (white 10% opacity) |
@@ -461,6 +465,8 @@ transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
   /* Neutral */
   --muted: #f1f5f9;
   --muted-foreground: #374151;
+  --muted-foreground-secondary: #6b7280;
+  --muted-foreground-faint: #9ca3af;
   --destructive: #d4183d;
   --destructive-foreground: #fff;
 
@@ -513,6 +519,8 @@ transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
   --accent-foreground: #fff;
   --muted: #2a2a2a;
   --muted-foreground: #d1d5db;
+  --muted-foreground-secondary: #9ca3af;
+  --muted-foreground-faint: #6b7280;
   --destructive: #d4183d;
   --destructive-foreground: #fff;
   --border: #ffffff1a;

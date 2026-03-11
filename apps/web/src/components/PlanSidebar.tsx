@@ -49,7 +49,7 @@ function PlanStepIcon({ status }: { status: "pending" | "inProgress" | "complete
   }
   return (
     <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted/30">
-      <span className="size-1.5 rounded-full bg-muted-foreground/40" />
+      <span className="size-1.5 rounded-full bg-muted-foreground-faint" />
     </span>
   );
 }
