@@ -1,0 +1,230 @@
+# Requirements — History Import
+
+**Milestone:** v1 — Chat History Import
+**Status:** Active
+**Source:** Implementation spec (`tmp/history-import-implementation-spec.md`), domain research (`.planning/research/`)
+
+---
+
+## Functional Requirements
+
+### FR-1: Discovery Catalog
+**Priority:** P0 — Gating
+**Description:** Scan provider-local files and databases to discover importable conversations, scoped by workspace path. Normalize into an XBE-side catalog without creating orchestration threads.
+
+**Acceptance criteria:**
+- [ ] Scan Codex sessions via `~/.codex/state_5.sqlite` threads table + rollout JSONL files
+- [ ] Scan Claude Code sessions via `~/.claude/projects/<encoded-path>/*.jsonl` with optional `sessions-index.json`
+- [ ] Scan Gemini sessions via `~/.gemini/projects.json` + `~/.gemini/tmp/<slug>/chats/session-*.json`
+- [ ] Filter by workspace root path (exact match + nested child roots under project root)
+- [ ] Exclude subagent/sidechain sessions by default
+- [ ] One provider scanner failing must not block results from others (`Effect.allSettled` fanout)
+- [ ] Catalog persisted to `history_import_catalog` SQLite table
+- [ ] Return `HistoryImportConversationSummary[]` via `historyImport.list` WS method
+
+### FR-2: Conversation Preview
+**Priority:** P0
+**Description:** Preview a discovered conversation's transcript before importing, with message and activity samples.
+
+**Acceptance criteria:**
+- [ ] `historyImport.preview` WS method returns `HistoryImportConversationPreview`
+- [ ] Preview includes message sample (capped, default 50 messages)
+- [ ] Preview includes activity sample (tool calls, approvals)
+- [ ] Preview marks truncation when exceeding limits
+- [ ] Preview shows resume capabilities (native-resume / transcript-replay / snapshot-only)
+- [ ] Large JSONL files stream-parsed, never fully loaded into memory
+
+### FR-3: Import Materialization
+**Priority:** P0
+**Description:** Import a selected conversation into a normal XBE thread through the orchestration engine.
+
+**Acceptance criteria:**
+- [ ] Creates thread via `thread.create` orchestration command
+- [ ] Projects user/assistant messages via `thread.message-sent` events
+- [ ] Projects tool/approval/error activities via `thread.activity-appended` events
+- [ ] All ingestion through `OrchestrationEngine.dispatch` — never direct projection writes
+- [ ] Persists `ThreadExternalLink` with provider resume metadata
+- [ ] Deduplication via `(providerKind, providerThreadId)` — rejects re-importing same session
+- [ ] `historyImport.execute` WS method returns `HistoryImportExecuteResult` with thread ID
+- [ ] Import is transactional: if transcript import fails after thread.created, marks import as `failed-partial` with warning badge (does not silently delete)
+
+### FR-4: Codex Provider Support
+**Priority:** P0
+**Description:** Full Codex conversation import with dual-format support and data integrity handling.
+
+**Acceptance criteria:**
+- [ ] Reads both old `.json` and new `.jsonl` rollout formats
+- [ ] Handles context compaction events (discards pre-compaction messages, uses replacement history)
+- [ ] Skips encrypted reasoning fields (`encrypted_content`)
+- [ ] Skips subagent session files
+- [ ] Force-completes streaming messages from interrupted sessions
+- [ ] Opens `state_5.sqlite` read-only with `PRAGMA busy_timeout = 5000` for WAL safety
+- [ ] Uses `tinyglobby` for `~/.codex/sessions/YYYY/MM/DD/*.jsonl` pattern scanning
+- [ ] Fingerprint based on provider session ID + file size + mtime + head/tail SHA-256 sample
+
+### FR-5: Claude Code Provider Support
+**Priority:** P1
+**Description:** Claude Code conversation import with lossy path encoding handling.
+
+**Acceptance criteria:**
+- [ ] Discovers sessions by forward-encoding workspace path (never decode directory name back to path)
+- [ ] Uses `sessions-index.json` when available, falls back to JSONL header scanning
+- [ ] Parses JSONL types: `user`, `assistant`, `progress`, `file-history-snapshot`, `last-prompt`
+- [ ] Maps `thinking` blocks to activities (not message text)
+- [ ] Maps `tool_use` blocks to activities
+- [ ] Skips messages with `streaming: true` and no `stop_reason`
+- [ ] Handles nested workspace roots (e.g., `price-bee-2`, `price-bee-2/core`, `price-bee-2/horizon`)
+
+### FR-6: Gemini Provider Support
+**Priority:** P2 — Deferred
+**Description:** Gemini conversation import. Deferred until format stabilizes upstream.
+
+**Acceptance criteria:**
+- [ ] Reads both hash-based and slug-based project directories
+- [ ] Parses `ConversationRecord` JSON format
+- [ ] Maps `gemini` message type with `toolCalls` and `thoughts`
+- [ ] Link mode defaults to `transcript-replay` (not `native-resume`)
+
+### FR-7: Native Resume for Imported Threads
+**Priority:** P1
+**Description:** Imported threads with `linkMode = native-resume` can continue via the original provider.
+
+**Acceptance criteria:**
+- [ ] Codex: stored `providerThreadId` passed to `thread/resume` JSON-RPC instead of `thread/start`
+- [ ] Claude Code: stored resume metadata used to continue session
+- [ ] Gemini: transcript-replay only (no native resume)
+- [ ] `historyImport.validateLink` WS method checks source path, fingerprint, provider IDs
+- [ ] Validation states: `valid` / `missing` / `stale` / `invalid`
+- [ ] Stale or missing link never invalidates the imported transcript
+- [ ] UI clearly distinguishes "Resume original session" vs "Continue from imported transcript"
+
+### FR-8: Import UI
+**Priority:** P0
+**Description:** 5-step import wizard accessible from project sidebar and empty-thread state.
+
+**Acceptance criteria:**
+- [ ] Step 1: Provider tabs (All/Codex/Claude Code/Gemini) + workspace scope + refresh button
+- [ ] Step 2: Session list with provider badge, title, cwd, date, message count, resume mode, validation status; checkbox selection; text/provider/path filters
+- [ ] Step 3: Transcript preview with activities sample and warnings
+- [ ] Step 4: Import options (title, model, runtime mode, interaction mode, link mode choice)
+- [ ] Step 5: Result with navigation to created thread + toast with import counts
+- [ ] `alreadyImported` badge on sessions that have been previously imported
+- [ ] Progress feedback during import
+- [ ] Per-session error isolation (one failed import doesn't block others)
+
+### FR-9: Thread Provenance Display
+**Priority:** P1
+**Description:** Imported threads show origin metadata and link validation status.
+
+**Acceptance criteria:**
+- [ ] Provenance card on thread view: provider, original cwd, imported-at, link mode, validation status
+- [ ] Actions: Validate link, Continue in provider, View source metadata
+- [ ] Thread list shows source badge for imported threads
+- [ ] Filter/tab: "Native" / "Imported" / "All"
+
+---
+
+## Non-Functional Requirements
+
+### NFR-1: Memory Safety
+**Priority:** P0 — CRITICAL
+**Description:** Never load full provider JSONL files into memory. Claude Code sessions can be 70+ MB.
+**Metric:** Peak heap increase during import of a 70MB JSONL file must stay under 10 MB.
+**Implementation:** `FileSystem.stream` + `Stream.splitLines` + per-line `JSON.parse`. For catalog scans, stop after extracting metadata. For import, stream and dispatch line-by-line.
+
+### NFR-2: Read-Only Provider Access
+**Priority:** P0
+**Description:** Never mutate provider-local files, databases, or state. All provider access is read-only.
+
+### NFR-3: Privacy
+**Priority:** P0
+**Description:** All processing is local. Never upload provider transcripts. No raw transcript content in server logs.
+
+### NFR-4: Scan Isolation
+**Priority:** P0
+**Description:** One provider scanner failing must not block results from other providers. Use `Effect.allSettled`-style fanout.
+
+### NFR-5: Schema Tolerance
+**Priority:** P1
+**Description:** Parser schemas must tolerate unknown fields from evolving provider formats. Use `Schema.decodeUnknownEither` everywhere. Detect format by file extension when multiple formats coexist.
+
+### NFR-6: Performance
+**Priority:** P1
+**Description:** Catalog scans should complete within 5 seconds for a workspace with 100 sessions across all providers. Preview should return within 2 seconds. Import of a 500-message thread should complete within 10 seconds.
+
+### NFR-7: Architecture Separation
+**Priority:** P0
+**Description:** Import external link state lives in dedicated tables (`history_import_catalog`, `thread_external_links`). Must not reuse `provider_session_runtime` or `projection_thread_sessions`. Imported threads go through `OrchestrationEngine.dispatch` — never direct projection table writes.
+
+---
+
+## Contract Schemas
+
+### New Contracts File
+`packages/contracts/src/historyImport.ts`
+
+### Enums
+- `HistoryImportProvider = "codex" | "claudeCode" | "gemini"`
+- `HistoryImportLinkMode = "native-resume" | "transcript-replay" | "snapshot-only"`
+- `HistoryImportValidationStatus = "unknown" | "valid" | "missing" | "stale" | "invalid"`
+
+### Key Schemas
+- `HistoryImportConversationSummary` — catalog entry metadata
+- `HistoryImportConversationPreview` — preview with message/activity samples
+- `HistoryImportExecuteInput` — import request with options
+- `HistoryImportExecuteResult` — import result with thread ID
+- `ThreadExternalLink` — durable external link record
+
+### WS Methods
+- `historyImport.list` — scan/list discovered sessions
+- `historyImport.preview` — preview a specific session
+- `historyImport.execute` — import a session into XBE
+- `historyImport.validateLink` — validate external link freshness
+- `historyImport.listThreadLinks` — list links for a thread
+
+### Push Channels
+- `historyImport.catalogUpdated` — notify after scan completion
+
+---
+
+## DB Migrations
+
+### Migration 017: `history_import_catalog`
+Discovery cache for scanned provider sessions. Fields: catalog_id, provider_name, workspace_root, cwd, title, model, message_count, turn_count, provider_conversation_id, provider_session_id, resume_anchor_id, source_kind, source_path, link_mode, validation_status, warnings_json, fingerprint, raw_metadata_json, created_at, updated_at, last_scanned_at.
+
+### Migration 018: `thread_external_links`
+Durable external link per imported thread. Fields: thread_id, provider_name, link_mode, provider_conversation_id, provider_session_id, resume_anchor_id, source_path, source_fingerprint, original_workspace_root, original_cwd, validation_status, raw_resume_seed_json, imported_at, last_validated_at.
+
+---
+
+## Dependencies
+
+- `tinyglobby` — new dependency for Codex session pattern scanning (~179 KB)
+- All other requirements met by existing stack (Effect FileSystem, NodeSqliteClient, node:crypto, OrchestrationEngine)
+
+---
+
+## Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| FR-1 | Phase 1 (schema), Phase 2 (Codex scan) | Pending |
+| FR-2 | Phase 2 | Pending |
+| FR-3 | Phase 1 (schema), Phase 2 (pipeline) | Pending |
+| FR-4 | Phase 2 | Pending |
+| FR-5 | Phase 4 | Pending |
+| FR-6 | Phase 6 | Deferred |
+| FR-7 | Phase 4 | Pending |
+| FR-8 | Phase 3 | Pending |
+| FR-9 | Phase 5 | Pending |
+| NFR-1 | Phase 2 | Pending |
+| NFR-2 | Phase 2 | Pending |
+| NFR-3 | Phase 2 | Pending |
+| NFR-4 | Phase 2 | Pending |
+| NFR-5 | Phase 2 | Pending |
+| NFR-6 | Phase 5 | Pending |
+| NFR-7 | Phase 1 | Pending |
+
+---
+
+*Last updated: 2026-03-12*
