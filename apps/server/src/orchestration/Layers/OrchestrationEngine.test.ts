@@ -85,6 +85,7 @@ describe("OrchestrationEngine", () => {
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: null,
+        providerThreadId: null,
         createdAt,
       }),
     );
@@ -139,6 +140,7 @@ describe("OrchestrationEngine", () => {
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: null,
+        providerThreadId: null,
         createdAt,
       }),
     );
@@ -201,6 +203,7 @@ describe("OrchestrationEngine", () => {
           runtimeMode: "approval-required",
           branch: null,
           worktreePath: null,
+          providerThreadId: null,
           createdAt,
         });
         yield* engine.dispatch({
@@ -246,6 +249,7 @@ describe("OrchestrationEngine", () => {
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: null,
+        providerThreadId: null,
         createdAt,
       }),
     );
@@ -355,6 +359,7 @@ describe("OrchestrationEngine", () => {
           runtimeMode: "approval-required",
           branch: null,
           worktreePath: null,
+          providerThreadId: null,
           createdAt,
         }),
       ),
@@ -372,6 +377,7 @@ describe("OrchestrationEngine", () => {
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: null,
+        providerThreadId: null,
         createdAt,
       }),
     );
@@ -437,6 +443,7 @@ describe("OrchestrationEngine", () => {
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: null,
+        providerThreadId: null,
         createdAt,
       }),
     );
@@ -572,6 +579,7 @@ describe("OrchestrationEngine", () => {
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: null,
+        providerThreadId: null,
         createdAt,
       }),
     );
@@ -652,6 +660,7 @@ describe("OrchestrationEngine", () => {
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: null,
+        providerThreadId: null,
         createdAt,
       }),
     );
@@ -669,6 +678,7 @@ describe("OrchestrationEngine", () => {
           runtimeMode: "approval-required",
           branch: null,
           worktreePath: null,
+          providerThreadId: null,
           createdAt,
         }),
       ),

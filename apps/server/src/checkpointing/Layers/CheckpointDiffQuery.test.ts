@@ -59,6 +59,7 @@ function makeSnapshot(input: {
         branch: null,
         worktreePath: input.worktreePath,
         worktreeEntries: [],
+        providerThreadId: null,
         latestTurn: {
           turnId: TurnId.makeUnsafe("turn-1"),
           state: "completed",

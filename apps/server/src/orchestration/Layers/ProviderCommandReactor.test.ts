@@ -238,6 +238,7 @@ describe("ProviderCommandReactor", () => {
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: null,
+        providerThreadId: null,
         createdAt: now,
       }),
     );

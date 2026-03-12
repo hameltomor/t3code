@@ -296,6 +296,9 @@ export const OrchestrationThread = Schema.Struct({
   worktreeEntries: Schema.Array(WorkspaceWorktreeEntry).pipe(
     Schema.withDecodingDefault(() => []),
   ),
+  providerThreadId: Schema.NullOr(TrimmedNonEmptyString).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -360,6 +363,9 @@ const ThreadCreateCommand = Schema.Struct({
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
   worktreeEntries: Schema.optional(Schema.Array(WorkspaceWorktreeEntry)),
+  providerThreadId: Schema.NullOr(TrimmedNonEmptyString).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
   createdAt: IsoDateTime,
 });
 
@@ -665,6 +671,9 @@ export const ThreadCreatedPayload = Schema.Struct({
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
   worktreeEntries: Schema.Array(WorkspaceWorktreeEntry).pipe(
     Schema.withDecodingDefault(() => []),
+  ),
+  providerThreadId: Schema.NullOr(TrimmedNonEmptyString).pipe(
+    Schema.withDecodingDefault(() => null),
   ),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,

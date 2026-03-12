@@ -755,6 +755,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
           runtimeMode: "full-access",
           branch: null,
           worktreePath: null,
+          providerThreadId: null,
           createdAt,
         });
         welcomeBootstrapProjectId = bootstrapProjectId;

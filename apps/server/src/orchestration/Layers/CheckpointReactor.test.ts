@@ -290,6 +290,7 @@ describe("CheckpointReactor", () => {
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: options?.threadWorktreePath ?? cwd,
+        providerThreadId: null,
         createdAt,
       }),
     );

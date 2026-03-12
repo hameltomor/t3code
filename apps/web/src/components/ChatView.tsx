@@ -2673,6 +2673,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
           ...(nextThreadWorktreeEntries.length > 0
             ? { worktreeEntries: nextThreadWorktreeEntries }
             : {}),
+          providerThreadId: null,
           createdAt: activeThread.createdAt,
         });
         createdServerThreadForLocalDraft = true;
@@ -3173,6 +3174,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
         interactionMode: "default",
         branch: activeThread.branch,
         worktreePath: activeThread.worktreePath,
+        providerThreadId: null,
         createdAt,
       })
       .then(() =>

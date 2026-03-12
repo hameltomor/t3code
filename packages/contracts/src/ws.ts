@@ -44,6 +44,15 @@ import { KeybindingRule } from "./keybindings";
 import { ProjectSearchEntriesInput, ProjectWriteFileInput } from "./project";
 import { OpenInEditorInput } from "./editor";
 import { DRAFT_WS_METHODS, DraftDeleteInput, DraftListInput, DraftSaveInput } from "./draft";
+import {
+  HISTORY_IMPORT_WS_CHANNELS,
+  HISTORY_IMPORT_WS_METHODS,
+  HistoryImportExecuteInput,
+  HistoryImportListInput,
+  HistoryImportListThreadLinksInput,
+  HistoryImportPreviewInput,
+  HistoryImportValidateLinkInput,
+} from "./historyImport";
 
 // ── WebSocket RPC Method Names ───────────────────────────────────────
 
@@ -99,6 +108,13 @@ export const WS_METHODS = {
   draftsSave: DRAFT_WS_METHODS.save,
   draftsList: DRAFT_WS_METHODS.list,
   draftsDelete: DRAFT_WS_METHODS.delete,
+
+  // History import methods
+  historyImportList: HISTORY_IMPORT_WS_METHODS.list,
+  historyImportPreview: HISTORY_IMPORT_WS_METHODS.preview,
+  historyImportExecute: HISTORY_IMPORT_WS_METHODS.execute,
+  historyImportValidateLink: HISTORY_IMPORT_WS_METHODS.validateLink,
+  historyImportListThreadLinks: HISTORY_IMPORT_WS_METHODS.listThreadLinks,
 } as const;
 
 // ── Push Event Channels ──────────────────────────────────────────────
@@ -108,6 +124,7 @@ export const WS_CHANNELS = {
   serverWelcome: "server.welcome",
   serverConfigUpdated: "server.configUpdated",
   notificationCreated: "notification.created",
+  historyImportCatalogUpdated: HISTORY_IMPORT_WS_CHANNELS.catalogUpdated,
 } as const;
 
 // -- Tagged Union of all request body schemas ─────────────────────────
@@ -181,6 +198,13 @@ const WebSocketRequestBody = Schema.Union([
   tagRequestBody(WS_METHODS.draftsSave, DraftSaveInput),
   tagRequestBody(WS_METHODS.draftsList, DraftListInput),
   tagRequestBody(WS_METHODS.draftsDelete, DraftDeleteInput),
+
+  // History import methods
+  tagRequestBody(WS_METHODS.historyImportList, HistoryImportListInput),
+  tagRequestBody(WS_METHODS.historyImportPreview, HistoryImportPreviewInput),
+  tagRequestBody(WS_METHODS.historyImportExecute, HistoryImportExecuteInput),
+  tagRequestBody(WS_METHODS.historyImportValidateLink, HistoryImportValidateLinkInput),
+  tagRequestBody(WS_METHODS.historyImportListThreadLinks, HistoryImportListThreadLinksInput),
 ]);
 
 export const WebSocketRequest = Schema.Struct({
