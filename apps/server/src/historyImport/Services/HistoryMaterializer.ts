@@ -12,7 +12,7 @@ export interface MaterializeInput {
   readonly interactionMode: "default" | "plan";
   readonly linkMode: "native-resume" | "transcript-replay" | "snapshot-only";
   readonly providerThreadId: string; // e.g. "codex:<uuid>"
-  readonly providerName: "codex" | "claudeCode" | "gemini";
+  readonly providerName: "codex" | "claudeCode";
   readonly messages: ReadonlyArray<ParsedCodexMessage>;
   readonly activities: ReadonlyArray<ParsedCodexActivity>;
   readonly sourcePath: string;

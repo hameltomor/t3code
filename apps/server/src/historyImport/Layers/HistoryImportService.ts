@@ -201,7 +201,9 @@ const makeHistoryImportService = Effect.gen(function* () {
         })),
         totalMessageCount: parseResult.totalMessageCount as HistoryImportConversationPreview["totalMessageCount"],
         totalActivityCount: parseResult.totalActivityCount as HistoryImportConversationPreview["totalActivityCount"],
-        isTruncated: parseResult.totalMessageCount > parseResult.messages.length,
+        isTruncated:
+          parseResult.totalMessageCount > parseResult.messages.length ||
+          parseResult.totalActivityCount > parseResult.activities.length,
         linkMode: catalogEntry.linkMode as HistoryImportLinkMode,
         warnings: parseResult.warnings as HistoryImportConversationPreview["warnings"],
       } as HistoryImportConversationPreview;

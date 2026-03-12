@@ -20,7 +20,7 @@ export const HISTORY_IMPORT_WS_CHANNELS = {
 
 // ── Enums ────────────────────────────────────────────────────────────
 
-export const HistoryImportProvider = Schema.Literals(["codex", "claudeCode", "gemini"]);
+export const HistoryImportProvider = Schema.Literals(["codex", "claudeCode"]);
 export type HistoryImportProvider = typeof HistoryImportProvider.Type;
 
 export const HistoryImportLinkMode = Schema.Literals([
