@@ -28,6 +28,9 @@ import Migration0013 from "./Migrations/013_ProjectionThreadProposedPlans.ts";
 import Migration0014 from "./Migrations/014_Notifications.ts";
 import Migration0015 from "./Migrations/015_WorkspaceWorktreeEntries.ts";
 import Migration0016 from "./Migrations/016_ProjectionDrafts.ts";
+import Migration0017 from "./Migrations/017_HistoryImportCatalog.ts";
+import Migration0018 from "./Migrations/018_ThreadExternalLinks.ts";
+import Migration0019 from "./Migrations/019_ProjectionThreadsProviderThreadId.ts";
 import { Effect } from "effect";
 
 /**
@@ -57,6 +60,9 @@ const loader = Migrator.fromRecord({
   "14_Notifications": Migration0014,
   "15_WorkspaceWorktreeEntries": Migration0015,
   "16_ProjectionDrafts": Migration0016,
+  "17_HistoryImportCatalog": Migration0017,
+  "18_ThreadExternalLinks": Migration0018,
+  "19_ProjectionThreadsProviderThreadId": Migration0019,
 });
 
 /**
