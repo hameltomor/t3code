@@ -1,10 +1,10 @@
 /**
  * HistoryImportService layer implementation.
  *
- * Provides list, preview, and execute (stub) methods for the history import flow.
+ * Provides list, preview, and execute methods for the history import flow.
  * - list: triggers Codex scan and returns catalog entries
  * - preview: parses rollout file with caps and returns message/activity sample
- * - execute: stub returning "not yet implemented" (Plan 03)
+ * - execute: imports a catalog entry into an XBE thread via HistoryMaterializer
  *
  * @module HistoryImportServiceLive
  */
@@ -18,7 +18,6 @@ import { Effect, Layer } from "effect";
 
 import { HistoryImportCatalogRepository } from "../../persistence/Services/HistoryImportCatalog.ts";
 import {
-  HistoryImportMaterializeError,
   HistoryImportNotFoundError,
   HistoryImportScanError,
 } from "../Errors.ts";
@@ -28,6 +27,9 @@ import {
 import {
   CodexRolloutParserService,
 } from "../Services/CodexRolloutParser.ts";
+import {
+  HistoryMaterializerService,
+} from "../Services/HistoryMaterializer.ts";
 import {
   HistoryImportServiceService,
   type HistoryImportServiceShape,
@@ -39,6 +41,7 @@ const makeHistoryImportService = Effect.gen(function* () {
   const scanner = yield* CodexHistoryScannerService;
   const parser = yield* CodexRolloutParserService;
   const catalogRepo = yield* HistoryImportCatalogRepository;
+  const materializer = yield* HistoryMaterializerService;
 
   const list: HistoryImportServiceShape["list"] = (input) =>
     Effect.gen(function* () {
@@ -134,13 +137,53 @@ const makeHistoryImportService = Effect.gen(function* () {
       return result;
     }).pipe(Effect.withSpan("HistoryImportService.preview"));
 
-  // Stub -- will be completed in Plan 03
-  const execute: HistoryImportServiceShape["execute"] = (_input) =>
-    Effect.fail(
-      new HistoryImportMaterializeError({
-        message: "historyImport.execute is not yet implemented -- will be completed in Plan 03",
-      }),
-    );
+  const execute: HistoryImportServiceShape["execute"] = (input) =>
+    Effect.gen(function* () {
+      // Look up catalog entry
+      const catalogEntry = yield* catalogRepo
+        .getByCatalogId({ catalogId: input.catalogId })
+        .pipe(
+          Effect.mapError(
+            (cause) =>
+              new HistoryImportNotFoundError({
+                message: `Failed to query catalog for ${input.catalogId}`,
+                cause,
+              }),
+          ),
+        );
+
+      if (!catalogEntry) {
+        return yield* new HistoryImportNotFoundError({
+          message: `Catalog entry not found: ${input.catalogId}`,
+        });
+      }
+
+      // Full parse (no caps) for import
+      const parseResult = yield* parser.parse(catalogEntry.sourcePath);
+
+      // Materialize into XBE thread
+      const result = yield* materializer.materialize({
+        projectId: input.projectId,
+        title: input.title,
+        model: input.model,
+        runtimeMode: input.runtimeMode,
+        interactionMode: input.interactionMode,
+        linkMode: input.linkMode,
+        providerThreadId: `codex:${catalogEntry.providerSessionId}`,
+        providerName: catalogEntry.providerName as "codex",
+        messages: parseResult.messages,
+        activities: parseResult.activities,
+        sourcePath: catalogEntry.sourcePath,
+        sourceFingerprint: catalogEntry.fingerprint,
+        originalWorkspaceRoot: catalogEntry.workspaceRoot,
+        originalCwd: catalogEntry.cwd,
+        providerConversationId: catalogEntry.providerConversationId,
+        providerSessionId: catalogEntry.providerSessionId,
+        resumeAnchorId: catalogEntry.resumeAnchorId,
+      });
+
+      return result;
+    }).pipe(Effect.withSpan("HistoryImportService.execute"));
 
   return { list, preview, execute } satisfies HistoryImportServiceShape;
 });
