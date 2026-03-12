@@ -95,11 +95,12 @@ Plans:
   3. Thread list supports filtering by "Native" / "Imported" / "All" and shows a source badge on imported threads
   4. Partially imported threads (where transcript import failed after thread creation) display a warning badge rather than being silently deleted
   5. Catalog scans complete within 5 seconds for 100 sessions, preview returns within 2 seconds, and import of a 500-message thread completes within 10 seconds
-**Plans**: 2 plans
+**Plans**: 3 plans
 
 Plans:
-- [ ] 05-01-PLAN.md -- Shared fingerprint utility, server-side validateLink implementation, contracts and WS wiring, ProvenanceCard component with lazy background validation in ChatView
+- [ ] 05-01-PLAN.md -- Shared fingerprint utility, server-side validateLink implementation, contracts and WS wiring, ProvenanceCard component with Continue in Provider action and lazy background validation in ChatView
 - [ ] 05-02-PLAN.md -- Sidebar source badges and All/Native/Imported filter toggle, partial-import detection via two-phase materializer status
+- [ ] 05-03-PLAN.md -- NFR-6 performance instrumentation and verification (timing on list/preview/execute/validateLink, threshold documentation test)
 
 ### Phase 6: Gemini CLI Reader (DEFERRED)
 **Goal**: Users can import Gemini CLI conversations with transcript-replay continuation mode
@@ -149,5 +150,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> (6 when unblocked)
 | 2. Codex Import Pipeline | 3/3 | Complete | 2026-03-12 |
 | 3. Import UI | 2/2 | Complete | 2026-03-12 |
 | 4. Claude Code Import and Native Resume | 2/2 | Complete | 2026-03-12 |
-| 5. Hardening and Provenance | 0/2 | Not started | - |
+| 5. Hardening and Provenance | 0/3 | Not started | - |
 | 6. Gemini CLI Reader | 0/1 | Deferred | - |
