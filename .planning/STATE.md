@@ -10,28 +10,28 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 ## Current Position
 
 Phase: 1 of 6 (Foundation and Schema)
-Plan: 0 of 2 in current phase
-Status: Ready to plan
-Last activity: 2026-03-12 -- Roadmap created
+Plan: 1 of 2 in current phase
+Status: Executing
+Last activity: 2026-03-12 -- Completed 01-01 contract schemas
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█░░░░░░░░░] 8%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 0
-- Average duration: -
-- Total execution time: 0 hours
+- Total plans completed: 1
+- Average duration: 11min
+- Total execution time: 0.18 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 01-foundation-and-schema | 1/2 | 11min | 11min |
 
 **Recent Trend:**
-- Last 5 plans: -
-- Trend: -
+- Last 5 plans: 01-01 (11min)
+- Trend: starting
 
 *Updated after each plan completion*
 
@@ -45,6 +45,8 @@ Recent decisions affecting current work:
 - [Roadmap]: Codex-first approach -- hardest provider first validates architecture before adding others
 - [Roadmap]: 6-phase structure with Gemini deferred -- format too unstable to build against now
 - [Roadmap]: Schema and migrations land in Phase 1 before any server or UI work
+- [01-01]: Used withDecodingDefault(() => null) on providerThreadId for backward-compatible schema evolution
+- [01-01]: providerThreadId hardcoded to null in ProjectionSnapshotQuery until DB migration is added
 
 ### Pending Todos
 
@@ -58,5 +60,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-12
-Stopped at: Roadmap created, ready to plan Phase 1
-Resume file: None
+Stopped at: Completed 01-01-PLAN.md (contract schemas)
+Resume file: .planning/phases/01-foundation-and-schema/01-01-SUMMARY.md
