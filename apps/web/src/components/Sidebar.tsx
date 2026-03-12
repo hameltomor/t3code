@@ -79,10 +79,8 @@ import {
 import { isNonEmpty as isNonEmptyString } from "effect/String";
 import { useThreadSearch, getProjectThreadsForSearch } from "../hooks/useThreadSearch";
 import { NotificationBell } from "./NotificationCenter";
-import { ToggleGroup, Toggle as ToggleGroupItem } from "./ui/toggle-group";
 import { Badge } from "./ui/badge";
 
-type SourceFilter = "all" | "native" | "imported";
 
 const EMPTY_KEYBINDINGS: ResolvedKeybindingsConfig = [];
 const THREAD_PREVIEW_LIMIT = 6;
@@ -221,6 +219,7 @@ export default function Sidebar() {
   const { isMobile, setOpenMobile } = useSidebar();
   const projects = useStore((store) => store.projects);
   const threads = useStore((store) => store.threads);
+  const threadsHydrated = useStore((store) => store.threadsHydrated);
   const markThreadUnread = useStore((store) => store.markThreadUnread);
   const toggleProject = useStore((store) => store.toggleProject);
   const clearComposerDraftForThread = useComposerDraftStore((store) => store.clearThreadDraft);
@@ -284,13 +283,6 @@ export default function Sidebar() {
   const removeFromSelection = useThreadSelectionStore((s) => s.removeFromSelection);
   const setSelectionAnchor = useThreadSelectionStore((s) => s.setAnchor);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>(() => {
-    if (typeof window === "undefined") return "all";
-    return (localStorage.getItem("xbecode:source-filter") as SourceFilter) ?? "all";
-  });
-  useEffect(() => {
-    localStorage.setItem("xbecode:source-filter", sourceFilter);
-  }, [sourceFilter]);
   const { query: searchQuery, setQuery: setSearchQuery, filteredThreadIdSet, isSearching } =
     useThreadSearch(threads, projects);
   const pendingApprovalByThreadId = useMemo(() => {
@@ -1242,22 +1234,7 @@ export default function Sidebar() {
               </button>
             )}
           </div>
-          <div className="flex items-center gap-1 pt-1">
-            <ToggleGroup
-              value={[sourceFilter]}
-              onValueChange={(values) => {
-                const next = values[0] as SourceFilter | undefined;
-                if (next) setSourceFilter(next);
-              }}
-              size="xs"
-              variant="outline"
-              className="h-6"
-            >
-              <ToggleGroupItem value="all" className="h-6 px-2 text-xs">All</ToggleGroupItem>
-              <ToggleGroupItem value="native" className="h-6 px-2 text-xs">Native</ToggleGroupItem>
-              <ToggleGroupItem value="imported" className="h-6 px-2 text-xs">Imported</ToggleGroupItem>
-            </ToggleGroup>
-          </div>
+          {/* Source filter hidden — always show all threads */}
         </div>
 
         <SidebarGroup className="px-3 md:px-2 py-2">
@@ -1268,13 +1245,8 @@ export default function Sidebar() {
                 project.id,
                 filteredThreadIdSet,
               );
-              const projectThreads =
-                sourceFilter === "all"
-                  ? searchFilteredThreads
-                  : sourceFilter === "imported"
-                    ? searchFilteredThreads.filter((t) => t.providerThreadId !== null)
-                    : searchFilteredThreads.filter((t) => t.providerThreadId === null);
-              if ((isSearching || sourceFilter !== "all") && projectThreads.length === 0) return null;
+              const projectThreads = searchFilteredThreads;
+              if (isSearching && projectThreads.length === 0) return null;
               const isThreadListExpanded =
                 isSearching || expandedThreadListsByProject.has(project.id);
               const hasHiddenThreads = !isSearching && projectThreads.length > THREAD_PREVIEW_LIMIT;
@@ -1561,7 +1533,7 @@ export default function Sidebar() {
             </div>
           )}
 
-          {projects.length === 0 && !addingProject && !isSearching && (
+          {projects.length === 0 && !addingProject && !isSearching && threadsHydrated && (
             <div className="px-2 pt-4 text-center text-xs text-muted-foreground-secondary">
               No projects yet.
               <br />
@@ -1603,7 +1575,7 @@ export default function Sidebar() {
                 type="button"
                 className="flex-1 rounded-md bg-primary px-3 md:px-2 py-2.5 md:py-1 text-sm md:text-xs font-medium text-primary-foreground transition-colors duration-150 hover:bg-primary/90"
                 onClick={handleAddProject}
-                disabled={newCwd.trim().length === 0 || isAddingProject}
+                disabled={newCwd.trim().length === 0 || isAddingProject || !threadsHydrated}
               >
                 {isAddingProject ? "Adding..." : "Add"}
               </button>
@@ -1619,8 +1591,9 @@ export default function Sidebar() {
         ) : (
           <button
             type="button"
-            className="flex w-full cursor-pointer items-center justify-center gap-1 rounded-md border border-dashed border-border h-12 md:h-auto md:py-2 text-sm md:text-xs text-muted-foreground/70 transition-colors duration-150 hover:border-ring hover:text-muted-foreground"
+            className="flex w-full cursor-pointer items-center justify-center gap-1 rounded-md border border-dashed border-border h-12 md:h-auto md:py-2 text-sm md:text-xs text-muted-foreground/70 transition-colors duration-150 hover:border-ring hover:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60"
             onClick={() => setAddingProject(true)}
+            disabled={!threadsHydrated}
           >
             + Add project
           </button>
