@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 ## Current Position
 
 Phase: 5 of 6 (Hardening and Provenance)
-Plan: 1 of 3 in current phase
-Status: Executing
-Last activity: 2026-03-12 -- Completed 05-01 Link validation and thread provenance card
+Plan: 3 of 3 in current phase
+Status: Phase 5 complete
+Last activity: 2026-03-12 -- Completed 05-03 NFR-6 performance instrumentation
 
-Progress: [████████░░] 83%
+Progress: [█████████░] 93%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 11
+- Total plans completed: 12
 - Average duration: 8min
-- Total execution time: 1.35 hours
+- Total execution time: 1.38 hours
 
 **By Phase:**
 
@@ -31,11 +31,11 @@ Progress: [████████░░] 83%
 | 02-codex-import-pipeline | 3/3 | 28min | 9min |
 | 03-import-ui | 2/2 | 11min | 6min |
 | 04-claude-code-import-and-native-resume | 2/2 | 13min | 7min |
-| 05-hardening-and-provenance | 1/3 | 13min | 13min |
+| 05-hardening-and-provenance | 3/3 | 15min | 5min |
 
 **Recent Trend:**
-- Last 5 plans: 03-02 (4min), 04-01 (8min), 04-02 (5min), 05-01 (13min)
-- Trend: stable ~8min
+- Last 5 plans: 04-01 (8min), 04-02 (5min), 05-01 (13min), 05-02 (n/a), 05-03 (2min)
+- Trend: stable ~7min
 
 *Updated after each plan completion*
 
@@ -80,6 +80,9 @@ Recent decisions affecting current work:
 - [05-01]: Cast ThreadId at React Query boundary using 'as ThreadId' for branded type compatibility
 - [05-01]: Used exactOptionalPropertyTypes-compliant union type for optional onContinueInProvider prop
 - [05-01]: Reused scheduleComposerFocus for Continue in Provider button instead of raw querySelector
+- [05-03]: Used performance.now() for high-resolution timing over Date.now()
+- [05-03]: Instrumented only top-level method boundaries, not per-message hot paths
+- [05-03]: Test file serves as executable documentation of NFR-6 contract, real validation via server logs
 
 ### Pending Todos
 
@@ -92,5 +95,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-12
-Stopped at: Completed 05-01-PLAN.md (Link validation and thread provenance card)
-Resume file: .planning/phases/05-hardening-and-provenance/05-01-SUMMARY.md
+Stopped at: Completed 05-03-PLAN.md (NFR-6 performance instrumentation) -- Phase 5 complete
+Resume file: .planning/phases/05-hardening-and-provenance/05-03-SUMMARY.md
