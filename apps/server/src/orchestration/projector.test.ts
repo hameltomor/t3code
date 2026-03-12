@@ -79,6 +79,7 @@ describe("orchestration projector", () => {
         branch: null,
         worktreePath: null,
         worktreeEntries: [],
+        providerThreadId: null,
         latestTurn: null,
         createdAt: now,
         updatedAt: now,
@@ -90,6 +91,39 @@ describe("orchestration projector", () => {
         session: null,
       },
     ]);
+  });
+
+  it("propagates providerThreadId from thread.created payload", async () => {
+    const now = new Date().toISOString();
+    const model = createEmptyReadModel(now);
+
+    const next = await Effect.runPromise(
+      projectEvent(
+        model,
+        makeEvent({
+          sequence: 1,
+          type: "thread.created",
+          aggregateKind: "thread",
+          aggregateId: "thread-imported",
+          occurredAt: now,
+          commandId: "cmd-import-create",
+          payload: {
+            threadId: "thread-imported",
+            projectId: "project-1",
+            title: "imported session",
+            model: "gpt-5-codex",
+            runtimeMode: "full-access",
+            branch: null,
+            worktreePath: null,
+            providerThreadId: "codex:abc-123-def",
+            createdAt: now,
+            updatedAt: now,
+          },
+        }),
+      ),
+    );
+
+    expect(next.threads[0]?.providerThreadId).toBe("codex:abc-123-def");
   });
 
   it("fails when event payload cannot be decoded by runtime schema", async () => {
