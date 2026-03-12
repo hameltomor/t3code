@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-03-12)
 
 **Core value:** Users can bring scattered code-agent conversation history into one unified place without losing context
-**Current focus:** Phase 5 - Hardening and Provenance
+**Current focus:** Phase 5.1 - Import Pipeline Bug Fixes (gap closure)
 
 ## Current Position
 
-Phase: 5 of 6 (Hardening and Provenance)
-Plan: 3 of 3 in current phase
-Status: Phase 5 complete
-Last activity: 2026-03-12 -- Completed 05-03 NFR-6 performance instrumentation
+Phase: 5.1 of 6 (Import Pipeline Bug Fixes - gap closure)
+Plan: 1 of 1 in current phase
+Status: Phase 5.1 complete
+Last activity: 2026-03-12 -- Completed 05.1-01 import pipeline bug fixes (GAP-1, GAP-2, schema enum)
 
-Progress: [█████████░] 93%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 12
-- Average duration: 8min
-- Total execution time: 1.38 hours
+- Total plans completed: 13
+- Average duration: 7min
+- Total execution time: 1.43 hours
 
 **By Phase:**
 
@@ -32,10 +32,11 @@ Progress: [█████████░] 93%
 | 03-import-ui | 2/2 | 11min | 6min |
 | 04-claude-code-import-and-native-resume | 2/2 | 13min | 7min |
 | 05-hardening-and-provenance | 3/3 | 15min | 5min |
+| 05.1-import-pipeline-bug-fixes | 1/1 | 3min | 3min |
 
 **Recent Trend:**
-- Last 5 plans: 04-01 (8min), 04-02 (5min), 05-01 (13min), 05-02 (n/a), 05-03 (2min)
-- Trend: stable ~7min
+- Last 5 plans: 04-02 (5min), 05-01 (13min), 05-02 (n/a), 05-03 (2min), 05.1-01 (3min)
+- Trend: stable ~6min
 
 *Updated after each plan completion*
 
@@ -83,6 +84,8 @@ Recent decisions affecting current work:
 - [05-03]: Used performance.now() for high-resolution timing over Date.now()
 - [05-03]: Instrumented only top-level method boundaries, not per-message hot paths
 - [05-03]: Test file serves as executable documentation of NFR-6 contract, real validation via server logs
+- [05.1-01]: Used ?? null fallback on providerThreadId for backward-compat with events predating the field
+- [05.1-01]: Option B (build prefixed IDs) chosen over Option A (strip prefixes) for isAlreadyImported to avoid intermediate Set allocation
 
 ### Pending Todos
 
@@ -95,5 +98,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-12
-Stopped at: Completed 05-03-PLAN.md (NFR-6 performance instrumentation) -- Phase 5 complete
-Resume file: .planning/phases/05-hardening-and-provenance/05-03-SUMMARY.md
+Stopped at: Completed 05.1-01-PLAN.md (import pipeline bug fixes) -- Phase 5.1 complete
+Resume file: .planning/phases/05.1-import-pipeline-bug-fixes/05.1-01-SUMMARY.md
