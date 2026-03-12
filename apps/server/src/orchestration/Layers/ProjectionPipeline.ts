@@ -437,6 +437,7 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
             worktreePath: event.payload.worktreePath,
             worktreeEntries: event.payload.worktreeEntries ?? [],
             latestTurnId: null,
+            providerThreadId: event.payload.providerThreadId ?? null,
             createdAt: event.payload.createdAt,
             updatedAt: event.payload.updatedAt,
             deletedAt: null,

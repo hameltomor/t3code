@@ -1080,6 +1080,33 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
         return {};
       }
 
+      // History import methods (stubs)
+      case WS_METHODS.historyImportList: {
+        return yield* new RouteRequestError({
+          message: "historyImport.list is not yet implemented",
+        });
+      }
+      case WS_METHODS.historyImportPreview: {
+        return yield* new RouteRequestError({
+          message: "historyImport.preview is not yet implemented",
+        });
+      }
+      case WS_METHODS.historyImportExecute: {
+        return yield* new RouteRequestError({
+          message: "historyImport.execute is not yet implemented",
+        });
+      }
+      case WS_METHODS.historyImportValidateLink: {
+        return yield* new RouteRequestError({
+          message: "historyImport.validateLink is not yet implemented",
+        });
+      }
+      case WS_METHODS.historyImportListThreadLinks: {
+        return yield* new RouteRequestError({
+          message: "historyImport.listThreadLinks is not yet implemented",
+        });
+      }
+
       default: {
         const _exhaustiveCheck: never = request.body;
         return yield* new RouteRequestError({

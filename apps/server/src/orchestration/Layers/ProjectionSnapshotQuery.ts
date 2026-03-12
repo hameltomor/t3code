@@ -171,6 +171,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           worktree_path AS "worktreePath",
           worktree_entries_json AS "worktreeEntries",
           latest_turn_id AS "latestTurnId",
+          provider_thread_id AS "providerThreadId",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           deleted_at AS "deletedAt"
@@ -544,7 +545,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             branch: row.branch,
             worktreePath: row.worktreePath,
             worktreeEntries: row.worktreeEntries ?? [],
-            providerThreadId: null,
+            providerThreadId: row.providerThreadId ?? null,
             latestTurn: latestTurnByThread.get(row.threadId) ?? null,
             createdAt: row.createdAt,
             updatedAt: row.updatedAt,

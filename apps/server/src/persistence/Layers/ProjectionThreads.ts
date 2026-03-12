@@ -35,6 +35,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           worktree_path,
           worktree_entries_json,
           latest_turn_id,
+          provider_thread_id,
           created_at,
           updated_at,
           deleted_at
@@ -50,6 +51,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           ${row.worktreePath},
           ${row.worktreeEntries},
           ${row.latestTurnId},
+          ${row.providerThreadId},
           ${row.createdAt},
           ${row.updatedAt},
           ${row.deletedAt}
@@ -65,6 +67,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           worktree_path = excluded.worktree_path,
           worktree_entries_json = excluded.worktree_entries_json,
           latest_turn_id = excluded.latest_turn_id,
+          provider_thread_id = excluded.provider_thread_id,
           created_at = excluded.created_at,
           updated_at = excluded.updated_at,
           deleted_at = excluded.deleted_at
@@ -93,6 +96,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           worktree_path AS "worktreePath",
           worktree_entries_json AS "worktreeEntries",
           latest_turn_id AS "latestTurnId",
+          provider_thread_id AS "providerThreadId",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           deleted_at AS "deletedAt"
@@ -117,6 +121,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           worktree_path AS "worktreePath",
           worktree_entries_json AS "worktreeEntries",
           latest_turn_id AS "latestTurnId",
+          provider_thread_id AS "providerThreadId",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           deleted_at AS "deletedAt"
