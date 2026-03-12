@@ -53,6 +53,16 @@ import type {
 } from "./notification";
 import type { DraftListResult, DraftSaveInput } from "./draft";
 import { EditorId } from "./editor";
+import type {
+  HistoryImportListInput,
+  HistoryImportConversationSummary,
+  HistoryImportPreviewInput,
+  HistoryImportConversationPreview,
+  HistoryImportExecuteInput,
+  HistoryImportExecuteResult,
+  HistoryImportListThreadLinksInput,
+  ThreadExternalLink,
+} from "./historyImport";
 
 export interface ContextMenuItem<T extends string = string> {
   id: T;
@@ -188,5 +198,11 @@ export interface NativeApi {
     save: (input: DraftSaveInput) => Promise<void>;
     list: (projectId: string) => Promise<DraftListResult>;
     delete: (threadId: string) => Promise<void>;
+  };
+  historyImport: {
+    list: (input: HistoryImportListInput) => Promise<HistoryImportConversationSummary[]>;
+    preview: (input: HistoryImportPreviewInput) => Promise<HistoryImportConversationPreview>;
+    execute: (input: HistoryImportExecuteInput) => Promise<HistoryImportExecuteResult>;
+    listThreadLinks: (input: HistoryImportListThreadLinksInput) => Promise<ThreadExternalLink[]>;
   };
 }

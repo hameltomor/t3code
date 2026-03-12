@@ -234,6 +234,12 @@ export function createWsNativeApi(): NativeApi {
       list: (projectId) => transport.request(WS_METHODS.draftsList, { projectId }),
       delete: (threadId) => transport.request(WS_METHODS.draftsDelete, { threadId }),
     },
+    historyImport: {
+      list: (input) => transport.request(WS_METHODS.historyImportList, input),
+      preview: (input) => transport.request(WS_METHODS.historyImportPreview, input),
+      execute: (input) => transport.request(WS_METHODS.historyImportExecute, input),
+      listThreadLinks: (input) => transport.request(WS_METHODS.historyImportListThreadLinks, input),
+    },
   };
 
   instance = { api, transport };
