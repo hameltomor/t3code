@@ -1,11 +1,12 @@
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
-import { Effect, Layer, Schema } from "effect";
+import { Effect, Layer, Option, Schema } from "effect";
 
 import { toPersistenceDecodeError, toPersistenceSqlError } from "../Errors.ts";
 
 import {
   DeleteHistoryImportCatalogInput,
+  GetByCatalogIdInput,
   HistoryImportCatalogEntry,
   HistoryImportCatalogRepository,
   type HistoryImportCatalogRepositoryShape,
@@ -164,6 +165,38 @@ const makeHistoryImportCatalogRepository = Effect.gen(function* () {
       `,
   });
 
+  const getByCatalogIdQuery = SqlSchema.findOneOption({
+    Request: GetByCatalogIdInput,
+    Result: HistoryImportCatalogEntry,
+    execute: ({ catalogId }) =>
+      sql`
+        SELECT
+          catalog_id AS "catalogId",
+          provider_name AS "providerName",
+          workspace_root AS "workspaceRoot",
+          cwd,
+          title,
+          model,
+          message_count AS "messageCount",
+          turn_count AS "turnCount",
+          provider_conversation_id AS "providerConversationId",
+          provider_session_id AS "providerSessionId",
+          resume_anchor_id AS "resumeAnchorId",
+          source_kind AS "sourceKind",
+          source_path AS "sourcePath",
+          link_mode AS "linkMode",
+          validation_status AS "validationStatus",
+          warnings_json AS "warningsJson",
+          fingerprint,
+          raw_metadata_json AS "rawMetadataJson",
+          created_at AS "createdAt",
+          updated_at AS "updatedAt",
+          last_scanned_at AS "lastScannedAt"
+        FROM history_import_catalog
+        WHERE catalog_id = ${catalogId}
+      `,
+  });
+
   const deleteByIdRow = SqlSchema.void({
     Request: DeleteHistoryImportCatalogInput,
     execute: ({ catalogId }) =>
@@ -204,6 +237,17 @@ const makeHistoryImportCatalogRepository = Effect.gen(function* () {
     );
   };
 
+  const getByCatalogId: HistoryImportCatalogRepositoryShape["getByCatalogId"] = (input) =>
+    getByCatalogIdQuery(input).pipe(
+      Effect.map(Option.getOrNull),
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "HistoryImportCatalogRepository.getByCatalogId:query",
+          "HistoryImportCatalogRepository.getByCatalogId:decodeRow",
+        ),
+      ),
+    );
+
   const deleteByCatalogId: HistoryImportCatalogRepositoryShape["deleteByCatalogId"] = (input) =>
     deleteByIdRow(input).pipe(
       Effect.mapError(
@@ -214,6 +258,7 @@ const makeHistoryImportCatalogRepository = Effect.gen(function* () {
   return {
     upsert,
     listByWorkspace,
+    getByCatalogId,
     deleteByCatalogId,
   } satisfies HistoryImportCatalogRepositoryShape;
 });

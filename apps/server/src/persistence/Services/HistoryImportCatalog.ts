@@ -40,6 +40,11 @@ export const DeleteHistoryImportCatalogInput = Schema.Struct({
 });
 export type DeleteHistoryImportCatalogInput = typeof DeleteHistoryImportCatalogInput.Type;
 
+export const GetByCatalogIdInput = Schema.Struct({
+  catalogId: Schema.String,
+});
+export type GetByCatalogIdInput = typeof GetByCatalogIdInput.Type;
+
 export interface HistoryImportCatalogRepositoryShape {
   readonly upsert: (
     entry: HistoryImportCatalogEntry,
@@ -48,6 +53,10 @@ export interface HistoryImportCatalogRepositoryShape {
   readonly listByWorkspace: (
     input: ListHistoryImportCatalogInput,
   ) => Effect.Effect<ReadonlyArray<HistoryImportCatalogEntry>, ProjectionRepositoryError>;
+
+  readonly getByCatalogId: (
+    input: GetByCatalogIdInput,
+  ) => Effect.Effect<HistoryImportCatalogEntry | null, ProjectionRepositoryError>;
 
   readonly deleteByCatalogId: (
     input: DeleteHistoryImportCatalogInput,
