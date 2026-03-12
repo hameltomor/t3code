@@ -64,11 +64,11 @@ Plans:
   3. Step 2 shows a filterable session list with provider badge, title, cwd, date, message count, resume mode badge, and an "already imported" badge for previously imported sessions
   4. Steps 3-4 show transcript preview with warnings and import options (title, model, runtime mode, interaction mode, link mode)
   5. Step 5 shows the import result with a link to navigate to the created thread, and a toast confirms import counts
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 03-01: Import dialog shell and session list
-- [ ] 03-02: Preview, options, and result steps
+- [ ] 03-01-PLAN.md -- NativeApi transport, React Query integration, wizard dialog shell with steps 1-2, sidebar and empty-thread entry points
+- [ ] 03-02-PLAN.md -- Preview step, import options step, result step with thread navigation, execute mutation, and toast notification
 
 ### Phase 4: Claude Code Import and Native Resume
 **Goal**: Users can import Claude Code conversations and resume imported Codex threads natively through the original provider session
