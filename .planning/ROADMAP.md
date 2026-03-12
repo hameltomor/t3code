@@ -82,8 +82,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 04-01-PLAN.md -- Claude Code JSONL schemas, history scanner with sessions-index.json + header fallback, streaming session parser, HistoryImportService integration, serverLayers wiring
-- [ ] 04-02-PLAN.md -- Native resume via ThreadExternalLink lookup in ProviderCommandReactor, provider-aware link mode descriptions in import wizard UI
+- [x] 04-01-PLAN.md -- Claude Code JSONL schemas, history scanner with sessions-index.json + header fallback, streaming session parser, HistoryImportService integration, serverLayers wiring
+- [x] 04-02-PLAN.md -- Native resume via ThreadExternalLink lookup in ProviderCommandReactor, provider-aware link mode descriptions in import wizard UI
 
 ### Phase 5: Hardening and Provenance
 **Goal**: Imported threads display their origin, link validation runs lazily on thread open, and the system surfaces partial imports and stale links without destroying data
@@ -95,11 +95,11 @@ Plans:
   3. Thread list supports filtering by "Native" / "Imported" / "All" and shows a source badge on imported threads
   4. Partially imported threads (where transcript import failed after thread creation) display a warning badge rather than being silently deleted
   5. Catalog scans complete within 5 seconds for 100 sessions, preview returns within 2 seconds, and import of a 500-message thread completes within 10 seconds
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 05-01: Link validation and provenance card
-- [ ] 05-02: Performance tuning and partial-import handling
+- [ ] 05-01-PLAN.md -- Shared fingerprint utility, server-side validateLink implementation, contracts and WS wiring, ProvenanceCard component with lazy background validation in ChatView
+- [ ] 05-02-PLAN.md -- Sidebar source badges and All/Native/Imported filter toggle, partial-import detection via two-phase materializer status
 
 ### Phase 6: Gemini CLI Reader (DEFERRED)
 **Goal**: Users can import Gemini CLI conversations with transcript-replay continuation mode
@@ -148,6 +148,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> (6 when unblocked)
 | 1. Foundation and Schema | 2/2 | Complete | 2026-03-12 |
 | 2. Codex Import Pipeline | 3/3 | Complete | 2026-03-12 |
 | 3. Import UI | 2/2 | Complete | 2026-03-12 |
-| 4. Claude Code Import and Native Resume | 0/2 | Not started | - |
+| 4. Claude Code Import and Native Resume | 2/2 | Complete | 2026-03-12 |
 | 5. Hardening and Provenance | 0/2 | Not started | - |
 | 6. Gemini CLI Reader | 0/1 | Deferred | - |
