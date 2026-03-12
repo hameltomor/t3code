@@ -13,7 +13,6 @@ const PROVIDER_OPTIONS = [
   { value: "all", label: "All" },
   { value: "codex", label: "Codex" },
   { value: "claudeCode", label: "Claude Code" },
-  { value: "gemini", label: "Gemini" },
 ] as const;
 
 export function ProviderSelectStep({

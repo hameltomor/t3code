@@ -72,7 +72,7 @@ const ClaudeCodeUserTextBlock = Schema.Struct({
 const ClaudeCodeToolResultBlock = Schema.Struct({
   type: Schema.Literal("tool_result"),
   tool_use_id: Schema.String,
-  content: Schema.String,
+  content: Schema.Union([Schema.String, Schema.Array(Schema.Unknown)]),
 }).annotate(tolerant);
 
 export const ClaudeCodeUserContentBlock = Schema.Union([

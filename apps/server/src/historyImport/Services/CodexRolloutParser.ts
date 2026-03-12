@@ -36,6 +36,8 @@ export interface CodexRolloutParseResult {
   readonly activities: ReadonlyArray<ParsedCodexActivity>;
   readonly warnings: ReadonlyArray<string>;
   readonly totalLinesProcessed: number;
+  readonly totalMessageCount: number; // true count before capping
+  readonly totalActivityCount: number; // true count before capping
   readonly compactionCount: number;
 }
 

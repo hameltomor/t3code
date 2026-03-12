@@ -34,6 +34,8 @@ export interface ClaudeCodeParseResult {
   readonly activities: ReadonlyArray<ParsedClaudeCodeActivity>;
   readonly warnings: ReadonlyArray<string>;
   readonly totalLinesProcessed: number;
+  readonly totalMessageCount: number; // true count before capping
+  readonly totalActivityCount: number; // true count before capping
   readonly lastAssistantUuid: string | null; // for resume seed
 }
 

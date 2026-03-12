@@ -35,6 +35,8 @@ interface ParserState {
   activityCapped: boolean;
   maxMessages: number;
   maxActivities: number;
+  totalMessageCount: number;
+  totalActivityCount: number;
   lastAssistantUuid: string | null;
   lastAssistantHasFollowup: boolean;
   model: string | null;
@@ -52,6 +54,8 @@ function makeInitialState(maxMessages: number, maxActivities: number): ParserSta
     activityCapped: false,
     maxMessages,
     maxActivities,
+    totalMessageCount: 0,
+    totalActivityCount: 0,
     lastAssistantUuid: null,
     lastAssistantHasFollowup: false,
     model: null,
@@ -61,6 +65,7 @@ function makeInitialState(maxMessages: number, maxActivities: number): ParserSta
 // ── Helper: Push message with cap check ──────────────────────────────
 
 function pushMessage(state: ParserState, msg: ParsedClaudeCodeMessage): void {
+  state.totalMessageCount++;
   if (state.messageCapped) return;
   state.messages.push(msg);
   if (state.messages.length >= state.maxMessages) {
@@ -69,6 +74,7 @@ function pushMessage(state: ParserState, msg: ParsedClaudeCodeMessage): void {
 }
 
 function pushActivity(state: ParserState, act: ParsedClaudeCodeActivity): void {
+  state.totalActivityCount++;
   if (state.activityCapped) return;
   state.activities.push(act);
   if (state.activities.length >= state.maxActivities) {
@@ -134,6 +140,15 @@ function processLine(state: ParserState, line: string, lineNumber: number): void
       processUserLine(state, decoded.value);
       return;
     }
+    // User line failed to decode -- warn so imports don't silently lose content
+    state.warnings.push(`User line at line ${lineNumber} could not be decoded (skipped)`);
+    return;
+  }
+
+  // Try to decode as assistant line that wasn't caught above (schema mismatch)
+  if (lineType === "assistant") {
+    state.warnings.push(`Assistant line at line ${lineNumber} could not be decoded (skipped)`);
+    return;
   }
 
   // Unknown line type: skip silently (schema tolerance)
@@ -260,10 +275,14 @@ function processUserLine(
       if (block.type === "text") {
         userText += block.text;
       } else if (block.type === "tool_result") {
+        // tool_result.content can be a string or an array of content blocks
+        const contentSummary = typeof block.content === "string"
+          ? block.content.slice(0, 200)
+          : `[${(block.content as unknown[]).length} content blocks]`;
         pushActivity(state, {
           kind: "tool_result",
           tone: "tool",
-          summary: `Tool result for ${block.tool_use_id}`,
+          summary: `Tool result for ${block.tool_use_id}: ${contentSummary}`,
           turnId: null,
           createdAt: timestamp,
           payload: { content: block.content },
@@ -352,6 +371,8 @@ const makeClaudeCodeSessionParser = Effect.gen(function* () {
         activities: state.activities,
         warnings: state.warnings,
         totalLinesProcessed: state.linesProcessed,
+        totalMessageCount: state.totalMessageCount,
+        totalActivityCount: state.totalActivityCount,
         lastAssistantUuid: state.lastAssistantUuid,
       };
 

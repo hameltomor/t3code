@@ -43,6 +43,8 @@ interface ParserState {
   activityCapped: boolean;
   maxMessages: number;
   maxActivities: number;
+  totalMessageCount: number;
+  totalActivityCount: number;
 }
 
 function makeInitialState(maxMessages: number, maxActivities: number): ParserState {
@@ -59,6 +61,8 @@ function makeInitialState(maxMessages: number, maxActivities: number): ParserSta
     activityCapped: false,
     maxMessages,
     maxActivities,
+    totalMessageCount: 0,
+    totalActivityCount: 0,
   };
 }
 
@@ -76,6 +80,7 @@ function extractTextFromContent(
 // ── Helper: Push message with cap check ──────────────────────────────
 
 function pushMessage(state: ParserState, msg: ParsedCodexMessage): void {
+  state.totalMessageCount++;
   if (state.messageCapped) return;
   state.messages.push(msg);
   if (state.messages.length >= state.maxMessages) {
@@ -84,6 +89,7 @@ function pushMessage(state: ParserState, msg: ParsedCodexMessage): void {
 }
 
 function pushActivity(state: ParserState, act: ParsedCodexActivity): void {
+  state.totalActivityCount++;
   if (state.activityCapped) return;
   state.activities.push(act);
   if (state.activities.length >= state.maxActivities) {
@@ -197,6 +203,8 @@ function handleCompaction(
   state.activities = [];
   state.messageCapped = false;
   state.activityCapped = false;
+  state.totalMessageCount = 0;
+  state.totalActivityCount = 0;
   state.compactionCount++;
 
   if (replacementHistory && replacementHistory.length > 0) {
@@ -498,6 +506,8 @@ const makeCodexRolloutParser = Effect.gen(function* () {
         activities: state.activities,
         warnings: state.warnings,
         totalLinesProcessed: state.linesProcessed,
+        totalMessageCount: state.totalMessageCount,
+        totalActivityCount: state.totalActivityCount,
         compactionCount: state.compactionCount,
       };
 

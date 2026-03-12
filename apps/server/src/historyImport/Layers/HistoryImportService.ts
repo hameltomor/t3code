@@ -63,6 +63,8 @@ interface NormalizedParseResult {
   readonly warnings: ReadonlyArray<string>;
   readonly sessionId: string | null;
   readonly lastAssistantUuid: string | null;
+  readonly totalMessageCount: number;
+  readonly totalActivityCount: number;
 }
 
 // ── Layer Implementation ──────────────────────────────────────────────
@@ -163,6 +165,8 @@ const makeHistoryImportService = Effect.gen(function* () {
           warnings: ccResult.warnings,
           sessionId: ccResult.sessionId,
           lastAssistantUuid: ccResult.lastAssistantUuid,
+          totalMessageCount: ccResult.totalMessageCount,
+          totalActivityCount: ccResult.totalActivityCount,
         };
       } else {
         // Default: Codex parser
@@ -176,6 +180,8 @@ const makeHistoryImportService = Effect.gen(function* () {
           warnings: codexResult.warnings,
           sessionId: codexResult.sessionId,
           lastAssistantUuid: null,
+          totalMessageCount: codexResult.totalMessageCount,
+          totalActivityCount: codexResult.totalActivityCount,
         };
       }
 
@@ -193,9 +199,9 @@ const makeHistoryImportService = Effect.gen(function* () {
           kind: a.kind,
           summary: a.summary,
         })),
-        totalMessageCount: parseResult.messages.length as HistoryImportConversationPreview["totalMessageCount"],
-        totalActivityCount: parseResult.activities.length as HistoryImportConversationPreview["totalActivityCount"],
-        isTruncated: parseResult.messages.length >= maxMessages,
+        totalMessageCount: parseResult.totalMessageCount as HistoryImportConversationPreview["totalMessageCount"],
+        totalActivityCount: parseResult.totalActivityCount as HistoryImportConversationPreview["totalActivityCount"],
+        isTruncated: parseResult.totalMessageCount > parseResult.messages.length,
         linkMode: catalogEntry.linkMode as HistoryImportLinkMode,
         warnings: parseResult.warnings as HistoryImportConversationPreview["warnings"],
       } as HistoryImportConversationPreview;
