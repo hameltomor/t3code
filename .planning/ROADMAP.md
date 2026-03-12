@@ -12,7 +12,7 @@ Build a history import system that lets users discover, preview, and selectively
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Foundation and Schema** - Contracts, migrations, and repository infrastructure that gate all subsequent work
+- [x] **Phase 1: Foundation and Schema** - Contracts, migrations, and repository infrastructure that gate all subsequent work
 - [ ] **Phase 2: Codex Import Pipeline** - End-to-end server pipeline for the hardest provider: scan, preview, import, dedupe
 - [ ] **Phase 3: Import UI** - 5-step import wizard in the web app consuming the server pipeline
 - [ ] **Phase 4: Claude Code Import and Native Resume** - Second provider reader plus native Codex resume wiring
@@ -34,8 +34,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 2 plans
 
 Plans:
-- [ ] 01-01-PLAN.md -- Contracts and schema definitions (historyImport.ts, providerThreadId on orchestration, WS method/channel registration)
-- [ ] 01-02-PLAN.md -- Database migrations, repository services, projection pipeline wiring, and WS method stubs
+- [x] 01-01-PLAN.md -- Contracts and schema definitions (historyImport.ts, providerThreadId on orchestration, WS method/channel registration)
+- [x] 01-02-PLAN.md -- Database migrations, repository services, projection pipeline wiring, and WS method stubs
 
 ### Phase 2: Codex Import Pipeline
 **Goal**: Users can discover, preview, and import Codex CLI conversations into XBE threads through the server API (no UI yet -- testable via WS calls)
@@ -145,7 +145,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> (6 when unblocked)
 
 | Phase | Plans Complete | Status | Completed |
 |-------|---------------|--------|-----------|
-| 1. Foundation and Schema | 0/2 | Not started | - |
+| 1. Foundation and Schema | 2/2 | Complete | 2026-03-12 |
 | 2. Codex Import Pipeline | 0/3 | Not started | - |
 | 3. Import UI | 0/2 | Not started | - |
 | 4. Claude Code Import and Native Resume | 0/2 | Not started | - |
