@@ -9,29 +9,29 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 
 ## Current Position
 
-Phase: 1 of 6 (Foundation and Schema)
-Plan: 1 of 2 in current phase
-Status: Executing
-Last activity: 2026-03-12 -- Completed 01-01 contract schemas
+Phase: 1 of 6 (Foundation and Schema) -- COMPLETE
+Plan: 2 of 2 in current phase
+Status: Phase Complete
+Last activity: 2026-03-12 -- Completed 01-02 database migrations and repository layers
 
-Progress: [█░░░░░░░░░] 8%
+Progress: [██░░░░░░░░] 16%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 1
-- Average duration: 11min
-- Total execution time: 0.18 hours
+- Total plans completed: 2
+- Average duration: 8min
+- Total execution time: 0.27 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01-foundation-and-schema | 1/2 | 11min | 11min |
+| 01-foundation-and-schema | 2/2 | 16min | 8min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (11min)
-- Trend: starting
+- Last 5 plans: 01-01 (11min), 01-02 (5min)
+- Trend: accelerating
 
 *Updated after each plan completion*
 
@@ -47,6 +47,8 @@ Recent decisions affecting current work:
 - [Roadmap]: Schema and migrations land in Phase 1 before any server or UI work
 - [01-01]: Used withDecodingDefault(() => null) on providerThreadId for backward-compatible schema evolution
 - [01-01]: providerThreadId hardcoded to null in ProjectionSnapshotQuery until DB migration is added
+- [01-02]: Used two-query dispatch pattern for optional providerName filter in HistoryImportCatalogRepository.listByWorkspace
+- [01-02]: Replaced hardcoded providerThreadId: null in ProjectionSnapshotQuery with row.providerThreadId now that DB column exists
 
 ### Pending Todos
 
@@ -60,5 +62,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-12
-Stopped at: Completed 01-01-PLAN.md (contract schemas)
-Resume file: .planning/phases/01-foundation-and-schema/01-01-SUMMARY.md
+Stopped at: Completed 01-02-PLAN.md (database migrations and repository layers) -- Phase 1 complete
+Resume file: .planning/phases/01-foundation-and-schema/01-02-SUMMARY.md
