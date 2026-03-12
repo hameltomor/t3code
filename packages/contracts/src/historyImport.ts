@@ -145,3 +145,10 @@ export const HistoryImportListThreadLinksInput = Schema.Struct({
   threadId: ThreadId,
 });
 export type HistoryImportListThreadLinksInput = typeof HistoryImportListThreadLinksInput.Type;
+
+export const HistoryImportValidateLinkResult = Schema.Struct({
+  threadId: ThreadId,
+  validationStatus: HistoryImportValidationStatus,
+  lastValidatedAt: IsoDateTime,
+});
+export type HistoryImportValidateLinkResult = typeof HistoryImportValidateLinkResult.Type;

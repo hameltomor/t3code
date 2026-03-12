@@ -60,6 +60,8 @@ import type {
   HistoryImportConversationPreview,
   HistoryImportExecuteInput,
   HistoryImportExecuteResult,
+  HistoryImportValidateLinkInput,
+  HistoryImportValidateLinkResult,
   HistoryImportListThreadLinksInput,
   ThreadExternalLink,
 } from "./historyImport";
@@ -203,6 +205,7 @@ export interface NativeApi {
     list: (input: HistoryImportListInput) => Promise<HistoryImportConversationSummary[]>;
     preview: (input: HistoryImportPreviewInput) => Promise<HistoryImportConversationPreview>;
     execute: (input: HistoryImportExecuteInput) => Promise<HistoryImportExecuteResult>;
+    validateLink: (input: HistoryImportValidateLinkInput) => Promise<HistoryImportValidateLinkResult>;
     listThreadLinks: (input: HistoryImportListThreadLinksInput) => Promise<ThreadExternalLink[]>;
   };
 }
