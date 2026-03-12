@@ -13,7 +13,7 @@ Build a history import system that lets users discover, preview, and selectively
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundation and Schema** - Contracts, migrations, and repository infrastructure that gate all subsequent work
-- [ ] **Phase 2: Codex Import Pipeline** - End-to-end server pipeline for the hardest provider: scan, preview, import, dedupe
+- [x] **Phase 2: Codex Import Pipeline** - End-to-end server pipeline for the hardest provider: scan, preview, import, dedupe
 - [ ] **Phase 3: Import UI** - 5-step import wizard in the web app consuming the server pipeline
 - [ ] **Phase 4: Claude Code Import and Native Resume** - Second provider reader plus native Codex resume wiring
 - [ ] **Phase 5: Hardening and Provenance** - Link validation, thread provenance card, notifications, partial-import surfacing
@@ -50,9 +50,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 02-01-PLAN.md -- Codex rollout schemas, import orchestration commands (thread.message.import, thread.activity.import), and CodexHistoryScanner
-- [ ] 02-02-PLAN.md -- Streaming CodexRolloutParser with compaction handling, and HistoryImportService with list/preview methods
-- [ ] 02-03-PLAN.md -- HistoryMaterializer, HistoryImportService.execute, WS method handlers, and serverLayers wiring
+- [x] 02-01-PLAN.md -- Codex rollout schemas, import orchestration commands (thread.message.import, thread.activity.import), and CodexHistoryScanner
+- [x] 02-02-PLAN.md -- Streaming CodexRolloutParser with compaction handling, and HistoryImportService with list/preview methods
+- [x] 02-03-PLAN.md -- HistoryMaterializer, HistoryImportService.execute, WS method handlers, and serverLayers wiring
 
 ### Phase 3: Import UI
 **Goal**: Users can open the import wizard from the sidebar or empty-thread state, browse discovered sessions, preview transcripts, configure import options, and navigate to the created thread
@@ -146,7 +146,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> (6 when unblocked)
 | Phase | Plans Complete | Status | Completed |
 |-------|---------------|--------|-----------|
 | 1. Foundation and Schema | 2/2 | Complete | 2026-03-12 |
-| 2. Codex Import Pipeline | 0/3 | Not started | - |
+| 2. Codex Import Pipeline | 3/3 | Complete | 2026-03-12 |
 | 3. Import UI | 0/2 | Not started | - |
 | 4. Claude Code Import and Native Resume | 0/2 | Not started | - |
 | 5. Hardening and Provenance | 0/2 | Not started | - |
