@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Foundation and Schema** - Contracts, migrations, and repository infrastructure that gate all subsequent work
 - [x] **Phase 2: Codex Import Pipeline** - End-to-end server pipeline for the hardest provider: scan, preview, import, dedupe
 - [x] **Phase 3: Import UI** - 5-step import wizard in the web app consuming the server pipeline
-- [ ] **Phase 4: Claude Code Import and Native Resume** - Second provider reader plus native Codex resume wiring
+- [x] **Phase 4: Claude Code Import and Native Resume** - Second provider reader plus native Codex resume wiring
 - [ ] **Phase 5: Hardening and Provenance** - Link validation, thread provenance card, notifications, partial-import surfacing
 - [ ] **Phase 6: Gemini CLI Reader** - Deferred until format stabilizes upstream
 
