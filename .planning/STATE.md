@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-03-12)
 
 **Core value:** Users can bring scattered code-agent conversation history into one unified place without losing context
-**Current focus:** Phase 3 - Import UI
+**Current focus:** Phase 4 - Claude Code Import and Native Resume
 
 ## Current Position
 
-Phase: 3 of 6 (Import UI) -- COMPLETE
-Plan: 2 of 2 in current phase
-Status: Phase Complete
-Last activity: 2026-03-12 -- Completed 03-02 Import wizard steps 3-5 with preview, options, execute, and navigation
+Phase: 4 of 6 (Claude Code Import and Native Resume)
+Plan: 1 of 2 in current phase
+Status: In Progress
+Last activity: 2026-03-12 -- Completed 04-01 Claude Code scanner, parser, and import routing
 
-Progress: [███████░░░] 67%
+Progress: [████████░░] 75%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 7
+- Total plans completed: 8
 - Average duration: 8min
-- Total execution time: 0.92 hours
+- Total execution time: 1.05 hours
 
 **By Phase:**
 
@@ -30,10 +30,11 @@ Progress: [███████░░░] 67%
 | 01-foundation-and-schema | 2/2 | 16min | 8min |
 | 02-codex-import-pipeline | 3/3 | 28min | 9min |
 | 03-import-ui | 2/2 | 11min | 6min |
+| 04-claude-code-import-and-native-resume | 1/2 | 8min | 8min |
 
 **Recent Trend:**
-- Last 5 plans: 02-02 (11min), 02-03 (9min), 03-01 (7min), 03-02 (4min)
-- Trend: accelerating
+- Last 5 plans: 02-03 (9min), 03-01 (7min), 03-02 (4min), 04-01 (8min)
+- Trend: stable ~7min
 
 *Updated after each plan completion*
 
@@ -68,6 +69,10 @@ Recent decisions affecting current work:
 - [03-01]: providerThreadId added as required field on Thread interface to match server read model
 - [03-02]: Content-based React list keys (role+createdAt, kind+summary) instead of array indices for lint compliance
 - [03-02]: Mutation callbacks merged locally in ImportWizard for toast/dispatch co-location with wizard state
+- [04-01]: Schema.Union takes array syntax in this Effect version, not rest args
+- [04-01]: Schema.optional with Schema.withDecodingDefault for boolean defaults instead of Schema.optionalWith
+- [04-01]: Provider-based routing in HistoryImportService using if/else on catalogEntry.providerName
+- [04-01]: rawResumeSeedJson conditionally set for claudeCode with resumeSessionAt from lastAssistantUuid
 
 ### Pending Todos
 
@@ -76,10 +81,9 @@ None yet.
 ### Blockers/Concerns
 
 - Phase 2 research flag: Codex `state_5.sqlite` schema columns and compaction event type names need validation against real installation or open-source repo
-- Phase 4 research flag: Claude Code JSONL field names need confirmation against real session files
 
 ## Session Continuity
 
 Last session: 2026-03-12
-Stopped at: Completed 03-02-PLAN.md (Import wizard steps 3-5 with preview, options, execute, navigation) -- Phase 3 complete
-Resume file: .planning/phases/03-import-ui/03-02-SUMMARY.md
+Stopped at: Completed 04-01-PLAN.md (Claude Code scanner, parser, and multi-provider import routing)
+Resume file: .planning/phases/04-claude-code-import-and-native-resume/04-01-SUMMARY.md
