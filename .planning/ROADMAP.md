@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundation and Schema** - Contracts, migrations, and repository infrastructure that gate all subsequent work
 - [x] **Phase 2: Codex Import Pipeline** - End-to-end server pipeline for the hardest provider: scan, preview, import, dedupe
-- [ ] **Phase 3: Import UI** - 5-step import wizard in the web app consuming the server pipeline
+- [x] **Phase 3: Import UI** - 5-step import wizard in the web app consuming the server pipeline
 - [ ] **Phase 4: Claude Code Import and Native Resume** - Second provider reader plus native Codex resume wiring
 - [ ] **Phase 5: Hardening and Provenance** - Link validation, thread provenance card, notifications, partial-import surfacing
 - [ ] **Phase 6: Gemini CLI Reader** - Deferred until format stabilizes upstream
@@ -67,8 +67,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 03-01-PLAN.md -- NativeApi transport, React Query integration, wizard dialog shell with steps 1-2, sidebar and empty-thread entry points
-- [ ] 03-02-PLAN.md -- Preview step, import options step, result step with thread navigation, execute mutation, and toast notification
+- [x] 03-01-PLAN.md -- NativeApi transport, React Query integration, wizard dialog shell with steps 1-2, sidebar and empty-thread entry points
+- [x] 03-02-PLAN.md -- Preview step, import options step, result step with thread navigation, execute mutation, and toast notification
 
 ### Phase 4: Claude Code Import and Native Resume
 **Goal**: Users can import Claude Code conversations and resume imported Codex threads natively through the original provider session
@@ -147,7 +147,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> (6 when unblocked)
 |-------|---------------|--------|-----------|
 | 1. Foundation and Schema | 2/2 | Complete | 2026-03-12 |
 | 2. Codex Import Pipeline | 3/3 | Complete | 2026-03-12 |
-| 3. Import UI | 0/2 | Not started | - |
+| 3. Import UI | 2/2 | Complete | 2026-03-12 |
 | 4. Claude Code Import and Native Resume | 0/2 | Not started | - |
 | 5. Hardening and Provenance | 0/2 | Not started | - |
 | 6. Gemini CLI Reader | 0/1 | Deferred | - |
