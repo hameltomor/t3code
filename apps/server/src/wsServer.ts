@@ -78,6 +78,8 @@ import { ProjectionPushSubscriptionRepository } from "./persistence/Services/Pro
 import { ProjectionDraftRepository } from "./persistence/Services/ProjectionDrafts.ts";
 import { WebPushService } from "./push/WebPushService.ts";
 import { expandHomePath } from "./os-jank.ts";
+import { HistoryImportServiceService } from "./historyImport/Services/HistoryImportService.ts";
+import { ThreadExternalLinkRepository } from "./persistence/Services/ThreadExternalLinks.ts";
 
 /**
  * ServerShape - Service API for server lifecycle control.
@@ -233,7 +235,9 @@ export type ServerRuntimeServices =
   | ProjectionNotificationRepository
   | ProjectionPushSubscriptionRepository
   | ProjectionDraftRepository
-  | WebPushService;
+  | WebPushService
+  | HistoryImportServiceService
+  | ThreadExternalLinkRepository;
 
 export class ServerLifecycleError extends Schema.TaggedErrorClass<ServerLifecycleError>()(
   "ServerLifecycleError",
@@ -636,6 +640,8 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
   const webPushService = yield* WebPushService;
   const draftRepository = yield* ProjectionDraftRepository;
   const providerService = yield* ProviderService;
+  const historyImportService = yield* HistoryImportServiceService;
+  const externalLinkRepo = yield* ThreadExternalLinkRepository;
 
   const subscriptionsScope = yield* Scope.make("sequential");
   yield* Effect.addFinalizer(() => Scope.close(subscriptionsScope, Exit.void));
@@ -1080,31 +1086,47 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
         return {};
       }
 
-      // History import methods (stubs)
+      // History import methods
       case WS_METHODS.historyImportList: {
-        return yield* new RouteRequestError({
-          message: "historyImport.list is not yet implemented",
-        });
+        const body = stripRequestTag(request.body);
+        const result = yield* historyImportService.list(body).pipe(
+          Effect.mapError(
+            (error) => new RouteRequestError({ message: error.message }),
+          ),
+        );
+        return result;
       }
       case WS_METHODS.historyImportPreview: {
-        return yield* new RouteRequestError({
-          message: "historyImport.preview is not yet implemented",
-        });
+        const body = stripRequestTag(request.body);
+        const result = yield* historyImportService.preview(body).pipe(
+          Effect.mapError(
+            (error) => new RouteRequestError({ message: error.message }),
+          ),
+        );
+        return result;
       }
       case WS_METHODS.historyImportExecute: {
-        return yield* new RouteRequestError({
-          message: "historyImport.execute is not yet implemented",
-        });
+        const body = stripRequestTag(request.body);
+        const result = yield* historyImportService.execute(body).pipe(
+          Effect.mapError(
+            (error) => new RouteRequestError({ message: error.message }),
+          ),
+        );
+        return result;
       }
       case WS_METHODS.historyImportValidateLink: {
         return yield* new RouteRequestError({
-          message: "historyImport.validateLink is not yet implemented",
+          message: "historyImport.validateLink will be implemented in Phase 5 (Hardening and Provenance)",
         });
       }
       case WS_METHODS.historyImportListThreadLinks: {
-        return yield* new RouteRequestError({
-          message: "historyImport.listThreadLinks is not yet implemented",
-        });
+        const body = stripRequestTag(request.body);
+        const links = yield* externalLinkRepo.listByThreadId(body).pipe(
+          Effect.mapError(
+            (error) => new RouteRequestError({ message: error.message }),
+          ),
+        );
+        return links;
       }
 
       default: {

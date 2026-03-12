@@ -42,6 +42,12 @@ import { WorkspaceRepoScannerLive } from "./git/Layers/WorkspaceRepoScanner";
 import { BunPtyAdapterLive } from "./terminal/Layers/BunPTY";
 import { NodePtyAdapterLive } from "./terminal/Layers/NodePTY";
 import { AnalyticsService } from "./telemetry/Services/AnalyticsService";
+import { HistoryImportCatalogRepositoryLive } from "./persistence/Layers/HistoryImportCatalog";
+import { ThreadExternalLinkRepositoryLive } from "./persistence/Layers/ThreadExternalLinks";
+import { CodexHistoryScannerLive } from "./historyImport/Layers/CodexHistoryScanner";
+import { CodexRolloutParserLive } from "./historyImport/Layers/CodexRolloutParser";
+import { HistoryMaterializerLive } from "./historyImport/Layers/HistoryMaterializer";
+import { HistoryImportServiceLive } from "./historyImport/Layers/HistoryImportService";
 
 export function makeServerProviderLayer(): Layer.Layer<
   ProviderService,
@@ -143,6 +149,23 @@ export function makeServerRuntimeServicesLayer() {
     Layer.provideMerge(ProjectionPushSubscriptionRepositoryLive),
   );
 
+  // History import layers
+  // HistoryMaterializerLive needs OrchestrationEngineService (from orchestrationLayer)
+  // and ThreadExternalLinkRepository (from ThreadExternalLinkRepositoryLive)
+  const historyMaterializerLayer = HistoryMaterializerLive.pipe(
+    Layer.provideMerge(orchestrationLayer),
+    Layer.provideMerge(ThreadExternalLinkRepositoryLive),
+  );
+  // HistoryImportServiceLive needs CodexHistoryScannerService, CodexRolloutParserService,
+  // HistoryMaterializerService, HistoryImportCatalogRepository
+  // CodexHistoryScannerLive needs HistoryImportCatalogRepository (via HistoryImportCatalogRepositoryLive)
+  const historyImportLayers = HistoryImportServiceLive.pipe(
+    Layer.provideMerge(CodexHistoryScannerLive),
+    Layer.provideMerge(CodexRolloutParserLive),
+    Layer.provideMerge(historyMaterializerLayer),
+    Layer.provideMerge(HistoryImportCatalogRepositoryLive),
+  );
+
   return Layer.mergeAll(
     orchestrationReactorLayer,
     gitCoreLayer,
@@ -153,5 +176,6 @@ export function makeServerRuntimeServicesLayer() {
     ProjectionNotificationRepositoryLive,
     ProjectionDraftRepositoryLive,
     notificationLayer,
+    historyImportLayers,
   ).pipe(Layer.provideMerge(NodeServices.layer));
 }
