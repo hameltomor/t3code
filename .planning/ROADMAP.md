@@ -17,6 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Import UI** - 5-step import wizard in the web app consuming the server pipeline
 - [x] **Phase 4: Claude Code Import and Native Resume** - Second provider reader plus native Codex resume wiring
 - [x] **Phase 5: Hardening and Provenance** - Link validation, thread provenance card, notifications, partial-import surfacing
+- [ ] **Phase 5.1: Import Pipeline Bug Fixes** - INSERTED: Close gaps from v1.0 audit (projector providerThreadId, badge comparison, validation status schema)
 - [ ] **Phase 6: Gemini CLI Reader** - Deferred until format stabilizes upstream
 
 ## Phase Details
@@ -101,6 +102,20 @@ Plans:
 - [x] 05-01-PLAN.md -- Shared fingerprint utility, server-side validateLink implementation, contracts and WS wiring, ProvenanceCard component with Continue in Provider action and lazy background validation in ChatView
 - [x] 05-02-PLAN.md -- Sidebar source badges and All/Native/Imported filter toggle, partial-import detection via two-phase materializer status
 - [x] 05-03-PLAN.md -- NFR-6 performance instrumentation and verification (timing on list/preview/execute/validateLink, threshold documentation test)
+
+### Phase 5.1: Import Pipeline Bug Fixes (INSERTED — Gap Closure)
+**Goal**: Close all gaps identified by v1.0 milestone audit — fix providerThreadId propagation, badge comparison, and validation status schema
+**Depends on**: Phase 5
+**Requirements**: FR-3 (dedup fix), FR-7 (native resume fix), FR-8 (badge UX fix)
+**Gap Closure:** Closes GAP-1 (CRITICAL), GAP-2 (MEDIUM), and 1 tech debt item from v1.0-MILESTONE-AUDIT.md
+**Success Criteria** (what must be TRUE):
+  1. In-memory projector passes `providerThreadId` from `thread.created` event payload to `OrchestrationThread` — native resume and dedup work against in-memory read model
+  2. `SessionListStep.isAlreadyImported` correctly matches raw provider UUIDs against prefixed `providerThreadId` strings — "Already imported" badge appears for previously imported sessions
+  3. `HistoryImportValidationStatus` schema includes `"importing"` literal — contract and runtime are aligned
+**Plans**: 1 plan
+
+Plans:
+- [ ] 05.1-01-PLAN.md -- Fix projector providerThreadId propagation, badge comparison mismatch, and validation status schema gap
 
 ### Phase 6: Gemini CLI Reader (DEFERRED)
 **Goal**: Users can import Gemini CLI conversations with transcript-replay continuation mode
