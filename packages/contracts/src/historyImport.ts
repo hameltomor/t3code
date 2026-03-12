@@ -36,6 +36,7 @@ export const HistoryImportValidationStatus = Schema.Literals([
   "missing",
   "stale",
   "invalid",
+  "importing",
 ]);
 export type HistoryImportValidationStatus = typeof HistoryImportValidationStatus.Type;
 
