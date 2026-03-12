@@ -42,6 +42,8 @@ import { type DraftThreadEnvMode, useComposerDraftStore } from "../composerDraft
 import { selectThreadTerminalState, useTerminalStateStore } from "../terminalStateStore";
 import { toastManager } from "./ui/toast";
 import { RepoSummaryBadge } from "./RepoSwitcher";
+import { useImportWizardStore } from "./ImportWizard/ImportWizardTrigger";
+import { ImportWizard } from "./ImportWizard/ImportWizard";
 import {
   getDesktopUpdateActionError,
   getDesktopUpdateButtonTooltip,
@@ -270,6 +272,7 @@ export default function Sidebar() {
   const renamingCommittedRef = useRef(false);
   const renamingInputRef = useRef<HTMLInputElement | null>(null);
   const [desktopUpdateState, setDesktopUpdateState] = useState<DesktopUpdateState | null>(null);
+  const importWizardState = useImportWizardStore();
   const selectedThreadIds = useThreadSelectionStore((s) => s.selectedThreadIds);
   const toggleThreadSelection = useThreadSelectionStore((s) => s.toggleThread);
   const rangeSelectTo = useThreadSelectionStore((s) => s.rangeSelectTo);
@@ -877,9 +880,19 @@ export default function Sidebar() {
       const api = readNativeApi();
       if (!api) return;
       const clicked = await api.contextMenu.show(
-        [{ id: "delete", label: "Delete", destructive: true }],
+        [
+          { id: "import-conversations", label: "Import Conversations" },
+          { id: "delete", label: "Delete", destructive: true },
+        ],
         position,
       );
+      if (!clicked) return;
+
+      if (clicked === "import-conversations") {
+        useImportWizardStore.getState().open(projectId);
+        return;
+      }
+
       if (clicked !== "delete") return;
 
       const project = projects.find((entry) => entry.id === projectId);
@@ -1575,6 +1588,11 @@ export default function Sidebar() {
           </button>
         )}
       </SidebarFooter>
+      <ImportWizard
+        isOpen={importWizardState.isOpen}
+        onClose={importWizardState.close}
+        projectId={importWizardState.projectId}
+      />
     </>
   );
 }

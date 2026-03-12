@@ -358,6 +358,7 @@ function buildLocalDraftThread(
   return {
     id: threadId,
     codexThreadId: null,
+    providerThreadId: null,
     projectId: draftThread.projectId,
     title: "New thread",
     model: fallbackModel,
