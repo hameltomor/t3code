@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-03-12)
 
 **Core value:** Users can bring scattered code-agent conversation history into one unified place without losing context
-**Current focus:** Phase 4 - Claude Code Import and Native Resume
+**Current focus:** Phase 5 - Hardening and Provenance
 
 ## Current Position
 
-Phase: 4 of 6 (Claude Code Import and Native Resume) -- COMPLETE
-Plan: 2 of 2 in current phase
-Status: Phase Complete
-Last activity: 2026-03-12 -- Completed 04-02 Native resume wiring and provider-aware UI
+Phase: 5 of 6 (Hardening and Provenance)
+Plan: 2 of 3 in current phase
+Status: Executing
+Last activity: 2026-03-12 -- Completed 05-02 Source badges, filtering, and partial-import detection
 
-Progress: [████████░░] 80%
+Progress: [████████░░] 83%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 9
+- Total plans completed: 11
 - Average duration: 8min
-- Total execution time: 1.13 hours
+- Total execution time: 1.35 hours
 
 **By Phase:**
 
@@ -31,10 +31,11 @@ Progress: [████████░░] 80%
 | 02-codex-import-pipeline | 3/3 | 28min | 9min |
 | 03-import-ui | 2/2 | 11min | 6min |
 | 04-claude-code-import-and-native-resume | 2/2 | 13min | 7min |
+| 05-hardening-and-provenance | 2/3 | -- | -- |
 
 **Recent Trend:**
-- Last 5 plans: 03-01 (7min), 03-02 (4min), 04-01 (8min), 04-02 (5min)
-- Trend: stable ~6min
+- Last 5 plans: 03-02 (4min), 04-01 (8min), 04-02 (5min), 05-01 (~8min), 05-02 (11min)
+- Trend: stable ~7min
 
 *Updated after each plan completion*
 
@@ -76,6 +77,9 @@ Recent decisions affecting current work:
 - [04-02]: Used safeParseJson helper outside Effect.gen to avoid try/catch inside generators (TS15 rule)
 - [04-02]: Effect.catch (not Effect.catchAll) for error handling in this Effect version
 - [04-02]: ThreadExternalLinkRepositoryLive provided to both providerCommandReactorLayer and test/integration layers
+- [05-02]: Used base-ui ToggleGroup (array value API) instead of radix-style single-value API
+- [05-02]: Source detection via providerThreadId prefix avoids N+1 external link queries
+- [05-02]: Two-phase upsert (importing -> valid) enables partial-import detection without extra columns
 
 ### Pending Todos
 
@@ -88,5 +92,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-12
-Stopped at: Completed 04-02-PLAN.md (Native resume wiring and provider-aware UI)
-Resume file: .planning/phases/04-claude-code-import-and-native-resume/04-02-SUMMARY.md
+Stopped at: Completed 05-02-PLAN.md (Source badges, filtering, and partial-import detection)
+Resume file: .planning/phases/05-hardening-and-provenance/05-02-SUMMARY.md
