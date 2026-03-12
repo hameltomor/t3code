@@ -1,4 +1,8 @@
-import type { HistoryImportConversationSummary, HistoryImportLinkMode } from "@xbetools/contracts";
+import type {
+  HistoryImportConversationSummary,
+  HistoryImportLinkMode,
+  HistoryImportProvider,
+} from "@xbetools/contracts";
 import type { ImportOptions, WizardAction } from "../useImportWizardReducer";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "~/components/ui/select";
 
@@ -18,11 +22,34 @@ const INTERACTION_MODE_OPTIONS = [
   { value: "plan", label: "Plan", description: "Agent generates a plan before executing" },
 ] as const;
 
-const LINK_MODE_OPTIONS: { value: HistoryImportLinkMode; label: string; description: string }[] = [
-  { value: "native-resume", label: "Native Resume", description: "Resume the original provider session" },
-  { value: "transcript-replay", label: "Transcript Replay", description: "Continue from imported transcript" },
-  { value: "snapshot-only", label: "Snapshot Only", description: "Read-only snapshot, no continuation" },
+const LINK_MODE_OPTIONS: { value: HistoryImportLinkMode; label: string }[] = [
+  { value: "native-resume", label: "Native Resume" },
+  { value: "transcript-replay", label: "Transcript Replay" },
+  { value: "snapshot-only", label: "Snapshot Only" },
 ];
+
+function getLinkModeDescription(
+  linkMode: HistoryImportLinkMode,
+  providerName: HistoryImportProvider,
+): string {
+  if (linkMode === "native-resume") {
+    switch (providerName) {
+      case "codex":
+        return "Continue the original Codex thread through the Codex provider";
+      case "claudeCode":
+        return "Resume the Claude Code session through the Claude Code provider";
+      default:
+        return "Resume the original provider session";
+    }
+  }
+  if (linkMode === "transcript-replay") {
+    return "Start a new session pre-filled with the imported conversation transcript";
+  }
+  if (linkMode === "snapshot-only") {
+    return "Import as read-only history -- no continuation available";
+  }
+  return "";
+}
 
 export function ImportOptionsStep({ importOptions, selectedSession, dispatch }: ImportOptionsStepProps) {
   return (
@@ -130,7 +157,7 @@ export function ImportOptionsStep({ importOptions, selectedSession, dispatch }: 
           </SelectPopup>
         </Select>
         <p className="text-xs text-muted-foreground">
-          {LINK_MODE_OPTIONS.find((o) => o.value === importOptions.linkMode)?.description}
+          {getLinkModeDescription(importOptions.linkMode, selectedSession.providerName)}
         </p>
       </div>
     </div>
