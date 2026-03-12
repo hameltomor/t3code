@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-03-12)
 
 **Core value:** Users can bring scattered code-agent conversation history into one unified place without losing context
-**Current focus:** Phase 2 - Codex Import Pipeline
+**Current focus:** Phase 3 - Import UI
 
 ## Current Position
 
-Phase: 2 of 6 (Codex Import Pipeline) -- COMPLETE
-Plan: 3 of 3 in current phase
-Status: Phase Complete
-Last activity: 2026-03-12 -- Completed 02-03 Import materializer, WS handlers, and layer wiring
+Phase: 3 of 6 (Import UI)
+Plan: 1 of 2 in current phase
+Status: In Progress
+Last activity: 2026-03-12 -- Completed 03-01 Import wizard transport, React Query, and steps 1-2
 
-Progress: [████░░░░░░] 40%
+Progress: [██████░░░░] 50%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 5
+- Total plans completed: 6
 - Average duration: 9min
-- Total execution time: 0.73 hours
+- Total execution time: 0.85 hours
 
 **By Phase:**
 
@@ -29,9 +29,10 @@ Progress: [████░░░░░░] 40%
 |-------|-------|-------|----------|
 | 01-foundation-and-schema | 2/2 | 16min | 8min |
 | 02-codex-import-pipeline | 3/3 | 28min | 9min |
+| 03-import-ui | 1/2 | 7min | 7min |
 
 **Recent Trend:**
-- Last 5 plans: 01-02 (5min), 02-01 (8min), 02-02 (11min), 02-03 (9min)
+- Last 5 plans: 02-01 (8min), 02-02 (11min), 02-03 (9min), 03-01 (7min)
 - Trend: consistent
 
 *Updated after each plan completion*
@@ -62,6 +63,9 @@ Recent decisions affecting current work:
 - [02-03]: Deduplication via providerThreadId lookup on orchestration read model
 - [02-03]: TurnId safely decoded via Schema.decodeUnknownOption to avoid unsafe brand cast
 - [02-03]: Avoided try/catch inside Effect generators -- used Effect.catch/mapError instead
+- [03-01]: Added GO_TO_SESSION_LIST action to wizard reducer for explicit forward navigation
+- [03-01]: Used Zustand store (useImportWizardStore) for cross-component wizard triggering
+- [03-01]: providerThreadId added as required field on Thread interface to match server read model
 
 ### Pending Todos
 
@@ -75,5 +79,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-12
-Stopped at: Completed 02-03-PLAN.md (Import materializer, WS handlers, and layer wiring) -- Phase 02 COMPLETE
-Resume file: .planning/phases/02-codex-import-pipeline/02-03-SUMMARY.md
+Stopped at: Completed 03-01-PLAN.md (Import wizard transport, React Query, and steps 1-2)
+Resume file: .planning/phases/03-import-ui/03-01-SUMMARY.md
