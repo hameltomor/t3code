@@ -403,6 +403,16 @@ export function setSelectedRepoCwd(
   };
 }
 
+/**
+ * Optimistically inserts a minimal thread into the main store so the route
+ * guard sees it immediately after the draft is cleared. The next server
+ * snapshot sync will overwrite this placeholder with canonical data.
+ */
+export function promoteDraftThread(state: AppState, thread: Thread): AppState {
+  if (state.threads.some((t) => t.id === thread.id)) return state;
+  return { ...state, threads: [...state.threads, thread] };
+}
+
 export function setThreadBranch(
   state: AppState,
   threadId: ThreadId,
@@ -426,6 +436,7 @@ export function setThreadBranch(
 
 interface AppStore extends AppState {
   syncServerReadModel: (readModel: OrchestrationReadModel) => void;
+  promoteDraftThread: (thread: Thread) => void;
   markThreadVisited: (threadId: ThreadId, visitedAt?: string) => void;
   markThreadUnread: (threadId: ThreadId) => void;
   toggleProject: (projectId: Project["id"]) => void;
@@ -439,6 +450,7 @@ interface AppStore extends AppState {
 export const useStore = create<AppStore>((set) => ({
   ...readPersistedState(),
   syncServerReadModel: (readModel) => set((state) => syncServerReadModel(state, readModel)),
+  promoteDraftThread: (thread) => set((state) => promoteDraftThread(state, thread)),
   markThreadVisited: (threadId, visitedAt) =>
     set((state) => markThreadVisited(state, threadId, visitedAt)),
   markThreadUnread: (threadId) => set((state) => markThreadUnread(state, threadId)),

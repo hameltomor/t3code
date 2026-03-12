@@ -7,7 +7,7 @@ import {
 } from "@xbetools/contracts";
 import { describe, expect, it } from "vitest";
 
-import { markThreadUnread, syncServerReadModel, type AppState } from "./store";
+import { markThreadUnread, promoteDraftThread, syncServerReadModel, type AppState } from "./store";
 import { DEFAULT_INTERACTION_MODE, DEFAULT_RUNTIME_MODE, type Thread } from "./types";
 
 function makeThread(overrides: Partial<Thread> = {}): Thread {
@@ -138,6 +138,96 @@ describe("store pure functions", () => {
     const next = markThreadUnread(initialState, ThreadId.makeUnsafe("thread-1"));
 
     expect(next).toEqual(initialState);
+  });
+});
+
+describe("promoteDraftThread", () => {
+  it("inserts placeholder thread so route guard sees it after draft is cleared", () => {
+    const emptyState: AppState = {
+      projects: [],
+      threads: [],
+      threadsHydrated: true,
+      selectedRepoCwdByProject: {},
+    };
+    const draftThread = makeThread({
+      id: ThreadId.makeUnsafe("new-draft"),
+      title: "First message title",
+    });
+
+    const afterPromotion = promoteDraftThread(emptyState, draftThread);
+
+    // Thread must be present so `useThreadExists` returns true and
+    // the route guard at _chat.$threadId.tsx#L185 does not redirect to /.
+    expect(afterPromotion.threads).toHaveLength(1);
+    expect(afterPromotion.threads[0]?.id).toBe("new-draft");
+    expect(afterPromotion.threads[0]?.title).toBe("First message title");
+  });
+
+  it("is a no-op when the server sync already added the thread", () => {
+    const existingThread = makeThread({ id: ThreadId.makeUnsafe("existing") });
+    const state = makeState(existingThread);
+
+    const next = promoteDraftThread(state, makeThread({ id: ThreadId.makeUnsafe("existing") }));
+
+    expect(next).toBe(state);
+  });
+
+  it("preserves worktreeEntries for multi-repo workspaces", () => {
+    const emptyState: AppState = {
+      projects: [],
+      threads: [],
+      threadsHydrated: true,
+      selectedRepoCwdByProject: {},
+    };
+    const entries = [
+      { name: "repo-a", relativePath: "./repo-a", originalPath: "/repo-a", worktreePath: "/wt/repo-a", branch: "feature" },
+      { name: "repo-b", relativePath: "./repo-b", originalPath: "/repo-b", worktreePath: "/wt/repo-b", branch: "feature" },
+    ];
+    const draftThread = makeThread({
+      id: ThreadId.makeUnsafe("multi-repo"),
+      worktreeEntries: entries,
+    });
+
+    const next = promoteDraftThread(emptyState, draftThread);
+
+    expect(next.threads[0]?.worktreeEntries).toEqual(entries);
+  });
+
+  it("placeholder is overwritten by subsequent server snapshot sync", () => {
+    const emptyState: AppState = {
+      projects: [
+        {
+          id: ProjectId.makeUnsafe("project-1"),
+          name: "Project",
+          cwd: "/tmp/project",
+          model: "gpt-5-codex",
+          expanded: true,
+          scripts: [],
+          workspaceMembers: [],
+        },
+      ],
+      threads: [],
+      threadsHydrated: true,
+      selectedRepoCwdByProject: {},
+    };
+    const placeholder = makeThread({
+      id: ThreadId.makeUnsafe("thread-1"),
+      title: "Placeholder",
+    });
+
+    const afterPromotion = promoteDraftThread(emptyState, placeholder);
+    expect(afterPromotion.threads[0]?.title).toBe("Placeholder");
+
+    const readModel = makeReadModel(
+      makeReadModelThread({
+        id: ThreadId.makeUnsafe("thread-1"),
+        title: "Server title",
+      }),
+    );
+    const afterSync = syncServerReadModel(afterPromotion, readModel);
+
+    expect(afterSync.threads).toHaveLength(1);
+    expect(afterSync.threads[0]?.title).toBe("Server title");
   });
 });
 

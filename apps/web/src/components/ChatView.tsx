@@ -616,6 +616,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const serverThread = useThread(threadId);
   const markThreadVisited = useStore((store) => store.markThreadVisited);
   const syncServerReadModel = useStore((store) => store.syncServerReadModel);
+  const promoteDraftThread = useStore((store) => store.promoteDraftThread);
   const setStoreThreadError = useStore((store) => store.setError);
   const setStoreThreadBranch = useStore((store) => store.setThreadBranch);
   const setStoreProjectModel = useStore((store) => store.setProjectModel);
@@ -2750,7 +2751,34 @@ export default function ChatView({ threadId }: ChatViewProps) {
         createdAt: messageCreatedAt,
       });
       turnStartSucceeded = true;
-      if (isFirstMessage) {
+      if (isFirstMessage && createdServerThreadForLocalDraft) {
+        // Optimistically promote the draft into the main thread store so the
+        // route guard sees it immediately. The next server snapshot sync will
+        // overwrite this placeholder with canonical data.
+        promoteDraftThread({
+          id: threadIdForSend,
+          codexThreadId: null,
+          providerThreadId: null,
+          projectId: activeProject.id,
+          title,
+          model: threadCreateModel,
+          runtimeMode,
+          interactionMode,
+          session: null,
+          messages: [],
+          proposedPlans: [],
+          error: null,
+          createdAt: activeThread.createdAt,
+          latestTurn: null,
+          lastVisitedAt: activeThread.createdAt,
+          branch: nextThreadBranch,
+          worktreePath: nextThreadWorktreePath,
+          worktreeEntries: nextThreadWorktreeEntries,
+          turnDiffSummaries: [],
+          activities: [],
+        });
+        clearDraftThread(threadIdForSend);
+      } else if (isFirstMessage) {
         clearDraftThread(threadIdForSend);
       }
     })().catch(async (err: unknown) => {
