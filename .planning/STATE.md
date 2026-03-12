@@ -10,28 +10,28 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 ## Current Position
 
 Phase: 2 of 6 (Codex Import Pipeline)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: In Progress
-Last activity: 2026-03-12 -- Completed 02-01 Codex schemas and scanner
+Last activity: 2026-03-12 -- Completed 02-02 Streaming parser and import service
 
-Progress: [██░░░░░░░░] 25%
+Progress: [███░░░░░░░] 33%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 3
-- Average duration: 8min
-- Total execution time: 0.40 hours
+- Total plans completed: 4
+- Average duration: 9min
+- Total execution time: 0.58 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-foundation-and-schema | 2/2 | 16min | 8min |
-| 02-codex-import-pipeline | 1/3 | 8min | 8min |
+| 02-codex-import-pipeline | 2/3 | 19min | 10min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (11min), 01-02 (5min), 02-01 (8min)
+- Last 5 plans: 01-01 (11min), 01-02 (5min), 02-01 (8min), 02-02 (11min)
 - Trend: consistent
 
 *Updated after each plan completion*
@@ -54,6 +54,10 @@ Recent decisions affecting current work:
 - [02-01]: Dynamic SQLite loader with bun/node runtime detection for scoped read-only Codex DB connection
 - [02-01]: Fixed thread.create decider to pass providerThreadId to thread.created event payload
 - [02-01]: Schema tolerance via annotate({ parseOptions: { onExcessProperty: "ignore" } }) for Codex JSONL parsing
+- [02-02]: Acquired FileSystem at layer construction time to prevent context leaking into parse return type
+- [02-02]: Used Schema.decodeUnknownOption for tolerant per-line JSONL parsing (Option instead of throwing)
+- [02-02]: Catalog entries cast to branded HistoryImportConversationSummary since written by our own scan code
+- [02-02]: Used SqlSchema.findOneOption for getByCatalogId nullable single-row lookup
 
 ### Pending Todos
 
@@ -67,5 +71,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-12
-Stopped at: Completed 02-01-PLAN.md (Codex schemas and scanner)
-Resume file: .planning/phases/02-codex-import-pipeline/02-01-SUMMARY.md
+Stopped at: Completed 02-02-PLAN.md (Streaming parser and import service)
+Resume file: .planning/phases/02-codex-import-pipeline/02-02-SUMMARY.md
