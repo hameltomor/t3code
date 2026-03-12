@@ -77,6 +77,37 @@ const makeHistoryMaterializer = Effect.gen(function* () {
         createdAt: now as typeof import("@xbetools/contracts").IsoDateTime.Type,
       });
 
+      // ── 2.5. Mark import as in-progress for partial-import detection ──
+      yield* externalLinkRepo
+        .upsert({
+          threadId: threadId as string,
+          providerName: input.providerName,
+          linkMode: input.linkMode,
+          providerConversationId: input.providerConversationId,
+          providerSessionId: input.providerSessionId,
+          resumeAnchorId: input.resumeAnchorId,
+          sourcePath: input.sourcePath,
+          sourceFingerprint: input.sourceFingerprint,
+          originalWorkspaceRoot: input.originalWorkspaceRoot,
+          originalCwd: input.originalCwd,
+          validationStatus: "importing",
+          rawResumeSeedJson:
+            input.providerName === "claudeCode" && input.resumeAnchorId
+              ? JSON.stringify({ resumeSessionAt: input.resumeAnchorId })
+              : null,
+          importedAt: now,
+          lastValidatedAt: null,
+        } satisfies ThreadExternalLinkEntry)
+        .pipe(
+          Effect.mapError(
+            (cause) =>
+              new HistoryImportMaterializeError({
+                message: `Failed to persist initial ThreadExternalLink for thread ${threadId}`,
+                cause,
+              }),
+          ),
+        );
+
       // ── 3. Dispatch messages sequentially ──────────────────────
       let messageCount = 0;
       for (const msg of input.messages) {
