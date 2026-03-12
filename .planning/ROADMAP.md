@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Codex Import Pipeline** - End-to-end server pipeline for the hardest provider: scan, preview, import, dedupe
 - [x] **Phase 3: Import UI** - 5-step import wizard in the web app consuming the server pipeline
 - [x] **Phase 4: Claude Code Import and Native Resume** - Second provider reader plus native Codex resume wiring
-- [ ] **Phase 5: Hardening and Provenance** - Link validation, thread provenance card, notifications, partial-import surfacing
+- [x] **Phase 5: Hardening and Provenance** - Link validation, thread provenance card, notifications, partial-import surfacing
 - [ ] **Phase 6: Gemini CLI Reader** - Deferred until format stabilizes upstream
 
 ## Phase Details
@@ -98,9 +98,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 05-01-PLAN.md -- Shared fingerprint utility, server-side validateLink implementation, contracts and WS wiring, ProvenanceCard component with Continue in Provider action and lazy background validation in ChatView
-- [ ] 05-02-PLAN.md -- Sidebar source badges and All/Native/Imported filter toggle, partial-import detection via two-phase materializer status
-- [ ] 05-03-PLAN.md -- NFR-6 performance instrumentation and verification (timing on list/preview/execute/validateLink, threshold documentation test)
+- [x] 05-01-PLAN.md -- Shared fingerprint utility, server-side validateLink implementation, contracts and WS wiring, ProvenanceCard component with Continue in Provider action and lazy background validation in ChatView
+- [x] 05-02-PLAN.md -- Sidebar source badges and All/Native/Imported filter toggle, partial-import detection via two-phase materializer status
+- [x] 05-03-PLAN.md -- NFR-6 performance instrumentation and verification (timing on list/preview/execute/validateLink, threshold documentation test)
 
 ### Phase 6: Gemini CLI Reader (DEFERRED)
 **Goal**: Users can import Gemini CLI conversations with transcript-replay continuation mode
@@ -150,5 +150,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> (6 when unblocked)
 | 2. Codex Import Pipeline | 3/3 | Complete | 2026-03-12 |
 | 3. Import UI | 2/2 | Complete | 2026-03-12 |
 | 4. Claude Code Import and Native Resume | 2/2 | Complete | 2026-03-12 |
-| 5. Hardening and Provenance | 0/3 | Not started | - |
+| 5. Hardening and Provenance | 3/3 | Complete | 2026-03-12 |
 | 6. Gemini CLI Reader | 0/1 | Deferred | - |
