@@ -13,3 +13,4 @@ export * from "./editor";
 export * from "./project";
 export * from "./notification";
 export * from "./draft";
+export * from "./historyImport";
