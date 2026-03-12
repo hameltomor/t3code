@@ -46,6 +46,7 @@ const makeHistoryMaterializer = Effect.gen(function* () {
 
   const materialize: HistoryMaterializerShape["materialize"] = (input) =>
     Effect.gen(function* () {
+      const startTime = performance.now();
       // ── 1. Deduplication check ─────────────────────────────────
       const readModel = yield* engine.getReadModel();
       const existingThread = readModel.threads.find(
@@ -147,6 +148,9 @@ const makeHistoryMaterializer = Effect.gen(function* () {
         });
         activityCount++;
       }
+
+      const dispatchElapsed = performance.now() - startTime;
+      yield* Effect.logInfo(`HistoryMaterializer.materialize dispatch completed in ${dispatchElapsed.toFixed(0)}ms for ${messageCount} messages`);
 
       // ── 5. Persist ThreadExternalLink ──────────────────────────
       yield* externalLinkRepo

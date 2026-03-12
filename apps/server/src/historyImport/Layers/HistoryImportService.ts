@@ -86,6 +86,7 @@ const makeHistoryImportService = Effect.gen(function* () {
 
   const list: HistoryImportServiceShape["list"] = (input) =>
     Effect.gen(function* () {
+      const startTime = performance.now();
       const workspaceRoot = input.workspaceRoot;
 
       // If no provider filter, or filter is "codex", scan Codex
@@ -132,11 +133,14 @@ const makeHistoryImportService = Effect.gen(function* () {
       // The HistoryImportCatalogEntry schema uses plain String/Number while
       // HistoryImportConversationSummary uses branded types (TrimmedNonEmptyString, NonNegativeInt).
       // Since our scan code guarantees non-empty strings and non-negative ints, the cast is sound.
+      const elapsed = performance.now() - startTime;
+      yield* Effect.logInfo(`HistoryImportService.list completed in ${elapsed.toFixed(0)}ms`);
       return entries as unknown as ReadonlyArray<HistoryImportConversationSummary>;
     }).pipe(Effect.withSpan("HistoryImportService.list"));
 
   const preview: HistoryImportServiceShape["preview"] = (input) =>
     Effect.gen(function* () {
+      const startTime = performance.now();
       const maxMessages = input.maxMessages ?? 50;
 
       // Look up catalog entry by catalogId
@@ -215,11 +219,14 @@ const makeHistoryImportService = Effect.gen(function* () {
         warnings: parseResult.warnings as HistoryImportConversationPreview["warnings"],
       } as HistoryImportConversationPreview;
 
+      const elapsed = performance.now() - startTime;
+      yield* Effect.logInfo(`HistoryImportService.preview completed in ${elapsed.toFixed(0)}ms`);
       return result;
     }).pipe(Effect.withSpan("HistoryImportService.preview"));
 
   const execute: HistoryImportServiceShape["execute"] = (input) =>
     Effect.gen(function* () {
+      const startTime = performance.now();
       // Look up catalog entry
       const catalogEntry = yield* catalogRepo
         .getByCatalogId({ catalogId: input.catalogId })
@@ -265,6 +272,8 @@ const makeHistoryImportService = Effect.gen(function* () {
           resumeAnchorId: ccResult.lastAssistantUuid,
         });
 
+        const elapsed = performance.now() - startTime;
+        yield* Effect.logInfo(`HistoryImportService.execute completed in ${elapsed.toFixed(0)}ms`);
         return result;
       }
 
@@ -291,11 +300,14 @@ const makeHistoryImportService = Effect.gen(function* () {
         resumeAnchorId: catalogEntry.resumeAnchorId,
       });
 
+      const elapsed = performance.now() - startTime;
+      yield* Effect.logInfo(`HistoryImportService.execute completed in ${elapsed.toFixed(0)}ms`);
       return result;
     }).pipe(Effect.withSpan("HistoryImportService.execute"));
 
   const validateLink: HistoryImportServiceShape["validateLink"] = (input) =>
     Effect.gen(function* () {
+      const startTime = performance.now();
       const now = new Date().toISOString() as typeof IsoDateTime.Type;
 
       // Look up external link for thread
@@ -343,6 +355,8 @@ const makeHistoryImportService = Effect.gen(function* () {
             ),
           );
 
+        const elapsed = performance.now() - startTime;
+        yield* Effect.logInfo(`HistoryImportService.validateLink completed in ${elapsed.toFixed(0)}ms`);
         return {
           threadId: input.threadId,
           validationStatus: "missing",
@@ -379,6 +393,8 @@ const makeHistoryImportService = Effect.gen(function* () {
           ),
         );
 
+      const elapsed = performance.now() - startTime;
+      yield* Effect.logInfo(`HistoryImportService.validateLink completed in ${elapsed.toFixed(0)}ms`);
       return {
         threadId: input.threadId,
         validationStatus,
