@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Import UI** - 5-step import wizard in the web app consuming the server pipeline
 - [x] **Phase 4: Claude Code Import and Native Resume** - Second provider reader plus native Codex resume wiring
 - [x] **Phase 5: Hardening and Provenance** - Link validation, thread provenance card, notifications, partial-import surfacing
-- [ ] **Phase 5.1: Import Pipeline Bug Fixes** - INSERTED: Close gaps from v1.0 audit (projector providerThreadId, badge comparison, validation status schema)
+- [x] **Phase 5.1: Import Pipeline Bug Fixes** - INSERTED: Close gaps from v1.0 audit (projector providerThreadId, badge comparison, validation status schema)
 - [ ] **Phase 6: Gemini CLI Reader** - Deferred until format stabilizes upstream
 
 ## Phase Details
@@ -115,7 +115,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 05.1-01-PLAN.md -- Fix projector providerThreadId propagation, badge comparison mismatch, and validation status schema gap
+- [x] 05.1-01-PLAN.md -- Fix projector providerThreadId propagation, badge comparison mismatch, and validation status schema gap
 
 ### Phase 6: Gemini CLI Reader (DEFERRED)
 **Goal**: Users can import Gemini CLI conversations with transcript-replay continuation mode
@@ -166,4 +166,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> (6 when unblocked)
 | 3. Import UI | 2/2 | Complete | 2026-03-12 |
 | 4. Claude Code Import and Native Resume | 2/2 | Complete | 2026-03-12 |
 | 5. Hardening and Provenance | 3/3 | Complete | 2026-03-12 |
+| 5.1. Import Pipeline Bug Fixes | 1/1 | Complete | 2026-03-12 |
 | 6. Gemini CLI Reader | 0/1 | Deferred | - |
