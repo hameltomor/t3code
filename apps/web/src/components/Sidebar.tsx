@@ -79,6 +79,10 @@ import {
 import { isNonEmpty as isNonEmptyString } from "effect/String";
 import { useThreadSearch, getProjectThreadsForSearch } from "../hooks/useThreadSearch";
 import { NotificationBell } from "./NotificationCenter";
+import { ToggleGroup, Toggle as ToggleGroupItem } from "./ui/toggle-group";
+import { Badge } from "./ui/badge";
+
+type SourceFilter = "all" | "native" | "imported";
 
 const EMPTY_KEYBINDINGS: ResolvedKeybindingsConfig = [];
 const THREAD_PREVIEW_LIMIT = 6;
@@ -280,6 +284,13 @@ export default function Sidebar() {
   const removeFromSelection = useThreadSelectionStore((s) => s.removeFromSelection);
   const setSelectionAnchor = useThreadSelectionStore((s) => s.setAnchor);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>(() => {
+    if (typeof window === "undefined") return "all";
+    return (localStorage.getItem("xbecode:source-filter") as SourceFilter) ?? "all";
+  });
+  useEffect(() => {
+    localStorage.setItem("xbecode:source-filter", sourceFilter);
+  }, [sourceFilter]);
   const { query: searchQuery, setQuery: setSearchQuery, filteredThreadIdSet, isSearching } =
     useThreadSearch(threads, projects);
   const pendingApprovalByThreadId = useMemo(() => {
@@ -1231,17 +1242,39 @@ export default function Sidebar() {
               </button>
             )}
           </div>
+          <div className="flex items-center gap-1 pt-1">
+            <ToggleGroup
+              value={[sourceFilter]}
+              onValueChange={(values) => {
+                const next = values[0] as SourceFilter | undefined;
+                if (next) setSourceFilter(next);
+              }}
+              size="xs"
+              variant="outline"
+              className="h-6"
+            >
+              <ToggleGroupItem value="all" className="h-6 px-2 text-xs">All</ToggleGroupItem>
+              <ToggleGroupItem value="native" className="h-6 px-2 text-xs">Native</ToggleGroupItem>
+              <ToggleGroupItem value="imported" className="h-6 px-2 text-xs">Imported</ToggleGroupItem>
+            </ToggleGroup>
+          </div>
         </div>
 
         <SidebarGroup className="px-3 md:px-2 py-2">
           <SidebarMenu>
             {sortedProjects.map((project) => {
-              const projectThreads = getProjectThreadsForSearch(
+              const searchFilteredThreads = getProjectThreadsForSearch(
                 threads,
                 project.id,
                 filteredThreadIdSet,
               );
-              if (isSearching && projectThreads.length === 0) return null;
+              const projectThreads =
+                sourceFilter === "all"
+                  ? searchFilteredThreads
+                  : sourceFilter === "imported"
+                    ? searchFilteredThreads.filter((t) => t.providerThreadId !== null)
+                    : searchFilteredThreads.filter((t) => t.providerThreadId === null);
+              if ((isSearching || sourceFilter !== "all") && projectThreads.length === 0) return null;
               const isThreadListExpanded =
                 isSearching || expandedThreadListsByProject.has(project.id);
               const hasHiddenThreads = !isSearching && projectThreads.length > THREAD_PREVIEW_LIMIT;
@@ -1456,6 +1489,11 @@ export default function Sidebar() {
                                   )}
                                 </div>
                                 <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                                  {thread.providerThreadId && (
+                                    <Badge variant="outline" size="sm" className="h-4 shrink-0 px-1 text-[10px] leading-none">
+                                      {thread.providerThreadId.startsWith("codex:") ? "Codex" : "CC"}
+                                    </Badge>
+                                  )}
                                   {terminalStatus && (
                                     <span
                                       role="img"
