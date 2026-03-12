@@ -44,6 +44,8 @@ import { NodePtyAdapterLive } from "./terminal/Layers/NodePTY";
 import { AnalyticsService } from "./telemetry/Services/AnalyticsService";
 import { HistoryImportCatalogRepositoryLive } from "./persistence/Layers/HistoryImportCatalog";
 import { ThreadExternalLinkRepositoryLive } from "./persistence/Layers/ThreadExternalLinks";
+import { ClaudeCodeHistoryScannerLive } from "./historyImport/Layers/ClaudeCodeHistoryScanner";
+import { ClaudeCodeSessionParserLive } from "./historyImport/Layers/ClaudeCodeSessionParser";
 import { CodexHistoryScannerLive } from "./historyImport/Layers/CodexHistoryScanner";
 import { CodexRolloutParserLive } from "./historyImport/Layers/CodexRolloutParser";
 import { HistoryMaterializerLive } from "./historyImport/Layers/HistoryMaterializer";
@@ -157,11 +159,14 @@ export function makeServerRuntimeServicesLayer() {
     Layer.provideMerge(ThreadExternalLinkRepositoryLive),
   );
   // HistoryImportServiceLive needs CodexHistoryScannerService, CodexRolloutParserService,
+  // ClaudeCodeHistoryScannerService, ClaudeCodeSessionParserService,
   // HistoryMaterializerService, HistoryImportCatalogRepository
-  // CodexHistoryScannerLive needs HistoryImportCatalogRepository (via HistoryImportCatalogRepositoryLive)
+  // Both scanner layers need HistoryImportCatalogRepository (via HistoryImportCatalogRepositoryLive)
   const historyImportLayers = HistoryImportServiceLive.pipe(
     Layer.provideMerge(CodexHistoryScannerLive),
     Layer.provideMerge(CodexRolloutParserLive),
+    Layer.provideMerge(ClaudeCodeHistoryScannerLive),
+    Layer.provideMerge(ClaudeCodeSessionParserLive),
     Layer.provideMerge(historyMaterializerLayer),
     Layer.provideMerge(HistoryImportCatalogRepositoryLive),
   );

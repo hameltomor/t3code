@@ -131,7 +131,10 @@ const makeHistoryMaterializer = Effect.gen(function* () {
           originalWorkspaceRoot: input.originalWorkspaceRoot,
           originalCwd: input.originalCwd,
           validationStatus: "valid",
-          rawResumeSeedJson: null,
+          rawResumeSeedJson:
+            input.providerName === "claudeCode" && input.resumeAnchorId
+              ? JSON.stringify({ resumeSessionAt: input.resumeAnchorId })
+              : null,
           importedAt: now,
           lastValidatedAt: now,
         } satisfies ThreadExternalLinkEntry)
