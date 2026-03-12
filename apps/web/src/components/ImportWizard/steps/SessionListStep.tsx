@@ -24,10 +24,15 @@ function isAlreadyImported(
   session: HistoryImportConversationSummary,
   providerThreadIds: Set<string>,
 ): boolean {
+  const prefixedConversation = session.providerConversationId
+    ? `${session.providerName}:${session.providerConversationId}`
+    : null;
+  const prefixedSession = session.providerSessionId
+    ? `${session.providerName}:${session.providerSessionId}`
+    : null;
   return (
-    (session.providerConversationId != null &&
-      providerThreadIds.has(session.providerConversationId)) ||
-    (session.providerSessionId != null && providerThreadIds.has(session.providerSessionId))
+    (prefixedConversation != null && providerThreadIds.has(prefixedConversation)) ||
+    (prefixedSession != null && providerThreadIds.has(prefixedSession))
   );
 }
 
