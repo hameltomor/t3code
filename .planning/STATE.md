@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 ## Current Position
 
 Phase: 5 of 6 (Hardening and Provenance)
-Plan: 2 of 3 in current phase
+Plan: 1 of 3 in current phase
 Status: Executing
-Last activity: 2026-03-12 -- Completed 05-02 Source badges, filtering, and partial-import detection
+Last activity: 2026-03-12 -- Completed 05-01 Link validation and thread provenance card
 
 Progress: [████████░░] 83%
 
@@ -31,11 +31,11 @@ Progress: [████████░░] 83%
 | 02-codex-import-pipeline | 3/3 | 28min | 9min |
 | 03-import-ui | 2/2 | 11min | 6min |
 | 04-claude-code-import-and-native-resume | 2/2 | 13min | 7min |
-| 05-hardening-and-provenance | 2/3 | -- | -- |
+| 05-hardening-and-provenance | 1/3 | 13min | 13min |
 
 **Recent Trend:**
-- Last 5 plans: 03-02 (4min), 04-01 (8min), 04-02 (5min), 05-01 (~8min), 05-02 (11min)
-- Trend: stable ~7min
+- Last 5 plans: 03-02 (4min), 04-01 (8min), 04-02 (5min), 05-01 (13min)
+- Trend: stable ~8min
 
 *Updated after each plan completion*
 
@@ -77,9 +77,9 @@ Recent decisions affecting current work:
 - [04-02]: Used safeParseJson helper outside Effect.gen to avoid try/catch inside generators (TS15 rule)
 - [04-02]: Effect.catch (not Effect.catchAll) for error handling in this Effect version
 - [04-02]: ThreadExternalLinkRepositoryLive provided to both providerCommandReactorLayer and test/integration layers
-- [05-02]: Used base-ui ToggleGroup (array value API) instead of radix-style single-value API
-- [05-02]: Source detection via providerThreadId prefix avoids N+1 external link queries
-- [05-02]: Two-phase upsert (importing -> valid) enables partial-import detection without extra columns
+- [05-01]: Cast ThreadId at React Query boundary using 'as ThreadId' for branded type compatibility
+- [05-01]: Used exactOptionalPropertyTypes-compliant union type for optional onContinueInProvider prop
+- [05-01]: Reused scheduleComposerFocus for Continue in Provider button instead of raw querySelector
 
 ### Pending Todos
 
@@ -92,5 +92,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-12
-Stopped at: Completed 05-02-PLAN.md (Source badges, filtering, and partial-import detection)
-Resume file: .planning/phases/05-hardening-and-provenance/05-02-SUMMARY.md
+Stopped at: Completed 05-01-PLAN.md (Link validation and thread provenance card)
+Resume file: .planning/phases/05-hardening-and-provenance/05-01-SUMMARY.md
