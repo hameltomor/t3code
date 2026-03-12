@@ -47,12 +47,12 @@ Plans:
   3. `historyImport.execute` creates a normal XBE thread with the imported transcript projected through `OrchestrationEngine.dispatch`, and persists a `ThreadExternalLink` row
   4. Re-importing the same Codex session is rejected with a reference to the existing thread (deduplication via `providerKind + providerThreadId`)
   5. Context compaction events are handled correctly: pre-compaction messages are discarded and replaced by the compaction summary
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 02-01: Codex history scanner and JSONL parser
-- [ ] 02-02: Import service orchestration and materialization
-- [ ] 02-03: WS method implementation and integration tests
+- [ ] 02-01-PLAN.md -- Codex rollout schemas, import orchestration commands (thread.message.import, thread.activity.import), and CodexHistoryScanner
+- [ ] 02-02-PLAN.md -- Streaming CodexRolloutParser with compaction handling, and HistoryImportService with list/preview methods
+- [ ] 02-03-PLAN.md -- HistoryMaterializer, HistoryImportService.execute, WS method handlers, and serverLayers wiring
 
 ### Phase 3: Import UI
 **Goal**: Users can open the import wizard from the sidebar or empty-thread state, browse discovered sessions, preview transcripts, configure import options, and navigate to the created thread
