@@ -5,33 +5,34 @@
 See: .planning/PROJECT.md (updated 2026-03-12)
 
 **Core value:** Users can bring scattered code-agent conversation history into one unified place without losing context
-**Current focus:** Phase 1 - Foundation and Schema
+**Current focus:** Phase 2 - Codex Import Pipeline
 
 ## Current Position
 
-Phase: 1 of 6 (Foundation and Schema) -- COMPLETE
-Plan: 2 of 2 in current phase
-Status: Phase Complete
-Last activity: 2026-03-12 -- Completed 01-02 database migrations and repository layers
+Phase: 2 of 6 (Codex Import Pipeline)
+Plan: 1 of 3 in current phase
+Status: In Progress
+Last activity: 2026-03-12 -- Completed 02-01 Codex schemas and scanner
 
-Progress: [██░░░░░░░░] 16%
+Progress: [██░░░░░░░░] 25%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 2
+- Total plans completed: 3
 - Average duration: 8min
-- Total execution time: 0.27 hours
+- Total execution time: 0.40 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-foundation-and-schema | 2/2 | 16min | 8min |
+| 02-codex-import-pipeline | 1/3 | 8min | 8min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (11min), 01-02 (5min)
-- Trend: accelerating
+- Last 5 plans: 01-01 (11min), 01-02 (5min), 02-01 (8min)
+- Trend: consistent
 
 *Updated after each plan completion*
 
@@ -49,6 +50,10 @@ Recent decisions affecting current work:
 - [01-01]: providerThreadId hardcoded to null in ProjectionSnapshotQuery until DB migration is added
 - [01-02]: Used two-query dispatch pattern for optional providerName filter in HistoryImportCatalogRepository.listByWorkspace
 - [01-02]: Replaced hardcoded providerThreadId: null in ProjectionSnapshotQuery with row.providerThreadId now that DB column exists
+- [02-01]: Import commands reuse existing event types (thread.message-sent, thread.activity-appended) without triggering provider lifecycle
+- [02-01]: Dynamic SQLite loader with bun/node runtime detection for scoped read-only Codex DB connection
+- [02-01]: Fixed thread.create decider to pass providerThreadId to thread.created event payload
+- [02-01]: Schema tolerance via annotate({ parseOptions: { onExcessProperty: "ignore" } }) for Codex JSONL parsing
 
 ### Pending Todos
 
@@ -62,5 +67,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-12
-Stopped at: Completed 01-02-PLAN.md (database migrations and repository layers) -- Phase 1 complete
-Resume file: .planning/phases/01-foundation-and-schema/01-02-SUMMARY.md
+Stopped at: Completed 02-01-PLAN.md (Codex schemas and scanner)
+Resume file: .planning/phases/02-codex-import-pipeline/02-01-SUMMARY.md
