@@ -79,11 +79,11 @@ Plans:
   2. Claude Code sessions with `thinking` blocks and `tool_use` blocks are correctly mapped to activities (not message text)
   3. An imported Codex thread with `linkMode = native-resume` can be continued through XBE by passing the stored `providerThreadId` to the Codex `thread/resume` JSON-RPC call
   4. The UI clearly distinguishes "Resume original session" from "Continue from imported transcript" based on link mode
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 04-01: Claude Code history scanner and parser
-- [ ] 04-02: Native Codex resume wiring and link mode UX
+- [ ] 04-01-PLAN.md -- Claude Code JSONL schemas, history scanner with sessions-index.json + header fallback, streaming session parser, HistoryImportService integration, serverLayers wiring
+- [ ] 04-02-PLAN.md -- Native resume via ThreadExternalLink lookup in ProviderCommandReactor, provider-aware link mode descriptions in import wizard UI
 
 ### Phase 5: Hardening and Provenance
 **Goal**: Imported threads display their origin, link validation runs lazily on thread open, and the system surfaces partial imports and stale links without destroying data
