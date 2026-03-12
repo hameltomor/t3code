@@ -117,6 +117,7 @@ export function makeServerRuntimeServicesLayer() {
     Layer.provideMerge(runtimeServicesLayer),
     Layer.provideMerge(gitCoreLayer),
     Layer.provideMerge(textGenerationLayer),
+    Layer.provideMerge(ThreadExternalLinkRepositoryLive),
   );
   const checkpointReactorLayer = CheckpointReactorLive.pipe(
     Layer.provideMerge(runtimeServicesLayer),

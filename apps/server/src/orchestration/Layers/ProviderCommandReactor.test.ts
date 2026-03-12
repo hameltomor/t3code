@@ -28,6 +28,7 @@ import {
 } from "../../provider/Services/ProviderService.ts";
 import { GitCore, type GitCoreShape } from "../../git/Services/GitCore.ts";
 import { TextGeneration, type TextGenerationShape } from "../../git/Services/TextGeneration.ts";
+import { ThreadExternalLinkRepositoryLive } from "../../persistence/Layers/ThreadExternalLinks.ts";
 import { OrchestrationEngineLive } from "./OrchestrationEngine.ts";
 import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
 import { ProviderCommandReactorLive } from "./ProviderCommandReactor.ts";
@@ -203,6 +204,9 @@ describe("ProviderCommandReactor", () => {
       Layer.provideMerge(Layer.succeed(GitCore, { renameBranch } as unknown as GitCoreShape)),
       Layer.provideMerge(
         Layer.succeed(TextGeneration, { generateBranchName } as unknown as TextGenerationShape),
+      ),
+      Layer.provideMerge(
+        ThreadExternalLinkRepositoryLive.pipe(Layer.provide(SqlitePersistenceMemory)),
       ),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), stateDir)),
       Layer.provideMerge(NodeServices.layer),

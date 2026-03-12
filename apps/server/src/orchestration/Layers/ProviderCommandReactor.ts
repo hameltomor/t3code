@@ -19,6 +19,7 @@ import { GitCore } from "../../git/Services/GitCore.ts";
 import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
 import { TextGeneration } from "../../git/Services/TextGeneration.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
+import { ThreadExternalLinkRepository } from "../../persistence/Services/ThreadExternalLinks.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import {
   ProviderCommandReactor,
@@ -126,11 +127,20 @@ function buildGeneratedWorktreeBranchName(raw: string): string {
   return `${WORKTREE_BRANCH_PREFIX}/${safeFragment}`;
 }
 
+function safeParseJson(json: string): unknown | undefined {
+  try {
+    return JSON.parse(json) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
 const make = Effect.gen(function* () {
   const orchestrationEngine = yield* OrchestrationEngineService;
   const providerService = yield* ProviderService;
   const git = yield* GitCore;
   const textGeneration = yield* TextGeneration;
+  const externalLinkRepo = yield* ThreadExternalLinkRepository;
   const handledTurnStartKeys = yield* Cache.make<string, true>({
     capacity: HANDLED_TURN_START_KEY_MAX,
     timeToLive: HANDLED_TURN_START_KEY_TTL,
@@ -314,9 +324,56 @@ const make = Effect.gen(function* () {
       return restartedSession.threadId;
     }
 
-    const startedSession = yield* startProviderSession(
-      options?.provider !== undefined ? { provider: options.provider } : undefined,
-    );
+    // ── Check for imported thread with native resume capability ──
+    let initialResumeCursor: unknown = undefined;
+    let importedProvider: ProviderKind | undefined = undefined;
+
+    if (thread.providerThreadId) {
+      const externalLink = yield* externalLinkRepo
+        .getByThreadId({ threadId: thread.id as string })
+        .pipe(
+          Effect.map(Option.getOrUndefined),
+          Effect.catch(() => Effect.succeed(undefined)),
+        );
+
+      if (externalLink && externalLink.linkMode === "native-resume") {
+        if (externalLink.providerName === "codex" && externalLink.providerSessionId) {
+          // Codex: pass the raw Codex thread UUID for thread/resume
+          // Use providerSessionId (raw UUID), NOT thread.providerThreadId (which is "codex:<uuid>")
+          initialResumeCursor = { threadId: externalLink.providerSessionId };
+          importedProvider = "codex";
+        } else if (externalLink.providerName === "claudeCode" && externalLink.providerSessionId) {
+          // Claude Code: pass sessionId + last assistant UUID for SDK resume
+          const resumeSeed = externalLink.rawResumeSeedJson
+            ? (safeParseJson(externalLink.rawResumeSeedJson) as
+                | { resumeSessionAt?: string }
+                | undefined)
+            : undefined;
+          initialResumeCursor = {
+            resume: externalLink.providerSessionId,
+            ...(resumeSeed?.resumeSessionAt
+              ? { resumeSessionAt: resumeSeed.resumeSessionAt }
+              : {}),
+          };
+          importedProvider = "claudeCode";
+        }
+
+        if (initialResumeCursor) {
+          yield* Effect.logInfo("provider command reactor resuming imported thread", {
+            threadId: thread.id,
+            providerName: externalLink.providerName,
+            linkMode: externalLink.linkMode,
+            hasResumeCursor: true,
+          });
+        }
+      }
+    }
+
+    const startedSession = yield* startProviderSession({
+      ...(initialResumeCursor !== undefined ? { resumeCursor: initialResumeCursor } : {}),
+      ...(importedProvider !== undefined ? { provider: importedProvider } : {}),
+      ...(options?.provider !== undefined ? { provider: options.provider } : {}),
+    });
     yield* bindSessionToThread(startedSession);
     return startedSession.threadId;
   });
