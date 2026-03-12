@@ -9,19 +9,19 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 
 ## Current Position
 
-Phase: 4 of 6 (Claude Code Import and Native Resume)
-Plan: 1 of 2 in current phase
-Status: In Progress
-Last activity: 2026-03-12 -- Completed 04-01 Claude Code scanner, parser, and import routing
+Phase: 4 of 6 (Claude Code Import and Native Resume) -- COMPLETE
+Plan: 2 of 2 in current phase
+Status: Phase Complete
+Last activity: 2026-03-12 -- Completed 04-02 Native resume wiring and provider-aware UI
 
-Progress: [████████░░] 75%
+Progress: [████████░░] 80%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 8
+- Total plans completed: 9
 - Average duration: 8min
-- Total execution time: 1.05 hours
+- Total execution time: 1.13 hours
 
 **By Phase:**
 
@@ -30,11 +30,11 @@ Progress: [████████░░] 75%
 | 01-foundation-and-schema | 2/2 | 16min | 8min |
 | 02-codex-import-pipeline | 3/3 | 28min | 9min |
 | 03-import-ui | 2/2 | 11min | 6min |
-| 04-claude-code-import-and-native-resume | 1/2 | 8min | 8min |
+| 04-claude-code-import-and-native-resume | 2/2 | 13min | 7min |
 
 **Recent Trend:**
-- Last 5 plans: 02-03 (9min), 03-01 (7min), 03-02 (4min), 04-01 (8min)
-- Trend: stable ~7min
+- Last 5 plans: 03-01 (7min), 03-02 (4min), 04-01 (8min), 04-02 (5min)
+- Trend: stable ~6min
 
 *Updated after each plan completion*
 
@@ -73,6 +73,9 @@ Recent decisions affecting current work:
 - [04-01]: Schema.optional with Schema.withDecodingDefault for boolean defaults instead of Schema.optionalWith
 - [04-01]: Provider-based routing in HistoryImportService using if/else on catalogEntry.providerName
 - [04-01]: rawResumeSeedJson conditionally set for claudeCode with resumeSessionAt from lastAssistantUuid
+- [04-02]: Used safeParseJson helper outside Effect.gen to avoid try/catch inside generators (TS15 rule)
+- [04-02]: Effect.catch (not Effect.catchAll) for error handling in this Effect version
+- [04-02]: ThreadExternalLinkRepositoryLive provided to both providerCommandReactorLayer and test/integration layers
 
 ### Pending Todos
 
@@ -85,5 +88,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-12
-Stopped at: Completed 04-01-PLAN.md (Claude Code scanner, parser, and multi-provider import routing)
-Resume file: .planning/phases/04-claude-code-import-and-native-resume/04-01-SUMMARY.md
+Stopped at: Completed 04-02-PLAN.md (Native resume wiring and provider-aware UI)
+Resume file: .planning/phases/04-claude-code-import-and-native-resume/04-02-SUMMARY.md
