@@ -120,6 +120,7 @@ import {
 import { basenameOfPath, getVscodeIconUrlForEntry } from "../vscode-icons";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useTheme } from "../hooks/useTheme";
+import { useThreadExternalLink } from "../hooks/useThreadExternalLink";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import {
   buildTurnDiffTree,
@@ -136,6 +137,7 @@ import {
   shortcutLabelForCommand,
 } from "../keybindings";
 import ChatMarkdown from "./ChatMarkdown";
+import { ProvenanceCard } from "./ProvenanceCard";
 import { shouldUseCompactComposerFooter } from "./composerFooterLayout";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "./ui/alert";
@@ -614,6 +616,8 @@ interface ChatViewProps {
 export default function ChatView({ threadId }: ChatViewProps) {
   const { open: sidebarOpen } = useSidebar();
   const serverThread = useThread(threadId);
+  const isImported = serverThread?.providerThreadId !== null && serverThread?.providerThreadId !== undefined;
+  const { externalLink, isValidating, validate: validateExternalLink } = useThreadExternalLink(threadId, isImported);
   const markThreadVisited = useStore((store) => store.markThreadVisited);
   const syncServerReadModel = useStore((store) => store.syncServerReadModel);
   const promoteDraftThread = useStore((store) => store.promoteDraftThread);
@@ -1401,6 +1405,12 @@ export default function ChatView({ threadId }: ChatViewProps) {
       focusComposer();
     });
   }, [focusComposer]);
+  const handleContinueInProvider = useCallback(() => {
+    // Focus the chat input so user can type their next message.
+    // The native resume flow is automatic -- ProviderCommandReactor detects
+    // the ThreadExternalLink and constructs the resume cursor when a message is sent.
+    scheduleComposerFocus();
+  }, [scheduleComposerFocus]);
   const setTerminalOpen = useCallback(
     (open: boolean) => {
       if (!activeThreadId) return;
@@ -3651,6 +3661,18 @@ export default function ChatView({ threadId }: ChatViewProps) {
           }
         />
       </header>
+
+      {/* Provenance card for imported threads */}
+      {externalLink && (
+        <ProvenanceCard
+          externalLink={externalLink}
+          onValidate={validateExternalLink}
+          isValidating={isValidating}
+          onContinueInProvider={
+            externalLink.linkMode === "native-resume" ? handleContinueInProvider : undefined
+          }
+        />
+      )}
 
       {/* Error banner */}
       <ProviderHealthBanner status={activeProviderStatus} />
