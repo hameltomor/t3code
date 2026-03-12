@@ -31,11 +31,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Migrations 017 (`history_import_catalog`) and 018 (`thread_external_links`) run successfully and the tables exist in the XBE SQLite database
   4. `HistoryImportCatalogRepository` and `ThreadExternalLinkRepository` Effect services can upsert, query, and delete rows against their respective tables
   5. WS method stubs for `historyImport.list`, `historyImport.preview`, `historyImport.execute`, `historyImport.validateLink`, and `historyImport.listThreadLinks` are routed in `wsServer.ts` (returning not-implemented errors is acceptable)
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 01-01: Contracts and schema definitions
-- [ ] 01-02: Database migrations and repository services
+- [ ] 01-01-PLAN.md -- Contracts and schema definitions (historyImport.ts, providerThreadId on orchestration, WS method/channel registration)
+- [ ] 01-02-PLAN.md -- Database migrations, repository services, projection pipeline wiring, and WS method stubs
 
 ### Phase 2: Codex Import Pipeline
 **Goal**: Users can discover, preview, and import Codex CLI conversations into XBE threads through the server API (no UI yet -- testable via WS calls)
