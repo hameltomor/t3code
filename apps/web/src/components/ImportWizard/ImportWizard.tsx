@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useMemo } from "react";
+import { LoaderIcon } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import {
   Dialog,
   DialogPopup,
@@ -9,12 +12,20 @@ import {
   DialogFooter,
 } from "~/components/ui/dialog";
 import { Button } from "~/components/ui/button";
+import { toastManager } from "~/components/ui/toast";
 import { useImportWizardReducer, type WizardStep } from "./useImportWizardReducer";
 import { ProviderSelectStep } from "./steps/ProviderSelectStep";
 import { SessionListStep } from "./steps/SessionListStep";
+import { PreviewStep } from "./steps/PreviewStep";
+import { ImportOptionsStep } from "./steps/ImportOptionsStep";
+import { ResultStep } from "./steps/ResultStep";
 import type { ProjectId } from "@xbetools/contracts";
 import { useProject, useStore } from "~/store";
 import { getDefaultModel } from "@xbetools/shared/model";
+import {
+  historyImportPreviewQueryOptions,
+  historyImportExecuteMutationOptions,
+} from "~/lib/historyImportReactQuery";
 
 const STEP_LABELS: Record<WizardStep, string> = {
   "provider-select": "Select Provider",
@@ -42,6 +53,8 @@ export function ImportWizard({ isOpen, onClose, projectId }: ImportWizardProps) 
   const project = useProject(projectId);
   const workspaceRoot = project?.cwd ?? null;
   const [state, dispatch] = useImportWizardReducer(getDefaultModel());
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const threads = useStore((s) => s.threads);
   const providerThreadIds = useMemo(
@@ -54,6 +67,34 @@ export function ImportWizard({ isOpen, onClose, projectId }: ImportWizardProps) 
     [threads],
   );
 
+  // Preview query: enabled when a session is selected
+  const previewQuery = useQuery(
+    historyImportPreviewQueryOptions(state.selectedSession?.catalogId ?? null),
+  );
+
+  // Sync preview data into wizard state
+  useEffect(() => {
+    if (previewQuery.data && state.selectedSession) {
+      dispatch({ type: "SET_PREVIEW", preview: previewQuery.data });
+    }
+  }, [previewQuery.data, state.selectedSession, dispatch]);
+
+  // Execute mutation
+  const executeMutation = useMutation({
+    ...historyImportExecuteMutationOptions({ queryClient }),
+    onSuccess: (result) => {
+      dispatch({ type: "SET_RESULT", result });
+      toastManager.add({
+        type: "success",
+        title: "Conversation imported",
+        description: `Imported ${result.messageCount} messages and ${result.activityCount} activities.`,
+      });
+    },
+    onError: (error) => {
+      dispatch({ type: "SET_ERROR", error: error.message });
+    },
+  });
+
   useEffect(() => {
     if (isOpen) {
       dispatch({ type: "RESET" });
@@ -65,6 +106,27 @@ export function ImportWizard({ isOpen, onClose, projectId }: ImportWizardProps) 
   const handleBack = useCallback(() => {
     dispatch({ type: "GO_BACK" });
   }, [dispatch]);
+
+  const handleNavigateToThread = useCallback(
+    (threadId: string) => {
+      onClose();
+      void navigate({ to: "/$threadId", params: { threadId } });
+    },
+    [navigate, onClose],
+  );
+
+  const handleImport = useCallback(() => {
+    if (!state.selectedSession || !projectId) return;
+    executeMutation.mutate({
+      catalogId: state.selectedSession.catalogId,
+      projectId,
+      title: state.importOptions.title,
+      model: state.importOptions.model,
+      runtimeMode: state.importOptions.runtimeMode,
+      interactionMode: state.importOptions.interactionMode,
+      linkMode: state.importOptions.linkMode,
+    });
+  }, [state.selectedSession, state.importOptions, projectId, executeMutation]);
 
   const handlePrimaryAction = useCallback(() => {
     switch (state.step) {
@@ -112,30 +174,39 @@ export function ImportWizard({ isOpen, onClose, projectId }: ImportWizardProps) 
             />
           )}
           {state.step === "preview" && (
-            <div className="py-8 text-center text-sm text-muted-foreground">
-              Coming in plan 03-02
-            </div>
+            <PreviewStep
+              preview={state.preview}
+              isLoading={previewQuery.isLoading}
+              error={previewQuery.error?.message ?? state.error}
+            />
           )}
-          {state.step === "options" && (
-            <div className="py-8 text-center text-sm text-muted-foreground">
-              Coming in plan 03-02
-            </div>
+          {state.step === "options" && state.selectedSession && (
+            <ImportOptionsStep
+              importOptions={state.importOptions}
+              selectedSession={state.selectedSession}
+              dispatch={dispatch}
+            />
           )}
           {state.step === "result" && (
-            <div className="py-8 text-center text-sm text-muted-foreground">
-              Coming in plan 03-02
-            </div>
+            <ResultStep
+              result={state.result}
+              error={state.error}
+              onNavigateToThread={handleNavigateToThread}
+              onClose={onClose}
+            />
           )}
         </DialogPanel>
 
         <DialogFooter>
-          <Button
-            variant="ghost"
-            disabled={state.step === "provider-select" || state.step === "result"}
-            onClick={handleBack}
-          >
-            Back
-          </Button>
+          {state.step !== "result" && (
+            <Button
+              variant="ghost"
+              disabled={state.step === "provider-select"}
+              onClick={handleBack}
+            >
+              Back
+            </Button>
+          )}
           {state.step === "provider-select" && (
             <Button onClick={handlePrimaryAction}>Next</Button>
           )}
@@ -143,10 +214,39 @@ export function ImportWizard({ isOpen, onClose, projectId }: ImportWizardProps) 
             <Button disabled>Select a session</Button>
           )}
           {state.step === "preview" && (
-            <Button onClick={handlePrimaryAction}>Continue</Button>
+            <Button
+              onClick={handlePrimaryAction}
+              disabled={!state.preview}
+            >
+              Continue
+            </Button>
+          )}
+          {state.step === "options" && (
+            <Button
+              onClick={handleImport}
+              disabled={executeMutation.isPending}
+            >
+              {executeMutation.isPending ? (
+                <>
+                  <LoaderIcon className="size-4 animate-spin" />
+                  Importing...
+                </>
+              ) : (
+                "Import"
+              )}
+            </Button>
           )}
           {state.step === "result" && (
-            <Button onClick={handlePrimaryAction}>Done</Button>
+            <>
+              <Button variant="ghost" onClick={onClose}>
+                Close
+              </Button>
+              {state.result && (
+                <Button onClick={() => handleNavigateToThread(state.result!.threadId)}>
+                  Go to Thread
+                </Button>
+              )}
+            </>
           )}
         </DialogFooter>
       </DialogPopup>
