@@ -9,19 +9,19 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 
 ## Current Position
 
-Phase: 3 of 6 (Import UI)
-Plan: 1 of 2 in current phase
-Status: In Progress
-Last activity: 2026-03-12 -- Completed 03-01 Import wizard transport, React Query, and steps 1-2
+Phase: 3 of 6 (Import UI) -- COMPLETE
+Plan: 2 of 2 in current phase
+Status: Phase Complete
+Last activity: 2026-03-12 -- Completed 03-02 Import wizard steps 3-5 with preview, options, execute, and navigation
 
-Progress: [██████░░░░] 50%
+Progress: [███████░░░] 67%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 6
-- Average duration: 9min
-- Total execution time: 0.85 hours
+- Total plans completed: 7
+- Average duration: 8min
+- Total execution time: 0.92 hours
 
 **By Phase:**
 
@@ -29,11 +29,11 @@ Progress: [██████░░░░] 50%
 |-------|-------|-------|----------|
 | 01-foundation-and-schema | 2/2 | 16min | 8min |
 | 02-codex-import-pipeline | 3/3 | 28min | 9min |
-| 03-import-ui | 1/2 | 7min | 7min |
+| 03-import-ui | 2/2 | 11min | 6min |
 
 **Recent Trend:**
-- Last 5 plans: 02-01 (8min), 02-02 (11min), 02-03 (9min), 03-01 (7min)
-- Trend: consistent
+- Last 5 plans: 02-02 (11min), 02-03 (9min), 03-01 (7min), 03-02 (4min)
+- Trend: accelerating
 
 *Updated after each plan completion*
 
@@ -66,6 +66,8 @@ Recent decisions affecting current work:
 - [03-01]: Added GO_TO_SESSION_LIST action to wizard reducer for explicit forward navigation
 - [03-01]: Used Zustand store (useImportWizardStore) for cross-component wizard triggering
 - [03-01]: providerThreadId added as required field on Thread interface to match server read model
+- [03-02]: Content-based React list keys (role+createdAt, kind+summary) instead of array indices for lint compliance
+- [03-02]: Mutation callbacks merged locally in ImportWizard for toast/dispatch co-location with wizard state
 
 ### Pending Todos
 
@@ -79,5 +81,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-12
-Stopped at: Completed 03-01-PLAN.md (Import wizard transport, React Query, and steps 1-2)
-Resume file: .planning/phases/03-import-ui/03-01-SUMMARY.md
+Stopped at: Completed 03-02-PLAN.md (Import wizard steps 3-5 with preview, options, execute, navigation) -- Phase 3 complete
+Resume file: .planning/phases/03-import-ui/03-02-SUMMARY.md
