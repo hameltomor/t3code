@@ -9,29 +9,29 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 
 ## Current Position
 
-Phase: 2 of 6 (Codex Import Pipeline)
-Plan: 2 of 3 in current phase
-Status: In Progress
-Last activity: 2026-03-12 -- Completed 02-02 Streaming parser and import service
+Phase: 2 of 6 (Codex Import Pipeline) -- COMPLETE
+Plan: 3 of 3 in current phase
+Status: Phase Complete
+Last activity: 2026-03-12 -- Completed 02-03 Import materializer, WS handlers, and layer wiring
 
-Progress: [███░░░░░░░] 33%
+Progress: [████░░░░░░] 40%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 4
+- Total plans completed: 5
 - Average duration: 9min
-- Total execution time: 0.58 hours
+- Total execution time: 0.73 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-foundation-and-schema | 2/2 | 16min | 8min |
-| 02-codex-import-pipeline | 2/3 | 19min | 10min |
+| 02-codex-import-pipeline | 3/3 | 28min | 9min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (11min), 01-02 (5min), 02-01 (8min), 02-02 (11min)
+- Last 5 plans: 01-02 (5min), 02-01 (8min), 02-02 (11min), 02-03 (9min)
 - Trend: consistent
 
 *Updated after each plan completion*
@@ -58,6 +58,10 @@ Recent decisions affecting current work:
 - [02-02]: Used Schema.decodeUnknownOption for tolerant per-line JSONL parsing (Option instead of throwing)
 - [02-02]: Catalog entries cast to branded HistoryImportConversationSummary since written by our own scan code
 - [02-02]: Used SqlSchema.findOneOption for getByCatalogId nullable single-row lookup
+- [02-03]: Messages and activities dispatched sequentially to preserve ordering (no parallel dispatch)
+- [02-03]: Deduplication via providerThreadId lookup on orchestration read model
+- [02-03]: TurnId safely decoded via Schema.decodeUnknownOption to avoid unsafe brand cast
+- [02-03]: Avoided try/catch inside Effect generators -- used Effect.catch/mapError instead
 
 ### Pending Todos
 
@@ -71,5 +75,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-12
-Stopped at: Completed 02-02-PLAN.md (Streaming parser and import service)
-Resume file: .planning/phases/02-codex-import-pipeline/02-02-SUMMARY.md
+Stopped at: Completed 02-03-PLAN.md (Import materializer, WS handlers, and layer wiring) -- Phase 02 COMPLETE
+Resume file: .planning/phases/02-codex-import-pipeline/02-03-SUMMARY.md
