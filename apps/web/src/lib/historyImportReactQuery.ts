@@ -1,4 +1,4 @@
-import type { HistoryImportProvider, HistoryImportExecuteInput } from "@xbetools/contracts";
+import type { HistoryImportProvider, HistoryImportExecuteInput, ThreadId } from "@xbetools/contracts";
 import { mutationOptions, queryOptions, type QueryClient } from "@tanstack/react-query";
 import { ensureNativeApi } from "../nativeApi";
 
@@ -7,6 +7,7 @@ export const historyImportQueryKeys = {
   list: (workspaceRoot: string, providerFilter: string | null) =>
     ["historyImport", "list", workspaceRoot, providerFilter] as const,
   preview: (catalogId: string | null) => ["historyImport", "preview", catalogId] as const,
+  threadLinks: (threadId: string) => ["historyImport", "threadLinks", threadId] as const,
 };
 
 export function historyImportListQueryOptions(
@@ -50,6 +51,33 @@ export function historyImportExecuteMutationOptions(input: { queryClient: QueryC
     },
     onSuccess: async () => {
       await input.queryClient.invalidateQueries({ queryKey: historyImportQueryKeys.all });
+    },
+  });
+}
+
+export function historyImportThreadLinksQueryOptions(threadId: string | null) {
+  return queryOptions({
+    queryKey: historyImportQueryKeys.threadLinks(threadId ?? ""),
+    queryFn: async () => {
+      const api = ensureNativeApi();
+      return api.historyImport.listThreadLinks({ threadId: threadId! as ThreadId });
+    },
+    enabled: threadId !== null,
+    staleTime: 60_000,
+  });
+}
+
+export function historyImportValidateLinkMutationOptions(input: { queryClient: QueryClient }) {
+  return mutationOptions({
+    mutationKey: ["historyImport", "mutation", "validateLink"] as const,
+    mutationFn: async (params: { threadId: string }) => {
+      const api = ensureNativeApi();
+      return api.historyImport.validateLink({ threadId: params.threadId as ThreadId });
+    },
+    onSuccess: async (_data, variables) => {
+      await input.queryClient.invalidateQueries({
+        queryKey: historyImportQueryKeys.threadLinks(variables.threadId),
+      });
     },
   });
 }

@@ -8,19 +8,25 @@
  *
  * @module HistoryImportServiceLive
  */
+import { stat } from "node:fs/promises";
+
 import type {
   HistoryImportConversationPreview,
   HistoryImportConversationSummary,
   HistoryImportLinkMode,
   HistoryImportProvider,
+  HistoryImportValidateLinkResult,
 } from "@xbetools/contracts";
-import { Effect, Layer } from "effect";
+import { type IsoDateTime } from "@xbetools/contracts";
+import { Effect, Layer, Option } from "effect";
 
 import { HistoryImportCatalogRepository } from "../../persistence/Services/HistoryImportCatalog.ts";
+import { ThreadExternalLinkRepository } from "../../persistence/Services/ThreadExternalLinks.ts";
 import {
   HistoryImportNotFoundError,
   HistoryImportScanError,
 } from "../Errors.ts";
+import { computeFingerprint } from "../fingerprint.ts";
 import {
   ClaudeCodeHistoryScannerService,
 } from "../Services/ClaudeCodeHistoryScanner.ts";
@@ -76,6 +82,7 @@ const makeHistoryImportService = Effect.gen(function* () {
   const claudeCodeParser = yield* ClaudeCodeSessionParserService;
   const catalogRepo = yield* HistoryImportCatalogRepository;
   const materializer = yield* HistoryMaterializerService;
+  const externalLinkRepo = yield* ThreadExternalLinkRepository;
 
   const list: HistoryImportServiceShape["list"] = (input) =>
     Effect.gen(function* () {
@@ -287,7 +294,99 @@ const makeHistoryImportService = Effect.gen(function* () {
       return result;
     }).pipe(Effect.withSpan("HistoryImportService.execute"));
 
-  return { list, preview, execute } satisfies HistoryImportServiceShape;
+  const validateLink: HistoryImportServiceShape["validateLink"] = (input) =>
+    Effect.gen(function* () {
+      const now = new Date().toISOString() as typeof IsoDateTime.Type;
+
+      // Look up external link for thread
+      const maybeLink = yield* externalLinkRepo
+        .getByThreadId({ threadId: input.threadId as string })
+        .pipe(
+          Effect.mapError(
+            (cause) =>
+              new HistoryImportNotFoundError({
+                message: `Failed to query external link for thread ${input.threadId}`,
+                cause,
+              }),
+          ),
+        );
+
+      if (Option.isNone(maybeLink)) {
+        return yield* new HistoryImportNotFoundError({
+          message: `No external link found for thread ${input.threadId}`,
+        });
+      }
+
+      const link = maybeLink.value;
+
+      // Check file existence
+      const fileExistsResult = yield* Effect.tryPromise({
+        try: () =>
+          stat(link.sourcePath).then(
+            () => true,
+            () => false,
+          ),
+        catch: () => false as const,
+      }).pipe(Effect.catch(() => Effect.succeed(false)));
+
+      if (!fileExistsResult) {
+        // File missing: upsert updated status
+        yield* externalLinkRepo
+          .upsert({ ...link, validationStatus: "missing", lastValidatedAt: now })
+          .pipe(
+            Effect.mapError(
+              (cause) =>
+                new HistoryImportNotFoundError({
+                  message: `Failed to update external link for thread ${input.threadId}`,
+                  cause,
+                }),
+            ),
+          );
+
+        return {
+          threadId: input.threadId,
+          validationStatus: "missing",
+          lastValidatedAt: now,
+        } as HistoryImportValidateLinkResult;
+      }
+
+      // Recompute fingerprint
+      const newFingerprint = yield* computeFingerprint(
+        link.providerSessionId ?? (link.threadId as string),
+        link.sourcePath,
+      ).pipe(Effect.catch(() => Effect.succeed(null as string | null)));
+
+      // Determine validation status
+      let validationStatus: string;
+      if (newFingerprint === null) {
+        validationStatus = "invalid";
+      } else if (newFingerprint === link.sourceFingerprint) {
+        validationStatus = "valid";
+      } else {
+        validationStatus = "stale";
+      }
+
+      // Upsert updated link
+      yield* externalLinkRepo
+        .upsert({ ...link, validationStatus, lastValidatedAt: now })
+        .pipe(
+          Effect.mapError(
+            (cause) =>
+              new HistoryImportNotFoundError({
+                message: `Failed to update external link for thread ${input.threadId}`,
+                cause,
+              }),
+          ),
+        );
+
+      return {
+        threadId: input.threadId,
+        validationStatus,
+        lastValidatedAt: now,
+      } as HistoryImportValidateLinkResult;
+    }).pipe(Effect.withSpan("HistoryImportService.validateLink"));
+
+  return { list, preview, execute, validateLink } satisfies HistoryImportServiceShape;
 });
 
 export const HistoryImportServiceLive = Layer.effect(

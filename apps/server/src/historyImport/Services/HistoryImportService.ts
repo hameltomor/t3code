@@ -7,6 +7,8 @@ import type {
   HistoryImportExecuteResult,
   HistoryImportListInput,
   HistoryImportPreviewInput,
+  HistoryImportValidateLinkInput,
+  HistoryImportValidateLinkResult,
 } from "@xbetools/contracts";
 import type {
   HistoryImportScanError,
@@ -43,6 +45,13 @@ export interface HistoryImportServiceShape {
   readonly execute: (
     input: HistoryImportExecuteInput,
   ) => Effect.Effect<HistoryImportExecuteResult, HistoryImportError>;
+
+  /**
+   * Validate a thread's external link by checking source file existence and fingerprint freshness.
+   */
+  readonly validateLink: (
+    input: HistoryImportValidateLinkInput,
+  ) => Effect.Effect<HistoryImportValidateLinkResult, HistoryImportError>;
 }
 
 export class HistoryImportServiceService extends ServiceMap.Service<

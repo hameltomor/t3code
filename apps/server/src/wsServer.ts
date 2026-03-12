@@ -1115,9 +1115,13 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
         return result;
       }
       case WS_METHODS.historyImportValidateLink: {
-        return yield* new RouteRequestError({
-          message: "historyImport.validateLink will be implemented in Phase 5 (Hardening and Provenance)",
-        });
+        const body = stripRequestTag(request.body);
+        const result = yield* historyImportService.validateLink(body).pipe(
+          Effect.mapError(
+            (error) => new RouteRequestError({ message: error.message }),
+          ),
+        );
+        return result;
       }
       case WS_METHODS.historyImportListThreadLinks: {
         const body = stripRequestTag(request.body);

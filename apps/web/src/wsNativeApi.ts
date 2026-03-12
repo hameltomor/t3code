@@ -238,6 +238,7 @@ export function createWsNativeApi(): NativeApi {
       list: (input) => transport.request(WS_METHODS.historyImportList, input),
       preview: (input) => transport.request(WS_METHODS.historyImportPreview, input),
       execute: (input) => transport.request(WS_METHODS.historyImportExecute, input),
+      validateLink: (input) => transport.request(WS_METHODS.historyImportValidateLink, input),
       listThreadLinks: (input) => transport.request(WS_METHODS.historyImportListThreadLinks, input),
     },
   };
