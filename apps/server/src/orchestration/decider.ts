@@ -166,6 +166,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           branch: command.branch,
           worktreePath: command.worktreePath,
           worktreeEntries: command.worktreeEntries ?? [],
+          providerThreadId: command.providerThreadId ?? null,
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },
@@ -607,6 +608,46 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           occurredAt: command.createdAt,
           commandId: command.commandId,
           ...(requestId !== undefined ? { metadata: { requestId } } : {}),
+        }),
+        type: "thread.activity-appended",
+        payload: {
+          threadId: command.threadId,
+          activity: command.activity,
+        },
+      };
+    }
+
+    case "thread.message.import": {
+      yield* requireThread({ readModel, command, threadId: command.threadId });
+      return {
+        ...withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        }),
+        type: "thread.message-sent",
+        payload: {
+          threadId: command.threadId,
+          messageId: command.messageId,
+          role: command.role,
+          text: command.text,
+          turnId: command.turnId,
+          streaming: command.streaming,
+          createdAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "thread.activity.import": {
+      yield* requireThread({ readModel, command, threadId: command.threadId });
+      return {
+        ...withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
         }),
         type: "thread.activity-appended",
         payload: {

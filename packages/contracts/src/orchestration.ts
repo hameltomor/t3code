@@ -587,6 +587,26 @@ const ThreadRevertCompleteCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const ThreadMessageImportCommand = Schema.Struct({
+  type: Schema.Literal("thread.message.import"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  messageId: MessageId,
+  role: OrchestrationMessageRole,
+  text: Schema.String,
+  turnId: Schema.NullOr(TurnId),
+  streaming: Schema.Boolean,
+  createdAt: IsoDateTime,
+});
+
+const ThreadActivityImportCommand = Schema.Struct({
+  type: Schema.Literal("thread.activity.import"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  activity: OrchestrationThreadActivity,
+  createdAt: IsoDateTime,
+});
+
 const InternalOrchestrationCommand = Schema.Union([
   ThreadSessionSetCommand,
   ThreadMessageAssistantDeltaCommand,
@@ -595,6 +615,8 @@ const InternalOrchestrationCommand = Schema.Union([
   ThreadTurnDiffCompleteCommand,
   ThreadActivityAppendCommand,
   ThreadRevertCompleteCommand,
+  ThreadMessageImportCommand,
+  ThreadActivityImportCommand,
 ]);
 export type InternalOrchestrationCommand = typeof InternalOrchestrationCommand.Type;
 
