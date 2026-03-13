@@ -10,7 +10,12 @@ import {
   TrimmedNonEmptyString,
   TurnId,
 } from "./baseSchemas";
-import { ProviderKind } from "./orchestration";
+import {
+  ProviderKind,
+  NormalizedTokenUsage,
+  ContextStatusSupport,
+  ContextStatusSource,
+} from "./orchestration";
 
 const TrimmedNonEmptyStringSchema = TrimmedNonEmptyString;
 const UnknownRecordSchema = Schema.Record(Schema.String, Schema.Unknown);
@@ -290,7 +295,9 @@ const ThreadMetadataUpdatedPayload = Schema.Struct({
 export type ThreadMetadataUpdatedPayload = typeof ThreadMetadataUpdatedPayload.Type;
 
 const ThreadTokenUsageUpdatedPayload = Schema.Struct({
-  usage: Schema.Unknown,
+  usage: NormalizedTokenUsage,
+  support: ContextStatusSupport,
+  source: ContextStatusSource,
 });
 export type ThreadTokenUsageUpdatedPayload = typeof ThreadTokenUsageUpdatedPayload.Type;
 
