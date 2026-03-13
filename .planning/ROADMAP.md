@@ -31,7 +31,7 @@ See `milestones/v1.0-ROADMAP.md` for full details.
 
 **Milestone Goal:** Users can see real-time context window usage during a session, across all three providers, with honest source/freshness labeling and no fake precision.
 
-- [ ] **Phase 7: Schema Foundation and Context Window Registry** -- Canonical types and model limit resolver that all layers depend on
+- [x] **Phase 7: Schema Foundation and Context Window Registry** -- Canonical types and model limit resolver that all layers depend on -- completed 2026-03-13
 - [ ] **Phase 8: Provider Normalization** -- All three adapters emit typed canonical token usage events
 - [ ] **Phase 9: Server Pipeline and Persistence** -- Ingestion, projection, persistence, and snapshot hydration for context status
 - [ ] **Phase 10: UI Integration** -- Context status badge in composer footer with threshold coloring and graceful degradation
@@ -51,8 +51,8 @@ See `milestones/v1.0-ROADMAP.md` for full details.
 **Plans**: 2 plans
 
 Plans:
-- [ ] 07-01: Canonical token usage and context status schemas in contracts
-- [ ] 07-02: Context window registry and command definitions
+- [x] 07-01: Canonical token usage and context status schemas in contracts
+- [x] 07-02: Context window registry and command definitions
 
 ### Phase 8: Provider Normalization
 **Goal**: All three provider adapters emit typed `thread.token-usage.updated` events with canonical payloads, so the server pipeline has uniform input regardless of provider
@@ -117,7 +117,7 @@ Note: Phase 8 (adapter normalization) can begin as soon as Phase 7 completes, an
 | 5. Hardening and Provenance | v1.0 | 3/3 | Complete | 2026-03-12 |
 | 5.1. Import Pipeline Bug Fixes | v1.0 | 1/1 | Complete | 2026-03-12 |
 | 6. Gemini CLI Reader | Deferred | 0/0 | Deferred | - |
-| 7. Schema Foundation and Context Window Registry | v1.1 | 0/2 | Not started | - |
+| 7. Schema Foundation and Context Window Registry | v1.1 | 2/2 | Complete | 2026-03-13 |
 | 8. Provider Normalization | v1.1 | 0/2 | Not started | - |
 | 9. Server Pipeline and Persistence | v1.1 | 0/2 | Not started | - |
 | 10. UI Integration | v1.1 | 0/2 | Not started | - |
