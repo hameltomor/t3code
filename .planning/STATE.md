@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-03-13)
 
 **Core value:** Users can interact with multiple code agents through one unified interface without losing context, visibility, or control
-**Current focus:** v1.1 Session Context Status -- Phase 10 (UI Context Status Badge)
+**Current focus:** v1.1 Session Context Status -- Phase 10 (UI Context Status Badge) COMPLETE
 
 ## Current Position
 
 Phase: 10 of 10 (UI Context Status Badge)
-Plan: 1 of 2 in current phase
-Status: Executing Phase 10
-Last activity: 2026-03-13 -- Completed 10-01 (Context Status Badge and Composer Footer Integration)
+Plan: 2 of 2 in current phase (COMPLETE)
+Status: v1.1 Milestone Complete
+Last activity: 2026-03-13 -- Completed 10-02 (Context Status Badge Tests and Polish)
 
-Progress: [████████░░] 87% (v1.1: 7/8 plans)
+Progress: [██████████] 100% (v1.1: 8/8 plans)
 
 ## Performance Metrics
 
@@ -24,9 +24,9 @@ Progress: [████████░░] 87% (v1.1: 7/8 plans)
 - Total execution time: 1.43 hours
 
 **v1.1 Velocity:**
-- Total plans completed: 7
+- Total plans completed: 8
 - Average duration: 5min
-- Total execution time: 0.60 hours
+- Total execution time: 0.65 hours
 
 | Phase | Plan | Duration | Tasks | Files |
 |-------|------|----------|-------|-------|
@@ -37,6 +37,7 @@ Progress: [████████░░] 87% (v1.1: 7/8 plans)
 | 09 | 01 | 5min | 2 | 8 |
 | 09 | 02 | 8min | 2 | 3 |
 | 10 | 01 | 3min | 2 | 7 |
+| 10 | 02 | 3min | 2 | 4 |
 
 ## Accumulated Context
 
@@ -71,6 +72,10 @@ v1.1 execution decisions:
 - Logic/view separation: all derivation in .logic.ts, component is thin render layer (10-01)
 - sessionActive derived from session existence + status checks (not closed, not stopped) (10-01)
 - Badge placed after runtime mode toggle in composer footer left-side controls (10-01)
+- Full pill mode controlled by VITE_CONTEXT_STATUS_FULL_PILL env var, defaults to off (10-02)
+- COMPACTION_RECENCY_THRESHOLD_MS = 5 minutes as named constant for compacted recently detection (10-02)
+- 500ms debounce applied to display object via useDebouncedValue, not to the store or raw data (10-02)
+- Relative time formatting uses simple math (Xm ago / Xh ago) without external library (10-02)
 
 ### Pending Todos
 
@@ -85,5 +90,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-13
-Stopped at: Completed 10-01-PLAN.md (Context Status Badge and Composer Footer Integration)
-Next step: Execute 10-02-PLAN.md (Context Status Badge Tests and Polish)
+Stopped at: Completed 10-02-PLAN.md (Context Status Badge Tests and Polish) -- v1.1 milestone complete
+Next step: v1.1 milestone complete. All 8 plans across 4 phases executed successfully.
