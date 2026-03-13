@@ -1625,4 +1625,97 @@ describe("ProviderRuntimeIngestion", () => {
     expect(thread.session?.status).toBe("error");
     expect(thread.session?.lastError).toBe("runtime still processed");
   });
+
+  describe("context status pipeline", () => {
+    it("dispatches thread.context-status.set from thread.token-usage.updated", async () => {
+      const harness = await createHarness();
+      const now = new Date().toISOString();
+
+      // Update thread model to one with known context window limits in registry
+      await Effect.runPromise(
+        harness.engine.dispatch({
+          type: "thread.meta.update",
+          commandId: CommandId.makeUnsafe("cmd-update-model-for-ctx"),
+          threadId: ThreadId.makeUnsafe("thread-1"),
+          model: "gpt-5.3-codex",
+        }),
+      );
+
+      harness.emit({
+        type: "thread.token-usage.updated",
+        eventId: asEventId("evt-token-usage-1"),
+        provider: "codex",
+        createdAt: now,
+        threadId: asThreadId("thread-1"),
+        payload: {
+          usage: { totalTokens: 50000, inputTokens: 40000, outputTokens: 10000 },
+          support: "native",
+          source: "provider-event",
+        },
+      });
+
+      const thread = await waitForThread(
+        harness.engine,
+        (entry) => entry.contextStatus !== null,
+      );
+
+      expect(thread.contextStatus).not.toBeNull();
+      expect(thread.contextStatus!.support).toBe("native");
+      expect(thread.contextStatus!.source).toBe("provider-event");
+      expect(thread.contextStatus!.freshness).toBe("live");
+      expect(thread.contextStatus!.tokenUsage?.totalTokens).toBe(50000);
+      // 50k tokens is well under gpt-5.3-codex's 400k limit, should be "ok"
+      expect(thread.contextStatus!.status).toBe("ok");
+    });
+
+    it("throttles rapid token usage events with same totalTokens", async () => {
+      const harness = await createHarness();
+      const now = new Date().toISOString();
+
+      // Emit first event -- should be dispatched
+      harness.emit({
+        type: "thread.token-usage.updated",
+        eventId: asEventId("evt-token-usage-throttle-1"),
+        provider: "codex",
+        createdAt: now,
+        threadId: asThreadId("thread-1"),
+        payload: {
+          usage: { totalTokens: 30000, inputTokens: 20000, outputTokens: 10000 },
+          support: "native",
+          source: "provider-event",
+        },
+      });
+
+      // Wait for first context status to be set
+      await waitForThread(
+        harness.engine,
+        (entry) => entry.contextStatus !== null,
+      );
+
+      // Emit 4 more events with the SAME totalTokens -- should all be deduped
+      for (let i = 2; i <= 5; i++) {
+        harness.emit({
+          type: "thread.token-usage.updated",
+          eventId: asEventId(`evt-token-usage-throttle-${i}`),
+          provider: "codex",
+          createdAt: new Date().toISOString(),
+          threadId: asThreadId("thread-1"),
+          payload: {
+            usage: { totalTokens: 30000, inputTokens: 20000, outputTokens: 10000 },
+            support: "native",
+            source: "provider-event",
+          },
+        });
+      }
+
+      // Give time for events to be processed
+      await Effect.runPromise(Effect.sleep("50 millis"));
+
+      // The contextStatus should still be set from the first event
+      const readModel = await Effect.runPromise(harness.engine.getReadModel());
+      const thread = readModel.threads.find((entry) => entry.id === ThreadId.makeUnsafe("thread-1"));
+      expect(thread?.contextStatus).not.toBeNull();
+      expect(thread?.contextStatus?.tokenUsage?.totalTokens).toBe(30000);
+    });
+  });
 });
