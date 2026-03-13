@@ -327,7 +327,7 @@ describe("ClaudeCodeAdapterLive", () => {
       args: ["/tmp/claude-sdk/cli.js", "--output-format", "stream-json"],
       options: {
         cwd: "/tmp/workspace",
-        env: { PATH: "/usr/bin" },
+        env: { PATH: "/usr/bin", ELECTRON_RUN_AS_NODE: "1" },
         signal: calls[0]!.options.signal,
         stdio: ["pipe", "pipe", "ignore"],
         windowsHide: true,

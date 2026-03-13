@@ -286,7 +286,7 @@ export function createClaudeCodeProcessSpawner(
   return (input: ClaudeSpawnOptions) => {
     const command = resolveClaudeCodeSpawnCommand(input.command, execPath);
     const env =
-      process.versions.electron !== undefined && command === execPath
+      command === execPath
         ? {
             ...input.env,
             ELECTRON_RUN_AS_NODE: input.env.ELECTRON_RUN_AS_NODE ?? "1",
@@ -1977,7 +1977,18 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
           providerRefs: {},
         });
 
-        Effect.runFork(runSdkStream(context));
+        Effect.runFork(
+          runSdkStream(context).pipe(
+            Effect.catchCause((cause) =>
+              Effect.sync(() => {
+                console.error(
+                  `[ClaudeCodeAdapter] Unhandled SDK stream fiber failure for thread ${context.sessionKey}:`,
+                  cause,
+                );
+              }),
+            ),
+          ),
+        );
 
         return {
           ...session,
