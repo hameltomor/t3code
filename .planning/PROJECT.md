@@ -1,12 +1,24 @@
-# XBE Code — History Import
+# XBE Code
 
 ## What This Is
 
-A history import system for XBE Code that lets users discover, preview, and selectively import existing conversations from Codex CLI and Claude Code into XBE Code. Imported conversations become normal XBE threads with external links back to the original provider session, supporting native resume (continue via original provider), lazy link validation, and thread provenance display. A 5-step import wizard provides provider filtering, transcript preview, import options, and immediate thread navigation.
+A minimal web GUI for using code agents like Codex and Claude Code. XBE Code wraps provider runtimes (Codex app-server, Claude Code SDK, Gemini API) behind an event-sourced orchestration engine, serving a React UI over WebSocket. Features include multi-provider session management, conversation history import, and real-time session context tracking.
 
 ## Core Value
 
-Users can bring their scattered code-agent conversation history into one unified place without losing context, and optionally continue those conversations through XBE Code's provider runtime.
+Users can interact with multiple code agents through one unified interface without losing context, visibility, or control over their coding sessions.
+
+## Current Milestone: v1.1 Session Context Status
+
+**Goal:** Give users real-time visibility into how much of their context window is consumed during a session, across all three providers.
+
+**Target features:**
+- Live context window usage tracking in the composer footer
+- Provider-normalized context status (Codex native, Claude derived-live, Gemini derived-on-demand)
+- Separate thread-scoped projection with model-specific context window limits
+- Minimal badge UI (default) with full pill + tooltip mode available
+- Compaction event tracking and display
+- Honest source/freshness labeling per provider
 
 ## Requirements
 
@@ -33,6 +45,11 @@ Users can bring their scattered code-agent conversation history into one unified
 
 ### Active
 
+- [ ] Session context status: live context window usage tracking for all providers
+- [ ] Context window registry with model-specific token limits
+- [ ] Provider-normalized usage events (Codex native, Claude derived, Gemini computed)
+- [ ] Thread-scoped context status projection in orchestration pipeline
+- [ ] Composer footer context status UI (minimal badge + full pill modes)
 - [ ] Gemini CLI conversation import (deferred — format unstable)
 - [ ] Support transcript-replay continuation for Gemini imported threads
 
@@ -91,5 +108,10 @@ Users can bring their scattered code-agent conversation history into one unified
 | Two-phase import status (importing → valid) | Surface partial imports without silent deletion | ✓ Good — partial imports show warning badge |
 | providerThreadId on OrchestrationThread | Enable dedup and native resume via read model | ⚠️ Revisit — required Phase 5.1 fix for in-memory projector propagation |
 
+| Separate thread context projection | Context status and session lifecycle are different domains with different update frequencies | — Pending |
+| ContextWindowRegistry for model limits | Avoid scattering token-limit constants across adapters and UI; single resolver with fallback chain | — Pending |
+| Provider support labels (native/derived-live/derived-on-demand) | Honest about precision differences; users should not assume equal accuracy across providers | — Pending |
+| Minimal badge default, full pill as option | Start minimal, extensible to settings-controlled mode later | — Pending |
+
 ---
-*Last updated: 2026-03-12 after v1.0 milestone*
+*Last updated: 2026-03-13 after v1.1 milestone start*
