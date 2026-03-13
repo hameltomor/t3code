@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-03-13)
 
 **Core value:** Users can interact with multiple code agents through one unified interface without losing context, visibility, or control
-**Current focus:** v1.1 Session Context Status -- Phase 8 (Provider Normalization)
+**Current focus:** v1.1 Session Context Status -- Phase 9 (Server Pipeline and Persistence)
 
 ## Current Position
 
-Phase: 8 of 10 (Provider Normalization) -- COMPLETE
-Plan: 2 of 2 in current phase
-Status: Phase Complete
-Last activity: 2026-03-13 -- Completed 08-02 (Claude Code and Gemini Adapter Token Usage Emission)
+Phase: 9 of 10 (Server Pipeline and Persistence)
+Plan: 1 of 2 in current phase
+Status: Executing
+Last activity: 2026-03-13 -- Completed 09-01 (Context Status Persistence and Projection Pipeline)
 
-Progress: [████░░░░░░] 50% (v1.1: 4/8 plans)
+Progress: [██████░░░░] 63% (v1.1: 5/8 plans)
 
 ## Performance Metrics
 
@@ -24,9 +24,9 @@ Progress: [████░░░░░░] 50% (v1.1: 4/8 plans)
 - Total execution time: 1.43 hours
 
 **v1.1 Velocity:**
-- Total plans completed: 4
+- Total plans completed: 5
 - Average duration: 5min
-- Total execution time: 0.33 hours
+- Total execution time: 0.42 hours
 
 | Phase | Plan | Duration | Tasks | Files |
 |-------|------|----------|-------|-------|
@@ -34,6 +34,7 @@ Progress: [████░░░░░░] 50% (v1.1: 4/8 plans)
 | 07 | 02 | 4min | 2 | 4 |
 | 08 | 01 | 3min | 2 | 3 |
 | 08 | 02 | 7min | 2 | 3 |
+| 09 | 01 | 5min | 2 | 8 |
 
 ## Accumulated Context
 
@@ -60,6 +61,9 @@ v1.1 execution decisions:
 - Claude Code result usage accessed via defensive type guard since SDK uses discriminated union (08-02)
 - Compact_boundary emits minimal NormalizedTokenUsage with just totalTokens from pre_tokens (08-02)
 - Gemini adapter stores lastUsageMetadata on GeminiTurnState for emission in completeTurn (08-02)
+- Context status projector is supplementary (not in REQUIRED_SNAPSHOT_PROJECTORS) per PIPE-07 (09-01)
+- DB schema uses Schema.String for enum fields -- enums validated at application layer, not persistence (09-01)
+- Compaction detection uses 80% threshold: current totalTokens < previous * 0.8 (09-01)
 
 ### Pending Todos
 
@@ -74,5 +78,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-13
-Stopped at: Completed 08-02-PLAN.md (Claude Code and Gemini Adapter Token Usage Emission)
-Next step: Execute Phase 9 (ProviderRuntimeIngestion context status dispatch)
+Stopped at: Completed 09-01-PLAN.md (Context Status Persistence and Projection Pipeline)
+Next step: Execute 09-02 (Ingestion, Snapshot Hydration, and Integration Tests)
