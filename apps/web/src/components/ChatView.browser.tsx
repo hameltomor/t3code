@@ -230,6 +230,7 @@ function createSnapshotForTargetUser(options: {
           lastError: null,
           updatedAt: NOW_ISO,
         },
+        contextStatus: null,
       },
     ],
     updatedAt: NOW_ISO,

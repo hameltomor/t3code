@@ -555,6 +555,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             activities: activitiesByThread.get(row.threadId) ?? [],
             checkpoints: checkpointsByThread.get(row.threadId) ?? [],
             session: sessionsByThread.get(row.threadId) ?? null,
+            contextStatus: null,
           }));
 
           const snapshot = {

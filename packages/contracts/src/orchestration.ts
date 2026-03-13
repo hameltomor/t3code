@@ -221,6 +221,58 @@ export const OrchestrationSession = Schema.Struct({
 });
 export type OrchestrationSession = typeof OrchestrationSession.Type;
 
+// ---------------------------------------------------------------------------
+// Context-window status schemas (SDM-01 through SDM-08)
+// ---------------------------------------------------------------------------
+
+export const NormalizedTokenUsage = Schema.Struct({
+  inputTokens: Schema.optional(NonNegativeInt),
+  outputTokens: Schema.optional(NonNegativeInt),
+  totalTokens: NonNegativeInt,
+  cachedInputTokens: Schema.optional(NonNegativeInt),
+  reasoningTokens: Schema.optional(NonNegativeInt),
+});
+export type NormalizedTokenUsage = typeof NormalizedTokenUsage.Type;
+
+export const ContextStatusSupport = Schema.Literals([
+  "native",
+  "derived-live",
+  "derived-on-demand",
+  "unsupported",
+]);
+export type ContextStatusSupport = typeof ContextStatusSupport.Type;
+
+export const ContextStatusSource = Schema.Literals([
+  "provider-event",
+  "sdk-usage",
+  "count-tokens",
+  "heuristic",
+]);
+export type ContextStatusSource = typeof ContextStatusSource.Type;
+
+export const ContextStatusFreshness = Schema.Literals(["live", "stale", "unknown"]);
+export type ContextStatusFreshness = typeof ContextStatusFreshness.Type;
+
+export const ContextStatusLevel = Schema.Literals(["ok", "watch", "near-limit", "compacted", "unknown"]);
+export type ContextStatusLevel = typeof ContextStatusLevel.Type;
+
+export const OrchestrationThreadContextStatus = Schema.Struct({
+  provider: ProviderKind,
+  support: ContextStatusSupport,
+  source: ContextStatusSource,
+  freshness: ContextStatusFreshness,
+  status: ContextStatusLevel,
+  model: Schema.NullOr(TrimmedNonEmptyString),
+  tokenUsage: Schema.NullOr(NormalizedTokenUsage),
+  contextWindowLimit: Schema.optional(NonNegativeInt),
+  percent: Schema.optional(Schema.Number),
+  lastCompactedAt: Schema.optional(IsoDateTime),
+  lastCompactionReason: Schema.optional(TrimmedNonEmptyString),
+  compactionCount: Schema.optional(NonNegativeInt),
+  measuredAt: IsoDateTime,
+});
+export type OrchestrationThreadContextStatus = typeof OrchestrationThreadContextStatus.Type;
+
 export const OrchestrationCheckpointFile = Schema.Struct({
   path: TrimmedNonEmptyString,
   kind: TrimmedNonEmptyString,
@@ -310,6 +362,9 @@ export const OrchestrationThread = Schema.Struct({
   activities: Schema.Array(OrchestrationThreadActivity),
   checkpoints: Schema.Array(OrchestrationCheckpointSummary),
   session: Schema.NullOr(OrchestrationSession),
+  contextStatus: Schema.NullOr(OrchestrationThreadContextStatus).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
 });
 export type OrchestrationThread = typeof OrchestrationThread.Type;
 

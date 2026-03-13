@@ -74,6 +74,7 @@ function makeSnapshot(input: {
         messages: [],
         activities: [],
         proposedPlans: [],
+        contextStatus: null,
         checkpoints: [
           {
             turnId: TurnId.makeUnsafe("turn-1"),

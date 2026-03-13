@@ -75,6 +75,7 @@ function makeReadModelThread(overrides: Partial<OrchestrationReadModel["threads"
     proposedPlans: [],
     checkpoints: [],
     session: null,
+    contextStatus: null,
     ...overrides,
   } satisfies OrchestrationReadModel["threads"][number];
 }
