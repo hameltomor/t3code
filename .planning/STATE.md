@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-03-13)
 
 **Core value:** Users can interact with multiple code agents through one unified interface without losing context, visibility, or control
-**Current focus:** v1.1 Session Context Status -- Phase 9 (Server Pipeline and Persistence)
+**Current focus:** v1.1 Session Context Status -- Phase 10 (UI Context Status Badge)
 
 ## Current Position
 
-Phase: 9 of 10 (Server Pipeline and Persistence)
-Plan: 1 of 2 in current phase
-Status: Executing
-Last activity: 2026-03-13 -- Completed 09-01 (Context Status Persistence and Projection Pipeline)
+Phase: 10 of 10 (UI Context Status Badge)
+Plan: 0 of ? in current phase
+Status: Phase 9 Complete
+Last activity: 2026-03-13 -- Completed 09-02 (Ingestion, Snapshot Hydration, and Integration Tests)
 
-Progress: [██████░░░░] 63% (v1.1: 5/8 plans)
+Progress: [███████░░░] 75% (v1.1: 6/8 plans)
 
 ## Performance Metrics
 
@@ -24,9 +24,9 @@ Progress: [██████░░░░] 63% (v1.1: 5/8 plans)
 - Total execution time: 1.43 hours
 
 **v1.1 Velocity:**
-- Total plans completed: 5
-- Average duration: 5min
-- Total execution time: 0.42 hours
+- Total plans completed: 6
+- Average duration: 6min
+- Total execution time: 0.55 hours
 
 | Phase | Plan | Duration | Tasks | Files |
 |-------|------|----------|-------|-------|
@@ -35,6 +35,7 @@ Progress: [██████░░░░] 63% (v1.1: 5/8 plans)
 | 08 | 01 | 3min | 2 | 3 |
 | 08 | 02 | 7min | 2 | 3 |
 | 09 | 01 | 5min | 2 | 8 |
+| 09 | 02 | 8min | 2 | 3 |
 
 ## Accumulated Context
 
@@ -64,6 +65,8 @@ v1.1 execution decisions:
 - Context status projector is supplementary (not in REQUIRED_SNAPSHOT_PROJECTORS) per PIPE-07 (09-01)
 - DB schema uses Schema.String for enum fields -- enums validated at application layer, not persistence (09-01)
 - Compaction detection uses 80% threshold: current totalTokens < previous * 0.8 (09-01)
+- Effect.catch used instead of Effect.catchAll for dispatch failure handling (effect-smol API) (09-02)
+- Ingestion throttle uses in-memory Map per thread, not Cache, for simplicity and zero GC overhead (09-02)
 
 ### Pending Todos
 
@@ -78,5 +81,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-13
-Stopped at: Completed 09-01-PLAN.md (Context Status Persistence and Projection Pipeline)
-Next step: Execute 09-02 (Ingestion, Snapshot Hydration, and Integration Tests)
+Stopped at: Completed 09-02-PLAN.md (Ingestion, Snapshot Hydration, and Integration Tests)
+Next step: Research and plan Phase 10 (UI Context Status Badge)
