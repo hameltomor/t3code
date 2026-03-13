@@ -918,10 +918,11 @@ export default function ChatView({ threadId }: ChatViewProps) {
     activeThread?.session !== undefined &&
     activeThread.session.status !== "closed" &&
     activeThread.session.orchestrationStatus !== "stopped";
-  const contextStatusDisplay = useMemo(
-    () => deriveContextStatusDisplay(activeThread?.contextStatus ?? null, sessionActive),
+  const contextStatusDisplayRaw = useMemo(
+    () => deriveContextStatusDisplay(activeThread?.contextStatus ?? null, sessionActive, Date.now()),
     [activeThread?.contextStatus, sessionActive],
   );
+  const [contextStatusDisplay] = useDebouncedValue(contextStatusDisplayRaw, { wait: 500 });
   const nowIso = new Date(nowTick).toISOString();
   const activeWorkStartedAt = deriveActiveWorkStartedAt(
     activeLatestTurn,
