@@ -662,6 +662,14 @@ const ThreadActivityImportCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const ThreadContextStatusSetCommand = Schema.Struct({
+  type: Schema.Literal("thread.context-status.set"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  contextStatus: OrchestrationThreadContextStatus,
+  createdAt: IsoDateTime,
+});
+
 const InternalOrchestrationCommand = Schema.Union([
   ThreadSessionSetCommand,
   ThreadMessageAssistantDeltaCommand,
@@ -672,6 +680,7 @@ const InternalOrchestrationCommand = Schema.Union([
   ThreadRevertCompleteCommand,
   ThreadMessageImportCommand,
   ThreadActivityImportCommand,
+  ThreadContextStatusSetCommand,
 ]);
 export type InternalOrchestrationCommand = typeof InternalOrchestrationCommand.Type;
 
@@ -702,6 +711,7 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.proposed-plan-upserted",
   "thread.turn-diff-completed",
   "thread.activity-appended",
+  "thread.context-status-set",
 ]);
 export type OrchestrationEventType = typeof OrchestrationEventType.Type;
 
@@ -874,6 +884,11 @@ export const ThreadActivityAppendedPayload = Schema.Struct({
   activity: OrchestrationThreadActivity,
 });
 
+export const ThreadContextStatusSetPayload = Schema.Struct({
+  threadId: ThreadId,
+  contextStatus: OrchestrationThreadContextStatus,
+});
+
 export const OrchestrationEventMetadata = Schema.Struct({
   providerTurnId: Schema.optional(TrimmedNonEmptyString),
   providerItemId: Schema.optional(ProviderItemId),
@@ -1010,6 +1025,11 @@ export const OrchestrationEvent = Schema.Union([
     type: Schema.Literal("thread.activity-appended"),
     payload: ThreadActivityAppendedPayload,
   }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.context-status-set"),
+    payload: ThreadContextStatusSetPayload,
+  }),
 ]);
 export type OrchestrationEvent = typeof OrchestrationEvent.Type;
 
@@ -1113,6 +1133,11 @@ export const OrchestrationPersistedEvent = Schema.Union([
     ...PersistedEventBaseFields,
     eventType: Schema.Literal("thread.activity-appended"),
     payload: ThreadActivityAppendedPayload,
+  }),
+  Schema.Struct({
+    ...PersistedEventBaseFields,
+    eventType: Schema.Literal("thread.context-status-set"),
+    payload: ThreadContextStatusSetPayload,
   }),
 ]);
 export type OrchestrationPersistedEvent = typeof OrchestrationPersistedEvent.Type;
