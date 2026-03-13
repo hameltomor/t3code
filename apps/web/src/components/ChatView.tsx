@@ -139,6 +139,8 @@ import {
 import ChatMarkdown from "./ChatMarkdown";
 import { ProvenanceCard } from "./ProvenanceCard";
 import { shouldUseCompactComposerFooter } from "./composerFooterLayout";
+import { deriveContextStatusDisplay } from "./contextStatusIndicator.logic";
+import { ContextStatusIndicator } from "./ContextStatusIndicator";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "./ui/alert";
 import {
@@ -911,6 +913,15 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const isSendBusy = sendPhase !== "idle";
   const isPreparingWorktree = sendPhase === "preparing-worktree";
   const isWorking = phase === "running" || isSendBusy || isConnecting || isRevertingCheckpoint;
+  const sessionActive =
+    activeThread?.session !== null &&
+    activeThread?.session !== undefined &&
+    activeThread.session.status !== "closed" &&
+    activeThread.session.orchestrationStatus !== "stopped";
+  const contextStatusDisplay = useMemo(
+    () => deriveContextStatusDisplay(activeThread?.contextStatus ?? null, sessionActive),
+    [activeThread?.contextStatus, sessionActive],
+  );
   const nowIso = new Date(nowTick).toISOString();
   const activeWorkStartedAt = deriveActiveWorkStartedAt(
     activeLatestTurn,
@@ -4020,6 +4031,15 @@ export default function ChatView({ threadId }: ChatViewProps) {
                       </span>
                     )}
                   </Button>
+
+                  {contextStatusDisplay.visible && (
+                    <>
+                      {!composerCompact && (
+                        <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
+                      )}
+                      <ContextStatusIndicator display={contextStatusDisplay} />
+                    </>
+                  )}
                 </div>
 
                 {/* Right side: attach + send / stop button */}
