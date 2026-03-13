@@ -36,6 +36,7 @@ rm -rf ~/.wine && WINEARCH=win32 wineboot --init
 - No README edits needed when releasing a new version.
 - Desktop auto-update uses `electron-updater` with a generic provider pointing at `https://synkr-server.price-bee.com/xbecode/`.
 - The update server (`synkr-server`) proxies `latest*.yml` manifests and binary downloads from GCS bucket `xbecode-releases`.
+- Important: `electron-updater` resolves files in `latest*.yml` relative to the feed root, so updater payloads must be present at the bucket root as well as in the versioned archive prefix.
 - Cross-compilation from Linux works for all platforms (`npmRebuild: false` skips native module recompilation; prebuilt binaries are used).
 
 ## artifacts
@@ -187,7 +188,18 @@ gsutil cp release/latest-mac-x64.yml gs://xbecode-releases/latest-mac-x64.yml
 gsutil cp release/latest-linux.yml gs://xbecode-releases/latest-linux.yml
 gsutil cp release/latest.yml gs://xbecode-releases/latest.yml
 
-# upload binaries to version prefix (electron-updater downloads from here)
+# upload binaries to bucket root (electron-updater resolves manifest paths here)
+gsutil -m cp \
+  release/XBE-Code-arm64.zip \
+  release/XBE-Code-arm64.zip.blockmap \
+  release/XBE-Code-x64.exe \
+  release/XBE-Code-x64.exe.blockmap \
+  release/XBE-Code-x64.zip \
+  release/XBE-Code-x64.zip.blockmap \
+  release/XBE-Code-x86_64.AppImage \
+  gs://xbecode-releases/
+
+# upload binaries to version prefix (historical archive / rollback)
 gsutil -m cp \
   release/XBE-Code-arm64.zip \
   release/XBE-Code-arm64.zip.blockmap \
@@ -202,24 +214,25 @@ gsutil -m cp \
 ### 9. verify everything
 
 ```bash
-# GitHub release assets
-gh release view "v$V" --repo x-b-e/xbe-code --json assets --jq '.assets[].name'
-
-# auto-update manifests
-curl -s https://synkr-server.price-bee.com/xbecode/latest.yml | head -2
-curl -s https://synkr-server.price-bee.com/xbecode/latest-mac.yml | head -2
-curl -s https://synkr-server.price-bee.com/xbecode/latest-linux.yml | head -2
-
-# download redirects
-curl -sI 'https://synkr-server.price-bee.com/xbecode/download/mac?arch=arm64' | grep location
-curl -sI 'https://synkr-server.price-bee.com/xbecode/download/win' | grep location
-curl -sI 'https://synkr-server.price-bee.com/xbecode/download/linux' | grep location
-
-# GCS bucket
-gsutil ls gs://xbecode-releases/$V/
+# one command to validate the full manual release
+node scripts/validate-release.mjs --version "$V"
 ```
 
-All manifests should show `version: $V` and all download redirects should point to `https://storage.googleapis.com/xbecode-releases/$V/...`.
+This validates:
+
+- local `release/` artifacts
+- local `latest*.yml` manifest versions and referenced files
+- GitHub release asset names
+- GCS bucket root objects and versioned archive objects
+- remote updater manifests and payload URLs under `https://synkr-server.price-bee.com/xbecode/`
+
+Optional: if you only want part of the validation while debugging, use one or more of:
+
+```bash
+node scripts/validate-release.mjs --version "$V" --skip-gh
+node scripts/validate-release.mjs --version "$V" --skip-gcs
+node scripts/validate-release.mjs --version "$V" --skip-remote
+```
 
 ## CI release (alternative)
 
@@ -279,6 +292,7 @@ Prerequisites: Node.js 22.13+ and at least one authorized agent CLI (Codex, Clau
 - The desktop UI shows a rocket update button when an update is available; click once to download, click again to restart/install.
 - Provider: `generic` pointing at `https://synkr-server.price-bee.com/xbecode/`.
 - The update server (`synkr-server`) proxies `latest*.yml` manifests and binary downloads from GCS bucket `xbecode-releases`.
+- Because the provider is `generic`, the `path` and `files[].url` entries in `latest*.yml` are resolved relative to `/xbecode/`, not to `/$VERSION/`.
 - No GitHub token or authentication required — the GCS bucket is publicly readable.
 - Override the update URL at build time: set `XBECODE_DESKTOP_UPDATE_URL` env var.
 
@@ -290,6 +304,13 @@ gs://xbecode-releases/
   latest-mac.yml            # macOS arm64 manifest
   latest-mac-x64.yml        # macOS x64 manifest
   latest-linux.yml          # Linux manifest
+  XBE-Code-arm64.zip        # root auto-update payload
+  XBE-Code-arm64.zip.blockmap
+  XBE-Code-x64.zip          # root auto-update payload
+  XBE-Code-x64.zip.blockmap
+  XBE-Code-x64.exe          # root auto-update payload
+  XBE-Code-x64.exe.blockmap
+  XBE-Code-x86_64.AppImage  # root auto-update payload
   0.0.5/                    # version prefix
     XBE-Code-arm64.zip
     XBE-Code-arm64.zip.blockmap
@@ -346,6 +367,7 @@ Set these environment variables:
 | Forgot `bun run build:desktop` | Missing `apps/server/dist/client/index.html` | Run `bun run build:desktop` before artifact builds |
 | macOS x64 overwrites `latest-mac.yml` | arm64 users get wrong binary | Rename to `latest-mac-x64.yml` and recreate arm64 manifest (step 5) |
 | Uploaded to GCS but forgot manifests | Auto-updater doesn't see new version | Upload `latest*.yml` to bucket root |
+| Update is visible but download returns `404` | Manifest exists, but root updater payload is missing | Upload the matching zip/exe/AppImage and blockmap to `gs://xbecode-releases/` root |
 | Wine not initialized | Windows build fails with `kernel32.dll` error | `rm -rf ~/.wine && WINEARCH=win32 wineboot --init` |
 
 ## troubleshooting
@@ -353,6 +375,6 @@ Set these environment variables:
 - **Build fails with `sips` not found**: You're on Linux. Ensure ImageMagick (`convert`) and `icnsutils` (`png2icns`) are installed.
 - **Build fails with `wine: could not load kernel32.dll`**: Recreate Wine prefix: `rm -rf ~/.wine && WINEARCH=win32 wineboot --init`
 - **Build fails with `Missing bundled server client`**: Run `bun run build:desktop` first.
-- **`electron-updater` doesn't find updates**: Ensure `latest*.yml` files are uploaded to GCS bucket root and binaries are in `{version}/` prefix.
+- **`electron-updater` doesn't find updates**: Ensure `latest*.yml` files are uploaded to GCS bucket root and updater payloads also exist at bucket root.
 - **Build fails with signing error**: Retry without `--signed` to confirm unsigned path works, then re-check credentials.
 - **Private repo download 404**: Ensure the user is logged into GitHub and has repo access, or set `GH_TOKEN` for CLI use.

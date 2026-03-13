@@ -18,7 +18,9 @@ import {
 } from "../Errors.ts";
 import { ClaudeCodeAdapter } from "../Services/ClaudeCodeAdapter.ts";
 import {
+  createClaudeCodeProcessSpawner,
   makeClaudeCodeAdapterLive,
+  resolveClaudeCodeSpawnCommand,
   type ClaudeCodeAdapterLiveOptions,
 } from "./ClaudeCodeAdapter.ts";
 
@@ -271,6 +273,66 @@ describe("ClaudeCodeAdapterLive", () => {
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),
     );
+  });
+
+  it("resolves SDK node launches through the current runtime executable", () => {
+    assert.equal(
+      resolveClaudeCodeSpawnCommand("node", "/Applications/XBE Code.app/Contents/MacOS/XBE Code"),
+      "/Applications/XBE Code.app/Contents/MacOS/XBE Code",
+    );
+    assert.equal(resolveClaudeCodeSpawnCommand("node", "   "), "node");
+    assert.equal(resolveClaudeCodeSpawnCommand("/opt/homebrew/bin/claude"), "/opt/homebrew/bin/claude");
+  });
+
+  it("spawns Claude SDK JS entrypoints with the current executable and Electron node mode", () => {
+    const calls: Array<{
+      readonly command: string;
+      readonly args: ReadonlyArray<string>;
+      readonly options: {
+        readonly cwd?: string;
+        readonly env: NodeJS.ProcessEnv;
+        readonly signal: AbortSignal;
+        readonly stdio: ["pipe", "pipe", "ignore"];
+        readonly windowsHide: true;
+      };
+    }> = [];
+    const spawner = createClaudeCodeProcessSpawner(
+      "/Applications/XBE Code.app/Contents/MacOS/XBE Code",
+      (command, args, options) => {
+        calls.push({ command, args, options });
+        return {
+          stdin: process.stdin,
+          stdout: process.stdout,
+          killed: false,
+          exitCode: null,
+          kill: () => true,
+          on: () => undefined,
+          once: () => undefined,
+          off: () => undefined,
+        };
+      },
+    );
+
+    spawner({
+      command: "node",
+      args: ["/tmp/claude-sdk/cli.js", "--output-format", "stream-json"],
+      cwd: "/tmp/workspace",
+      env: { PATH: "/usr/bin" },
+      signal: new AbortController().signal,
+    });
+
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0], {
+      command: "/Applications/XBE Code.app/Contents/MacOS/XBE Code",
+      args: ["/tmp/claude-sdk/cli.js", "--output-format", "stream-json"],
+      options: {
+        cwd: "/tmp/workspace",
+        env: { PATH: "/usr/bin" },
+        signal: calls[0]!.options.signal,
+        stdio: ["pipe", "pipe", "ignore"],
+        windowsHide: true,
+      },
+    });
   });
 
   it.effect("maps Claude stream/runtime messages to canonical provider runtime events", () => {

@@ -15,9 +15,12 @@ import {
   type PermissionResult,
   type PermissionUpdate,
   type SDKMessage,
+  type SpawnOptions as ClaudeSpawnOptions,
+  type SpawnedProcess as ClaudeSpawnedProcess,
   type SDKResultMessage,
   type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import { spawn as spawnChildProcess } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -251,6 +254,52 @@ function extractProcessErrorDetail(cause: unknown): string | undefined {
     }
   }
   return parts.length > 0 ? parts.join("; ") : undefined;
+}
+
+type ClaudeSdkChildSpawner = (
+  command: string,
+  args: ReadonlyArray<string>,
+  options: {
+    readonly cwd?: string;
+    readonly env: NodeJS.ProcessEnv;
+    readonly signal: AbortSignal;
+    readonly stdio: ["pipe", "pipe", "ignore"];
+    readonly windowsHide: true;
+  },
+) => ClaudeSpawnedProcess;
+
+export function resolveClaudeCodeSpawnCommand(
+  command: string,
+  execPath = process.execPath,
+): string {
+  if (command !== "node") return command;
+  const normalizedExecPath = execPath.trim();
+  return normalizedExecPath.length > 0 ? normalizedExecPath : command;
+}
+
+export function createClaudeCodeProcessSpawner(
+  execPath = process.execPath,
+  spawnProcess: ClaudeSdkChildSpawner = (command, args, options) =>
+    spawnChildProcess(command, [...args], options) as unknown as ClaudeSpawnedProcess,
+): NonNullable<ClaudeQueryOptions["spawnClaudeCodeProcess"]> {
+  return (input: ClaudeSpawnOptions) => {
+    const command = resolveClaudeCodeSpawnCommand(input.command, execPath);
+    const env =
+      process.versions.electron !== undefined && command === execPath
+        ? {
+            ...input.env,
+            ELECTRON_RUN_AS_NODE: input.env.ELECTRON_RUN_AS_NODE ?? "1",
+          }
+        : input.env;
+
+    return spawnProcess(command, input.args, {
+      ...(input.cwd ? { cwd: input.cwd } : {}),
+      env,
+      signal: input.signal,
+      stdio: ["pipe", "pipe", "ignore"],
+      windowsHide: true,
+    });
+  };
 }
 
 function asRuntimeItemId(value: string): RuntimeItemId {
@@ -1755,6 +1804,7 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
           tools: CLAUDE_CODE_PRESET,
           systemPrompt: CLAUDE_CODE_PRESET,
           env: sanitizedEnv(),
+          spawnClaudeCodeProcess: createClaudeCodeProcessSpawner(),
           ...(input.cwd ? { additionalDirectories: [input.cwd] } : {}),
         };
 
