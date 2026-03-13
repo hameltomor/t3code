@@ -38,6 +38,10 @@ import {
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
+import {
+  normalizeCodexUsage,
+  type CodexThreadTokenUsage,
+} from "../normalization/tokenUsageNormalization.ts";
 
 const PROVIDER = "codex" as const;
 
@@ -698,12 +702,19 @@ function mapToRuntimeEvents(
   }
 
   if (event.method === "thread/tokenUsage/updated") {
+    const tokenUsage = (event.payload as Record<string, unknown> | undefined)
+      ?.tokenUsage as CodexThreadTokenUsage | undefined;
+    if (!tokenUsage) {
+      return [];
+    }
     return [
       {
         type: "thread.token-usage.updated",
         ...runtimeEventBase(event, canonicalThreadId),
         payload: {
-          usage: event.payload ?? {},
+          usage: normalizeCodexUsage(tokenUsage),
+          support: "native" as const,
+          source: "provider-event" as const,
         },
       },
     ];
