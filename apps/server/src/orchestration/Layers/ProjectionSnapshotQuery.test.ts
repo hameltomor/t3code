@@ -229,6 +229,14 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           deletedAt: null,
         },
       ]);
+      // contextStatus projector is in the gate, so it contributes to the minimum
+      assert.ok(
+        Object.values(ORCHESTRATION_PROJECTOR_NAMES).includes(
+          ORCHESTRATION_PROJECTOR_NAMES.threadContextStatus,
+        ),
+        "threadContextStatus must be a registered projector",
+      );
+
       assert.deepEqual(snapshot.threads, [
         {
           id: ThreadId.makeUnsafe("thread-1"),
@@ -298,6 +306,37 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           contextStatus: null,
         },
       ]);
+    }),
+  );
+
+  it.effect("snapshot sequence is gated by threadContextStatus projector", () =>
+    Effect.gen(function* () {
+      const snapshotQuery = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+
+      // Insert all projectors at sequence 10, except threadContextStatus at 3
+      for (const projector of Object.values(ORCHESTRATION_PROJECTOR_NAMES)) {
+        const seq =
+          projector === ORCHESTRATION_PROJECTOR_NAMES.threadContextStatus ? 3 : 10;
+        yield* sql`
+          INSERT OR REPLACE INTO projection_state (
+            projector,
+            last_applied_sequence,
+            updated_at
+          )
+          VALUES (
+            ${projector},
+            ${seq},
+            '2026-03-13T00:00:00.000Z'
+          )
+        `;
+      }
+
+      const snapshot = yield* snapshotQuery.getSnapshot();
+      // If threadContextStatus were not in REQUIRED_SNAPSHOT_PROJECTORS,
+      // the sequence would be 10 (min of all other projectors).
+      // With it in the gate, the sequence must be 3.
+      assert.equal(snapshot.snapshotSequence, 3);
     }),
   );
 });

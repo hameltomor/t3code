@@ -237,6 +237,7 @@ export type NormalizedTokenUsage = typeof NormalizedTokenUsage.Type;
 export const ContextStatusSupport = Schema.Literals([
   "native",
   "derived-live",
+  // "derived-on-demand" reserved for adapters implementing countTokens API (not yet used)
   "derived-on-demand",
   "unsupported",
 ]);
@@ -247,6 +248,7 @@ export const ContextStatusSource = Schema.Literals([
   "sdk-usage",
   "count-tokens",
   "heuristic",
+  "compact-boundary",
 ]);
 export type ContextStatusSource = typeof ContextStatusSource.Type;
 

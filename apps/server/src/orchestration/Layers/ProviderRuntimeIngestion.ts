@@ -514,12 +514,9 @@ const make = Effect.gen(function* () {
 
   const shouldDispatchContextStatus = (threadId: string, totalTokens: number): boolean => {
     const last = lastContextStatusDispatch.get(threadId);
-    const now = Date.now();
     if (!last) return true;
-    // Skip if totalTokens hasn't changed
+    // Same-value dedup: skip if totalTokens hasn't changed
     if (last.totalTokens === totalTokens) return false;
-    // Skip if less than 2 seconds since last dispatch
-    if (now - last.at < 2000) return false;
     return true;
   };
 

@@ -1717,5 +1717,60 @@ describe("ProviderRuntimeIngestion", () => {
       expect(thread?.contextStatus).not.toBeNull();
       expect(thread?.contextStatus?.tokenUsage?.totalTokens).toBe(30000);
     });
+
+    it("dispatches different totalTokens in rapid succession", async () => {
+      const harness = await createHarness();
+
+      // Update thread model to one with known context window limits in registry
+      await Effect.runPromise(
+        harness.engine.dispatch({
+          type: "thread.meta.update",
+          commandId: CommandId.makeUnsafe("cmd-update-model-for-rapid"),
+          threadId: ThreadId.makeUnsafe("thread-1"),
+          model: "gpt-5.3-codex",
+        }),
+      );
+
+      // First event
+      harness.emit({
+        type: "thread.token-usage.updated",
+        eventId: asEventId("evt-rapid-1"),
+        provider: "codex",
+        createdAt: new Date().toISOString(),
+        threadId: asThreadId("thread-1"),
+        payload: {
+          usage: { totalTokens: 30000, inputTokens: 20000, outputTokens: 10000 },
+          support: "native",
+          source: "provider-event",
+        },
+      });
+
+      await waitForThread(
+        harness.engine,
+        (entry) => entry.contextStatus !== null,
+      );
+
+      // Second event immediately with different totalTokens (should NOT be dropped)
+      harness.emit({
+        type: "thread.token-usage.updated",
+        eventId: asEventId("evt-rapid-2"),
+        provider: "codex",
+        createdAt: new Date().toISOString(),
+        threadId: asThreadId("thread-1"),
+        payload: {
+          usage: { totalTokens: 390000, inputTokens: 350000, outputTokens: 40000 },
+          support: "native",
+          source: "provider-event",
+        },
+      });
+
+      // Should update to the new totalTokens (390k / 400k = 97.5% -> near-limit)
+      const thread = await waitForThread(
+        harness.engine,
+        (entry) => entry.contextStatus?.tokenUsage?.totalTokens === 390000,
+      );
+      expect(thread.contextStatus!.tokenUsage?.totalTokens).toBe(390000);
+      expect(thread.contextStatus!.status).toBe("near-limit");
+    });
   });
 });

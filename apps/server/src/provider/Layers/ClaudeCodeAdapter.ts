@@ -1337,7 +1337,7 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
                     totalTokens: compactMeta?.pre_tokens ?? 0,
                   },
                   support: "derived-live" as const,
-                  source: "sdk-usage" as const,
+                  source: "compact-boundary" as const,
                 },
               };
               yield* offerRuntimeEvent(compactUsageEvent as ProviderRuntimeEvent);

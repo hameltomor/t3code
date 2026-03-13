@@ -271,7 +271,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
             turnId: ts.turnId,
             payload: {
               usage: normalizeGeminiUsage(ts.lastUsageMetadata),
-              support: "derived-on-demand" as const,
+              support: "derived-live" as const,
               source: "sdk-usage" as const,
             },
           });

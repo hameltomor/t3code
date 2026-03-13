@@ -41,10 +41,11 @@ export function computeContextStatus(
       ? (input.usage.totalTokens / maxInputTokens) * 100
       : undefined;
 
-  // Detect compaction: if previousStatus exists and current totalTokens is significantly lower
+  // Detect compaction: explicit compact-boundary signal, or heuristic fallback (>20% token drop)
   const isCompacted =
-    input.previousStatus?.tokenUsage?.totalTokens !== undefined &&
-    input.usage.totalTokens < input.previousStatus.tokenUsage.totalTokens * 0.8;
+    input.source === "compact-boundary" ||
+    (input.previousStatus?.tokenUsage?.totalTokens !== undefined &&
+      input.usage.totalTokens < input.previousStatus.tokenUsage.totalTokens * 0.8);
 
   const status: ContextStatusLevel = isCompacted ? "compacted" : computeStatusLevel(percent);
 
@@ -56,6 +57,9 @@ export function computeContextStatus(
     provider: input.provider,
     support: input.support,
     source: input.source,
+    // TODO(v1.2): Produce "stale" when a background timer detects no token-usage
+    // event within a configurable threshold while a session is active. The UI
+    // already handles stale rendering gracefully (contextStatusIndicator.logic.ts).
     freshness: "live",
     status,
     model: input.model,
@@ -68,7 +72,7 @@ export function computeContextStatus(
         ? { lastCompactedAt: input.previousStatus.lastCompactedAt }
         : {}),
     ...(isCompacted
-      ? { lastCompactionReason: "token-count-drop" }
+      ? { lastCompactionReason: input.source === "compact-boundary" ? "compact-boundary" : "token-count-drop" }
       : input.previousStatus?.lastCompactionReason
         ? { lastCompactionReason: input.previousStatus.lastCompactionReason }
         : {}),
