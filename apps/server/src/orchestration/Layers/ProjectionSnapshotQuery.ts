@@ -6,9 +6,15 @@ import {
   OrchestrationCheckpointFile,
   OrchestrationReadModel,
   ProjectScript,
+  ThreadId,
   TurnId,
   WorkspaceMember,
   WorkspaceWorktreeEntry,
+  type ContextStatusFreshness,
+  type ContextStatusLevel,
+  type ContextStatusSource,
+  type ContextStatusSupport,
+  type NormalizedTokenUsage,
   type OrchestrationCheckpointSummary,
   type OrchestrationLatestTurn,
   type OrchestrationMessage,
@@ -17,6 +23,8 @@ import {
   type OrchestrationSession,
   type OrchestrationThread,
   type OrchestrationThreadActivity,
+  type OrchestrationThreadContextStatus,
+  type ProviderKind,
 } from "@xbetools/contracts";
 import { Effect, Layer, Schema, Struct } from "effect";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
@@ -314,6 +322,47 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       `,
   });
 
+  const ProjectionThreadContextStatusDbRow = Schema.Struct({
+    threadId: ThreadId,
+    provider: Schema.String,
+    support: Schema.String,
+    source: Schema.String,
+    freshness: Schema.String,
+    status: Schema.String,
+    model: Schema.NullOr(Schema.String),
+    tokenUsageJson: Schema.NullOr(Schema.String),
+    contextWindowLimit: Schema.NullOr(Schema.Number),
+    percent: Schema.NullOr(Schema.Number),
+    lastCompactedAt: Schema.NullOr(Schema.String),
+    lastCompactionReason: Schema.NullOr(Schema.String),
+    compactionCount: Schema.NullOr(Schema.Number),
+    measuredAt: Schema.String,
+  });
+
+  const listContextStatusRows = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: ProjectionThreadContextStatusDbRow,
+    execute: () =>
+      sql`
+        SELECT
+          thread_id AS "threadId",
+          provider,
+          support,
+          source,
+          freshness,
+          status,
+          model,
+          token_usage_json AS "tokenUsageJson",
+          context_window_limit AS "contextWindowLimit",
+          percent,
+          last_compacted_at AS "lastCompactedAt",
+          last_compaction_reason AS "lastCompactionReason",
+          compaction_count AS "compactionCount",
+          measured_at AS "measuredAt"
+        FROM projection_thread_context_status
+      `,
+  });
+
   const getSnapshot: ProjectionSnapshotQueryShape["getSnapshot"] = () =>
     sql
       .withTransaction(
@@ -328,6 +377,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             checkpointRows,
             latestTurnRows,
             stateRows,
+            contextStatusRows,
           ] = yield* Effect.all([
             listProjectRows(undefined).pipe(
               Effect.mapError(
@@ -398,6 +448,14 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 toPersistenceSqlOrDecodeError(
                   "ProjectionSnapshotQuery.getSnapshot:listProjectionState:query",
                   "ProjectionSnapshotQuery.getSnapshot:listProjectionState:decodeRows",
+                ),
+              ),
+            ),
+            listContextStatusRows(undefined).pipe(
+              Effect.mapError(
+                toPersistenceSqlOrDecodeError(
+                  "ProjectionSnapshotQuery.getSnapshot:listContextStatus:query",
+                  "ProjectionSnapshotQuery.getSnapshot:listContextStatus:decodeRows",
                 ),
               ),
             ),
@@ -523,6 +581,33 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             });
           }
 
+          const contextStatusByThread = new Map<string, OrchestrationThreadContextStatus>();
+          for (const row of contextStatusRows) {
+            let tokenUsage: NormalizedTokenUsage | null = null;
+            if (row.tokenUsageJson) {
+              try {
+                tokenUsage = JSON.parse(row.tokenUsageJson) as NormalizedTokenUsage;
+              } catch {
+                // Corrupted JSON -- leave as null
+              }
+            }
+            contextStatusByThread.set(row.threadId, {
+              provider: row.provider as ProviderKind,
+              support: row.support as ContextStatusSupport,
+              source: row.source as ContextStatusSource,
+              freshness: row.freshness as ContextStatusFreshness,
+              status: row.status as ContextStatusLevel,
+              model: row.model,
+              tokenUsage,
+              ...(row.contextWindowLimit !== null ? { contextWindowLimit: row.contextWindowLimit } : {}),
+              ...(row.percent !== null ? { percent: row.percent } : {}),
+              ...(row.lastCompactedAt !== null ? { lastCompactedAt: row.lastCompactedAt } : {}),
+              ...(row.lastCompactionReason !== null ? { lastCompactionReason: row.lastCompactionReason } : {}),
+              ...(row.compactionCount !== null ? { compactionCount: row.compactionCount } : {}),
+              measuredAt: row.measuredAt,
+            } as OrchestrationThreadContextStatus);
+          }
+
           const projects: Array<OrchestrationProject> = projectRows.map((row) => ({
             id: row.projectId,
             title: row.title,
@@ -555,7 +640,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             activities: activitiesByThread.get(row.threadId) ?? [],
             checkpoints: checkpointsByThread.get(row.threadId) ?? [],
             session: sessionsByThread.get(row.threadId) ?? null,
-            contextStatus: null,
+            contextStatus: contextStatusByThread.get(row.threadId) ?? null,
           }));
 
           const snapshot = {

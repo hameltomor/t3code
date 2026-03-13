@@ -8,8 +8,12 @@ import {
   ThreadId,
   TurnId,
   type OrchestrationThreadActivity,
+  type ProviderKind,
   type ProviderRuntimeEvent,
 } from "@xbetools/contracts";
+import {
+  computeContextStatus,
+} from "../../provider/normalization/contextStatusComputation.ts";
 import { Cache, Cause, Duration, Effect, Layer, Option, Queue, Ref, Stream } from "effect";
 
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
@@ -504,6 +508,24 @@ function runtimeEventToActivities(
 const make = Effect.gen(function* () {
   const orchestrationEngine = yield* OrchestrationEngineService;
   const providerService = yield* ProviderService;
+
+  // Context status dispatch throttle state: tracks last dispatch time and totalTokens per thread
+  const lastContextStatusDispatch = new Map<string, { at: number; totalTokens: number }>();
+
+  const shouldDispatchContextStatus = (threadId: string, totalTokens: number): boolean => {
+    const last = lastContextStatusDispatch.get(threadId);
+    const now = Date.now();
+    if (!last) return true;
+    // Skip if totalTokens hasn't changed
+    if (last.totalTokens === totalTokens) return false;
+    // Skip if less than 2 seconds since last dispatch
+    if (now - last.at < 2000) return false;
+    return true;
+  };
+
+  const recordContextStatusDispatch = (threadId: string, totalTokens: number): void => {
+    lastContextStatusDispatch.set(threadId, { at: Date.now(), totalTokens });
+  };
 
   const assistantDeliveryModeRef = yield* Ref.make<AssistantDeliveryMode>(
     DEFAULT_ASSISTANT_DELIVERY_MODE,
@@ -1097,6 +1119,37 @@ const make = Effect.gen(function* () {
           threadId: thread.id,
           title: event.payload.name,
         });
+      }
+
+      if (event.type === "thread.token-usage.updated") {
+        const { usage, support, source } = event.payload;
+        if (shouldDispatchContextStatus(thread.id, usage.totalTokens)) {
+          // Look up previous context status from read model for compaction detection
+          const currentThread = readModel.threads.find((t) => t.id === thread.id);
+          const previousStatus = currentThread?.contextStatus ?? null;
+
+          const contextStatus = computeContextStatus({
+            provider: (thread.session?.providerName as ProviderKind) ?? "codex",
+            model: thread.model,
+            usage,
+            support,
+            source,
+            measuredAt: event.createdAt,
+            previousStatus,
+          });
+
+          yield* orchestrationEngine.dispatch({
+            type: "thread.context-status.set",
+            commandId: providerCommandId(event, "context-status-set"),
+            threadId: thread.id,
+            contextStatus,
+            createdAt: event.createdAt,
+          }).pipe(
+            Effect.catch((error) => Effect.logWarning("context-status dispatch failed, skipping", { error })),
+          );
+
+          recordContextStatusDispatch(thread.id, usage.totalTokens);
+        }
       }
 
       if (event.type === "turn.diff.updated") {
