@@ -18,6 +18,7 @@ import {
   ThreadApprovalResponseRequestedPayload as ContractsThreadApprovalResponseRequestedPayloadSchema,
   ThreadCheckpointRevertRequestedPayload as ContractsThreadCheckpointRevertRequestedPayloadSchema,
   ThreadSessionStopRequestedPayload as ContractsThreadSessionStopRequestedPayloadSchema,
+  ThreadContextStatusSetPayload as ContractsThreadContextStatusSetPayloadSchema,
 } from "@xbetools/contracts";
 
 // Server-internal alias surface, backed by contract schemas as the source of truth.
@@ -46,3 +47,5 @@ export const ThreadApprovalResponseRequestedPayload =
 export const ThreadCheckpointRevertRequestedPayload =
   ContractsThreadCheckpointRevertRequestedPayloadSchema;
 export const ThreadSessionStopRequestedPayload = ContractsThreadSessionStopRequestedPayloadSchema;
+
+export const ThreadContextStatusSetPayload = ContractsThreadContextStatusSetPayloadSchema;

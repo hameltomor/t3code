@@ -14,6 +14,7 @@ import {
   ProjectDeletedPayload,
   ProjectMetaUpdatedPayload,
   ThreadActivityAppendedPayload,
+  ThreadContextStatusSetPayload,
   ThreadCreatedPayload,
   ThreadDeletedPayload,
   ThreadInteractionModeSetPayload,
@@ -623,6 +624,21 @@ export function projectEvent(
             }),
           };
         }),
+      );
+
+    case "thread.context-status-set":
+      return decodeForEvent(
+        ThreadContextStatusSetPayload,
+        event.payload,
+        event.type,
+        "payload",
+      ).pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          threads: updateThread(nextBase.threads, payload.threadId, {
+            contextStatus: payload.contextStatus,
+          }),
+        })),
       );
 
     default:

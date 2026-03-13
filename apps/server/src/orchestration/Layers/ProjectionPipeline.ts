@@ -29,7 +29,9 @@ import {
 } from "../../persistence/Services/ProjectionTurns.ts";
 import { ProjectionThreadRepository } from "../../persistence/Services/ProjectionThreads.ts";
 import { ProjectionNotificationRepository } from "../../persistence/Services/ProjectionNotifications.ts";
+import { ProjectionThreadContextStatusRepository } from "../../persistence/Services/ProjectionThreadContextStatus.ts";
 import { ProjectionNotificationRepositoryLive } from "../../persistence/Layers/ProjectionNotifications.ts";
+import { ProjectionThreadContextStatusRepositoryLive } from "../../persistence/Layers/ProjectionThreadContextStatus.ts";
 import { ProjectionPendingApprovalRepositoryLive } from "../../persistence/Layers/ProjectionPendingApprovals.ts";
 import { ProjectionProjectRepositoryLive } from "../../persistence/Layers/ProjectionProjects.ts";
 import { ProjectionStateRepositoryLive } from "../../persistence/Layers/ProjectionState.ts";
@@ -62,6 +64,7 @@ export const ORCHESTRATION_PROJECTOR_NAMES = {
   checkpoints: "projection.checkpoints",
   pendingApprovals: "projection.pending-approvals",
   notifications: "projection.notifications",
+  threadContextStatus: "projection.thread-context-status",
 } as const;
 
 type ProjectorName =
@@ -355,6 +358,7 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
   const projectionTurnRepository = yield* ProjectionTurnRepository;
   const projectionPendingApprovalRepository = yield* ProjectionPendingApprovalRepository;
   const projectionNotificationRepository = yield* ProjectionNotificationRepository;
+  const projectionThreadContextStatusRepository = yield* ProjectionThreadContextStatusRepository;
 
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -1175,6 +1179,31 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
       }
     });
 
+  const applyThreadContextStatusProjection: ProjectorDefinition["apply"] = (event) =>
+    Effect.gen(function* () {
+      if (event.type !== "thread.context-status-set") return;
+      const payload = event.payload;
+      yield* projectionThreadContextStatusRepository.upsert({
+        threadId: payload.threadId,
+        provider: payload.contextStatus.provider,
+        support: payload.contextStatus.support,
+        source: payload.contextStatus.source,
+        freshness: payload.contextStatus.freshness,
+        status: payload.contextStatus.status,
+        model: payload.contextStatus.model,
+        tokenUsageJson: payload.contextStatus.tokenUsage
+          ? JSON.stringify(payload.contextStatus.tokenUsage)
+          : null,
+        contextWindowLimit: payload.contextStatus.contextWindowLimit ?? null,
+        percent: payload.contextStatus.percent ?? null,
+        lastCompactedAt: payload.contextStatus.lastCompactedAt ?? null,
+        lastCompactionReason: payload.contextStatus.lastCompactionReason ?? null,
+        compactionCount: payload.contextStatus.compactionCount ?? null,
+        measuredAt: payload.contextStatus.measuredAt,
+        updatedAt: event.occurredAt,
+      });
+    });
+
   const projectors: ReadonlyArray<ProjectorDefinition> = [
     {
       name: ORCHESTRATION_PROJECTOR_NAMES.projects,
@@ -1215,6 +1244,10 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
     {
       name: ORCHESTRATION_PROJECTOR_NAMES.notifications,
       apply: applyNotificationsProjection,
+    },
+    {
+      name: ORCHESTRATION_PROJECTOR_NAMES.threadContextStatus,
+      apply: applyThreadContextStatusProjection,
     },
   ];
 
@@ -1317,5 +1350,6 @@ export const OrchestrationProjectionPipelineLive = Layer.effect(
   Layer.provideMerge(ProjectionTurnRepositoryLive),
   Layer.provideMerge(ProjectionPendingApprovalRepositoryLive),
   Layer.provideMerge(ProjectionNotificationRepositoryLive),
+  Layer.provideMerge(ProjectionThreadContextStatusRepositoryLive),
   Layer.provideMerge(ProjectionStateRepositoryLive),
 );
