@@ -127,7 +127,7 @@ const makeHistoryImportCatalogRepository = Effect.gen(function* () {
           last_scanned_at AS "lastScannedAt"
         FROM history_import_catalog
         WHERE workspace_root = ${workspaceRoot}
-        ORDER BY last_scanned_at DESC
+        ORDER BY updated_at DESC, created_at DESC, catalog_id DESC
       `,
   });
 
@@ -161,7 +161,7 @@ const makeHistoryImportCatalogRepository = Effect.gen(function* () {
         FROM history_import_catalog
         WHERE workspace_root = ${workspaceRoot}
           AND provider_name = ${providerName}
-        ORDER BY last_scanned_at DESC
+        ORDER BY updated_at DESC, created_at DESC, catalog_id DESC
       `,
   });
 

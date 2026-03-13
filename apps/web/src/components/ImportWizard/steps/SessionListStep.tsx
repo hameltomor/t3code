@@ -133,7 +133,7 @@ export function SessionListStep({
                 <div className="flex items-center gap-3 text-xs text-muted-foreground">
                   <span className="truncate">{session.cwd}</span>
                   <span className="shrink-0">
-                    {new Date(session.createdAt).toLocaleDateString()}
+                    {new Date(session.updatedAt).toLocaleDateString()}
                   </span>
                   <Badge variant="secondary" size="sm">
                     {session.messageCount} msgs
