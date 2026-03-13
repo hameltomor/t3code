@@ -24,6 +24,7 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     messages: [],
     turnDiffSummaries: [],
     activities: [],
+    contextStatus: null,
     proposedPlans: [],
     error: null,
     createdAt: "2026-02-13T00:00:00.000Z",

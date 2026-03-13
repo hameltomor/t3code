@@ -3,6 +3,7 @@ import type {
   OrchestrationProposedPlanId,
   OrchestrationSessionStatus,
   OrchestrationThreadActivity,
+  OrchestrationThreadContextStatus,
   ProjectScript as ContractProjectScript,
   WorkspaceMember as ContractWorkspaceMember,
   WorkspaceWorktreeEntry as ContractWorktreeEntry,
@@ -109,6 +110,7 @@ export interface Thread {
   worktreeEntries: WorkspaceWorktreeEntry[];
   turnDiffSummaries: TurnDiffSummary[];
   activities: OrchestrationThreadActivity[];
+  contextStatus: OrchestrationThreadContextStatus | null;
 }
 
 export interface ThreadSession {

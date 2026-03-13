@@ -377,6 +377,7 @@ function buildLocalDraftThread(
     worktreeEntries: [],
     turnDiffSummaries: [],
     activities: [],
+    contextStatus: null,
     proposedPlans: [],
   };
 }
@@ -2786,6 +2787,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
           worktreeEntries: nextThreadWorktreeEntries,
           turnDiffSummaries: [],
           activities: [],
+          contextStatus: null,
         });
         clearDraftThread(threadIdForSend);
       } else if (isFirstMessage) {
