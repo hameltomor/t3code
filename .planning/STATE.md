@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-13)
 
 ## Current Position
 
-Phase: 7 of 10 (Schema Foundation and Context Window Registry)
-Plan: 1 of 2 in current phase
-Status: Executing
-Last activity: 2026-03-13 -- Completed 07-01 (Schema Foundation)
+Phase: 7 of 10 (Schema Foundation and Context Window Registry) -- COMPLETE
+Plan: 2 of 2 in current phase
+Status: Phase Complete
+Last activity: 2026-03-13 -- Completed 07-02 (Context Window Registry and Decider Wiring)
 
-Progress: [█░░░░░░░░░] 12% (v1.1: 1/8 plans)
+Progress: [██░░░░░░░░] 25% (v1.1: 2/8 plans)
 
 ## Performance Metrics
 
@@ -24,13 +24,14 @@ Progress: [█░░░░░░░░░] 12% (v1.1: 1/8 plans)
 - Total execution time: 1.43 hours
 
 **v1.1 Velocity:**
-- Total plans completed: 1
-- Average duration: 6min
-- Total execution time: 0.1 hours
+- Total plans completed: 2
+- Average duration: 5min
+- Total execution time: 0.17 hours
 
 | Phase | Plan | Duration | Tasks | Files |
 |-------|------|----------|-------|-------|
 | 07 | 01 | 6min | 2 | 8 |
+| 07 | 02 | 4min | 2 | 4 |
 
 ## Accumulated Context
 
@@ -48,6 +49,9 @@ v1.1 execution decisions:
 - contextStatus uses NullOr + withDecodingDefault(null) for backward compat with existing persisted data (07-01)
 - Command type dot-separated (thread.context-status.set), event type dash-separated (thread.context-status-set) per existing convention (07-01)
 - ThreadContextStatusSetCommand is internal-only (not exported), ThreadContextStatusSetPayload is exported (07-01)
+- ContextWindowRegistry is pure functions (not Effect Service/Layer) -- no side effects or dependencies (07-02)
+- CONTEXT_WINDOW_LIMITS is internal (not exported) to keep API surface minimal (07-02)
+- getContextWindowLimit returns null for unknown models, never guesses (07-02)
 
 ### Pending Todos
 
@@ -62,5 +66,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-13
-Stopped at: Completed 07-01-PLAN.md (Schema Foundation)
-Next step: Execute 07-02-PLAN.md (decider case, projector handler, event store wiring)
+Stopped at: Completed 07-02-PLAN.md (Context Window Registry and Decider Wiring)
+Next step: Execute Phase 08 (Context Status Adapters)
