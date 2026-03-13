@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_MODEL_BY_PROVIDER, MODEL_OPTIONS_BY_PROVIDER } from "@xbetools/contracts";
 
 import {
+  getContextWindowLimit,
   getDefaultModel,
   getDefaultReasoningEffort,
   getModelOptions,
@@ -88,5 +89,68 @@ describe("getReasoningEffortOptions", () => {
 describe("getDefaultReasoningEffort", () => {
   it("returns provider-scoped defaults", () => {
     expect(getDefaultReasoningEffort("codex")).toBe("high");
+  });
+});
+
+describe("getContextWindowLimit", () => {
+  it("resolves direct slug lookup", () => {
+    expect(getContextWindowLimit("gpt-5.4")).toEqual({
+      maxInputTokens: 1_050_000,
+      maxOutputTokens: 128_000,
+    });
+  });
+
+  it("resolves alias with provider hint", () => {
+    expect(getContextWindowLimit("opus", "claudeCode")).toEqual({
+      maxInputTokens: 200_000,
+      maxOutputTokens: 128_000,
+    });
+  });
+
+  it("resolves alias without provider hint (tries all providers)", () => {
+    expect(getContextWindowLimit("opus")).toEqual({
+      maxInputTokens: 200_000,
+      maxOutputTokens: 128_000,
+    });
+  });
+
+  it("returns null for unknown models", () => {
+    expect(getContextWindowLimit("gpt-99")).toBeNull();
+  });
+
+  it("returns null for null input", () => {
+    expect(getContextWindowLimit(null)).toBeNull();
+  });
+
+  it("returns null for undefined input", () => {
+    expect(getContextWindowLimit(undefined)).toBeNull();
+  });
+
+  it("covers all catalog models in MODEL_OPTIONS_BY_PROVIDER", () => {
+    const providers = ["codex", "claudeCode", "gemini"] as const;
+    for (const provider of providers) {
+      for (const model of MODEL_OPTIONS_BY_PROVIDER[provider]) {
+        const limit = getContextWindowLimit(model.slug);
+        expect(limit, `Missing limit for ${provider}/${model.slug}`).not.toBeNull();
+        expect(limit!.maxInputTokens).toBeGreaterThan(0);
+        expect(limit!.maxOutputTokens).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("resolves Claude alias variants", () => {
+    const sonnet = getContextWindowLimit("sonnet");
+    expect(sonnet).toEqual({ maxInputTokens: 200_000, maxOutputTokens: 64_000 });
+
+    const haiku = getContextWindowLimit("haiku");
+    expect(haiku).toEqual({ maxInputTokens: 200_000, maxOutputTokens: 64_000 });
+  });
+
+  it("resolves Gemini alias variants", () => {
+    const pro = getContextWindowLimit("pro", "gemini");
+    expect(pro).toEqual({ maxInputTokens: 1_048_576, maxOutputTokens: 65_536 });
+
+    const flash = getContextWindowLimit("flash", "gemini");
+    expect(flash).toEqual({ maxInputTokens: 1_048_576, maxOutputTokens: 65_536 });
   });
 });
