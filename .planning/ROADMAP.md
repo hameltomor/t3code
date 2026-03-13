@@ -48,7 +48,7 @@ See `milestones/v1.0-ROADMAP.md` for full details.
   3. `ContextWindowRegistry` resolves known model slugs (including aliases like "opus") to their context window limits, returns `null` for unknown models, and never guesses
   4. `thread.context-status.set` command is defined in contracts and added to the orchestration command union
   5. `bun typecheck` passes with the new schemas integrated across contracts, server, and web packages
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
 - [ ] 07-01: Canonical token usage and context status schemas in contracts
@@ -64,7 +64,7 @@ Plans:
   3. Gemini adapter emits `thread.token-usage.updated` from `usageMetadata` on turn completion, labels support as "derived-on-demand", and `countTokens` failures never block turns or surface as user-visible errors
   4. A typed normalization layer converts all three provider-specific usage payloads into `NormalizedTokenUsage` before any downstream consumption
   5. Cross-provider fixture tests verify normalization of real Codex, Claude, and Gemini usage payloads into canonical form
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
 - [ ] 08-01: Typed normalization layer and Codex adapter passthrough
@@ -80,7 +80,7 @@ Plans:
   3. `ProjectionSnapshotQuery` hydrates `thread.contextStatus` from the projection table onto every `OrchestrationThread` snapshot
   4. Context status projection is supplementary (not in `REQUIRED_SNAPSHOT_PROJECTORS`) so it never blocks snapshot reads, and server-side dedup/throttle prevents excessive writes from high-frequency token events
   5. End-to-end integration test verifies the full flow: provider event to ingestion to projection to snapshot to WebSocket push
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
 - [ ] 09-01: Migration, repository, and projector for context status persistence
@@ -96,7 +96,7 @@ Plans:
   3. Full pill + tooltip mode shows source label, exact token counts, freshness, and compaction history -- minimal badge is the shipped default, full pill is feature-flagged/internal only
   4. "Compacted recently" state is displayed when last compaction is within threshold, with timestamp in tooltip; UI applies hysteresis (500ms debounce minimum) to prevent visual flicker
   5. UI rendering tests cover unknown state, stale freshness, compacted state, and all threshold transitions
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
 - [ ] 10-01: Context status store mapping and ContextStatusIndicator component
