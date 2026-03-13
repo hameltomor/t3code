@@ -11,3 +11,5 @@
 ## Bigger things
 
 - [ ] Queueing messages
+- [ ] Context status: implement stale freshness detection (background timer that flips to "stale" when no token-usage events arrive while session is active)
+- [ ] Context status: Gemini countTokens on-demand recompute path (proactive context window measurement instead of only response usageMetadata)
