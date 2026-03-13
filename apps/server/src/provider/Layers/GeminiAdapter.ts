@@ -54,6 +54,7 @@ import {
   emitToolCompleted,
   emitToolStarted,
 } from "../gemini/GeminiRuntimeEvents.ts";
+import { normalizeGeminiUsage } from "../normalization/tokenUsageNormalization.ts";
 import { executeGeminiTool, type ToolExecutionResult } from "../gemini/GeminiToolRuntime.ts";
 import {
   deserializeTurn,
@@ -74,6 +75,7 @@ interface GeminiTurnState {
   readonly startedAt: string;
   emittedTextDelta: boolean;
   accumulatedText: string;
+  lastUsageMetadata: GenerateContentResponse["usageMetadata"];
 }
 
 interface MutableSession {
@@ -253,6 +255,24 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
             payload: {
               itemType: "assistant_message",
               status: status === "completed" ? "completed" : "failed",
+            },
+          });
+        }
+
+        // Emit token usage from last Gemini response usageMetadata
+        if (ts.lastUsageMetadata) {
+          const usageStamp = yield* emitter.makeEventStamp();
+          yield* emitter.emit({
+            type: "thread.token-usage.updated",
+            eventId: usageStamp.eventId,
+            provider: PROVIDER,
+            threadId: ctx.session.threadId!,
+            createdAt: usageStamp.createdAt,
+            turnId: ts.turnId,
+            payload: {
+              usage: normalizeGeminiUsage(ts.lastUsageMetadata),
+              support: "derived-on-demand" as const,
+              source: "sdk-usage" as const,
             },
           });
         }
@@ -546,6 +566,11 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
 
             const response = yield* callGemini(ctx, currentContents, abortController.signal);
 
+            // Save usageMetadata for token usage emission in completeTurn
+            if (response.usageMetadata && ts) {
+              ts.lastUsageMetadata = response.usageMetadata;
+            }
+
             // Check for function calls
             const functionCalls = response.functionCalls;
             if (!functionCalls || functionCalls.length === 0) {
@@ -774,6 +799,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
           startedAt: now,
           emittedTextDelta: false,
           accumulatedText: "",
+          lastUsageMetadata: undefined,
         };
         ctx.session.status = "running";
         ctx.session.activeTurnId = turnId;

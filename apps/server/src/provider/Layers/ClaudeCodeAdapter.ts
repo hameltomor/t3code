@@ -57,6 +57,7 @@ import {
   materializeImageAttachments,
   type MaterializedImageAttachment,
 } from "../attachmentMaterializer.ts";
+import { normalizeClaudeUsage } from "../normalization/tokenUsageNormalization.ts";
 
 const PROVIDER = "claudeCode" as const;
 const CLAUDE_SETTING_SOURCES = ["user", "project", "local"] as const;
@@ -1219,6 +1220,37 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
         }
 
         yield* completeTurn(context, status, errorMessage, message);
+
+        // Emit token usage from the result message's usage field
+        const usage = (message as Record<string, unknown>).usage;
+        if (
+          usage &&
+          typeof usage === "object" &&
+          "input_tokens" in (usage as Record<string, unknown>)
+        ) {
+          const normalizedUsage = normalizeClaudeUsage(
+            usage as {
+              input_tokens: number;
+              output_tokens: number;
+              cache_creation_input_tokens: number;
+              cache_read_input_tokens: number;
+            },
+          );
+          const usageStamp = yield* makeEventStamp();
+          const resultUsageEvent = {
+            type: "thread.token-usage.updated" as const,
+            eventId: usageStamp.eventId,
+            provider: PROVIDER,
+            createdAt: usageStamp.createdAt,
+            threadId: context.sessionKey,
+            payload: {
+              usage: normalizedUsage,
+              support: "derived-live" as const,
+              source: "sdk-usage" as const,
+            },
+          };
+          yield* offerRuntimeEvent(resultUsageEvent as ProviderRuntimeEvent);
+        }
       });
 
     const handleSystemMessage = (
@@ -1279,6 +1311,37 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
                 detail: message,
               },
             });
+            {
+              const compactMeta = (message as Record<string, unknown>)
+                .compact_metadata as
+                | { pre_tokens?: number }
+                | undefined;
+              const compactUsageStamp = yield* makeEventStamp();
+              const compactUsageEvent = {
+                type: "thread.token-usage.updated" as const,
+                eventId: compactUsageStamp.eventId,
+                provider: PROVIDER,
+                createdAt: compactUsageStamp.createdAt,
+                threadId: context.sessionKey,
+                ...(context.turnState
+                  ? { turnId: asCanonicalTurnId(context.turnState.turnId) }
+                  : {}),
+                providerRefs: {
+                  ...providerThreadRef(context),
+                  ...(context.turnState
+                    ? { providerTurnId: context.turnState.turnId }
+                    : {}),
+                },
+                payload: {
+                  usage: {
+                    totalTokens: compactMeta?.pre_tokens ?? 0,
+                  },
+                  support: "derived-live" as const,
+                  source: "sdk-usage" as const,
+                },
+              };
+              yield* offerRuntimeEvent(compactUsageEvent as ProviderRuntimeEvent);
+            }
             return;
           case "hook_started":
             yield* offerRuntimeEvent({
