@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-03-13)
 
 **Core value:** Users can interact with multiple code agents through one unified interface without losing context, visibility, or control
-**Current focus:** v1.1 Session Context Status -- Phase 7 (Schema Foundation and Context Window Registry)
+**Current focus:** v1.1 Session Context Status -- Phase 8 (Provider Normalization)
 
 ## Current Position
 
-Phase: 7 of 10 (Schema Foundation and Context Window Registry) -- COMPLETE
-Plan: 2 of 2 in current phase
-Status: Phase Complete
-Last activity: 2026-03-13 -- Completed 07-02 (Context Window Registry and Decider Wiring)
+Phase: 8 of 10 (Provider Normalization)
+Plan: 1 of 2 in current phase
+Status: In Progress
+Last activity: 2026-03-13 -- Completed 08-01 (Token Usage Normalization Layer)
 
-Progress: [██░░░░░░░░] 25% (v1.1: 2/8 plans)
+Progress: [███░░░░░░░] 37% (v1.1: 3/8 plans)
 
 ## Performance Metrics
 
@@ -24,14 +24,15 @@ Progress: [██░░░░░░░░] 25% (v1.1: 2/8 plans)
 - Total execution time: 1.43 hours
 
 **v1.1 Velocity:**
-- Total plans completed: 2
-- Average duration: 5min
-- Total execution time: 0.17 hours
+- Total plans completed: 3
+- Average duration: 4min
+- Total execution time: 0.22 hours
 
 | Phase | Plan | Duration | Tasks | Files |
 |-------|------|----------|-------|-------|
 | 07 | 01 | 6min | 2 | 8 |
 | 07 | 02 | 4min | 2 | 4 |
+| 08 | 01 | 3min | 2 | 3 |
 
 ## Accumulated Context
 
@@ -52,6 +53,9 @@ v1.1 execution decisions:
 - ContextWindowRegistry is pure functions (not Effect Service/Layer) -- no side effects or dependencies (07-02)
 - CONTEXT_WINDOW_LIMITS is internal (not exported) to keep API surface minimal (07-02)
 - getContextWindowLimit returns null for unknown models, never guesses (07-02)
+- Normalization functions are pure TypeScript, raw types are plain TS interfaces (not Effect schemas) (08-01)
+- ThreadTokenUsageUpdatedPayload includes support and source metadata alongside usage (08-01)
+- Codex adapter defensively skips event emission when tokenUsage is missing (08-01)
 
 ### Pending Todos
 
@@ -60,11 +64,11 @@ None.
 ### Blockers/Concerns
 
 - Phase 6 (Gemini import) blocked on upstream format stabilization
-- Codex `thread/tokenUsage/updated` payload shape is MEDIUM confidence -- verify with `codex app-server generate-json-schema` during Phase 8
+- Codex `thread/tokenUsage/updated` payload shape VERIFIED in Phase 8 -- camelCase, nested total/last, modelContextWindow
 - GPT-5.x and Gemini 3.x preview model context limits are MEDIUM confidence -- mark with source comments in registry
 
 ## Session Continuity
 
 Last session: 2026-03-13
-Stopped at: Completed 07-02-PLAN.md (Context Window Registry and Decider Wiring)
-Next step: Execute Phase 08 (Context Status Adapters)
+Stopped at: Completed 08-01-PLAN.md (Token Usage Normalization Layer)
+Next step: Execute 08-02-PLAN.md (Claude Code and Gemini adapter token usage emission)
