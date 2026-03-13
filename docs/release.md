@@ -134,6 +134,15 @@ releaseDate: '$DATE'
 EOF
 ```
 
+### 5b. patch all manifests with versioned URLs
+
+The synkr-server proxy only serves binaries at `/{version}/{file}` paths, not at the bucket root. Patch all four manifests so `electron-updater` resolves downloads through the versioned prefix:
+
+```bash
+sed -i "s|url: XBE-Code-|url: $V/XBE-Code-|"   release/latest-mac.yml release/latest-mac-x64.yml release/latest-linux.yml release/latest.yml
+sed -i "s|path: XBE-Code-|path: $V/XBE-Code-|"  release/latest-mac.yml release/latest-mac-x64.yml release/latest-linux.yml release/latest.yml
+```
+
 ### 6. verify local artifacts
 
 ```bash
