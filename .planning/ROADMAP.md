@@ -3,7 +3,7 @@
 ## Milestones
 
 - ✅ **v1.0 Chat History Import** -- Phases 1-5.1 (shipped 2026-03-12)
-- 🚧 **v1.1 Session Context Status** -- Phases 7-10 (in progress)
+- ✅ **v1.1 Session Context Status** -- Phases 7-10 (shipped 2026-03-13)
 - 📋 **Deferred** -- Phase 6 Gemini CLI Import (blocked on upstream format)
 
 ## Phases
@@ -34,7 +34,7 @@ See `milestones/v1.0-ROADMAP.md` for full details.
 - [x] **Phase 7: Schema Foundation and Context Window Registry** -- Canonical types and model limit resolver that all layers depend on -- completed 2026-03-13
 - [x] **Phase 8: Provider Normalization** -- All three adapters emit typed canonical token usage events -- completed 2026-03-13
 - [x] **Phase 9: Server Pipeline and Persistence** -- Ingestion, projection, persistence, and snapshot hydration for context status -- completed 2026-03-13
-- [ ] **Phase 10: UI Integration** -- Context status badge in composer footer with threshold coloring and graceful degradation
+- [x] **Phase 10: UI Integration** -- Context status badge in composer footer with threshold coloring and graceful degradation -- completed 2026-03-13
 
 ## Phase Details
 
@@ -99,8 +99,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 10-01: Context status store mapping and ContextStatusIndicator component
-- [ ] 10-02: Full pill mode, edge states, hysteresis, and rendering tests
+- [x] 10-01: Context status store mapping and ContextStatusIndicator component
+- [x] 10-02: Full pill mode, edge states, hysteresis, and rendering tests
 
 ## Progress
 
@@ -120,4 +120,4 @@ Note: Phase 8 (adapter normalization) can begin as soon as Phase 7 completes, an
 | 7. Schema Foundation and Context Window Registry | v1.1 | 2/2 | Complete | 2026-03-13 |
 | 8. Provider Normalization | v1.1 | 2/2 | Complete | 2026-03-13 |
 | 9. Server Pipeline and Persistence | v1.1 | 2/2 | Complete | 2026-03-13 |
-| 10. UI Integration | v1.1 | 0/2 | Not started | - |
+| 10. UI Integration | v1.1 | 2/2 | Complete | 2026-03-13 |
