@@ -1,360 +1,525 @@
-# Stack Research: File-Based Chat History Import/Parsing
+# Stack Research: Session Context Status Tracking
 
-**Domain:** JSONL/JSON import, SQLite read-only access, FS scanning, fingerprinting for developer tool chat history
-**Researched:** 2026-03-12
+**Domain:** Real-time token usage tracking, context window monitoring, provider usage normalization, UI status visualization
+**Researched:** 2026-03-13
 **Codebase revision:** effect-smol `8881a9b` (effect v4 pre-release catalog pin)
-**Confidence:** HIGH — grounded in installed source code inspection, official documentation, and cross-referenced against established patterns in the existing codebase.
+**Confidence:** HIGH for server-side patterns (grounded in source inspection), MEDIUM for provider-specific token payload shapes (some payloads typed as `Schema.Unknown` and need runtime validation)
 
 ---
 
 ## Context
 
-XBE Code needs to import conversation history from three providers. Each has a distinct storage format and access hazard:
+XBE Code wraps three providers (Codex app-server, Claude Code SDK, Gemini API) behind an event-sourced orchestration engine. The existing `thread.token-usage.updated` runtime event exists in contracts but carries `usage: Schema.Unknown` -- a raw pass-through with no typed normalization. The goal is to:
 
-| Provider | Path | Format | Hazard |
-|----------|------|--------|--------|
-| Claude Code | `~/.claude/projects/<path-slug>/<session-id>.jsonl` | JSONL, up to 70 MB per file | File may be actively written during import |
-| Codex CLI | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` + `~/.codex/state_5.sqlite` | JSONL rollouts + WAL-mode SQLite metadata | SQLite locked by Codex process; two JSONL format versions coexist |
-| Gemini CLI | `~/.gemini/tmp/<project-hash>/chats/<session>.json` | One JSON object per file | Hash-to-slug path migration across Gemini versions |
-
-The server runs on Node.js 24 / Bun 1.3.9 and uses Effect-TS (effect-smol `8881a9b`), which is an unreleased v4 pre-release. All new code must fit the existing Effect service/layer architecture.
+1. Type and normalize token usage across all three providers
+2. Build a ContextWindowRegistry mapping model slugs to their token limits
+3. Create a thread-scoped context status projection (server-side)
+4. Push live context status to the web UI for a composer footer badge
 
 ---
 
-## 1. JSONL/JSON Streaming Parsers for Large Files
+## 1. NO New Server Dependencies Required
 
-### Recommendation: Effect `FileSystem.stream` + `Stream.decodeText` + `Stream.splitLines` + `JSON.parse` per line
+### Recommendation: Zero new npm packages on the server
 
 **Confidence: HIGH**
 
-The entire required toolkit is already present in the installed version of effect-smol. No external library is needed.
+Everything needed for the server-side context status feature is already available through the installed stack:
 
-```typescript
-import { FileSystem, Path } from "@effect/platform-node"
-import { Effect, Stream } from "effect"
+| Capability | Already Have | Package |
+|------------|-------------|---------|
+| Effect Schema for typed token usage | Yes | `effect` (catalog) |
+| Effect Ref for mutable projection state | Yes | `effect` |
+| Effect PubSub for broadcasting changes | Yes | `effect` |
+| SQLite persistence for projection | Yes | `@effect/sql-sqlite-bun` (catalog) |
+| WebSocket push to clients | Yes | `ws` + existing WS infrastructure |
+| Codex token events | Yes | `thread/tokenUsage/updated` mapped in CodexAdapter |
+| Claude Code SDK usage | Yes | `@anthropic-ai/claude-agent-sdk` ^0.2.62 |
+| Gemini SDK response metadata | Yes | `@google/genai` ^1.44.0 |
 
-const parseJSONLFile = (filePath: string) =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem
-    return fs.stream(filePath, { chunkSize: FileSystem.KiB(64) }).pipe(
-      Stream.decodeText(),
-      Stream.splitLines,
-      Stream.filter((line) => line.trim().length > 0),
-      Stream.mapEffect((line) =>
-        Effect.try({
-          try: () => JSON.parse(line) as unknown,
-          catch: (cause) => new ParseError({ line, cause }),
-        })
-      ),
-    )
-  }).pipe(Stream.unwrap)
-```
-
-**Rationale:**
-
-- `FileSystem.stream` (from `effect/FileSystem`, confirmed in installed source at `apps/server/node_modules/.bun/effect@.../src/FileSystem.ts`) returns `Stream<Uint8Array, PlatformError>`. It already handles chunked reads and exposes `chunkSize` and `offset`/`bytesToRead` options. Chunk size defaults to 64 KB; for 70 MB files this produces ~1,100 chunks with zero full-file allocation.
-- `Stream.decodeText()` handles multi-byte UTF-8 across chunk boundaries correctly (fixed in recent effect releases; confirmed in `Stream.ts` source).
-- `Stream.splitLines` handles both `\n` and `\r\n` line endings.
-- Per-line `JSON.parse` is sufficient for JSONL. Each Claude Code line is a single complete JSON object. Lines are typically 100 bytes to a few KB, never multi-line.
-- The full pipeline is lazy, back-pressured, and integrated with Effect's structured concurrency and error model.
-
-**What NOT to use:**
-
-- `fs.readFile` / `fs.readFileString` — loads the entire file into the heap. 70 MB per concurrent import, GC pressure, OOM risk on multi-session imports. Do not use.
-- `Bun.JSONL.parseChunk` — Bun-specific; server code must run under both Bun and Node.js (see `engines` field in `apps/server/package.json`: `"node": "^22.13 || ^23.4 || >=24.10"`). Use as a fast-path optimization only if profiling reveals that `JSON.parse` is a bottleneck and the import path is known to be Bun-only.
-- `stream-json` (npm) — useful when parsing a single large JSON object (not JSONL). Unnecessary here since JSONL is already line-delimited. Adds a dependency for no benefit.
-- `readline.createInterface` (node:readline) — viable fallback but bypasses the Effect stream model. Event-based API requires manual bridging to Effect Streams via `Stream.fromEventEmitter` or similar. More integration surface area than the pure-Effect approach.
+**Rationale:** The project already has all the building blocks. Adding packages for token counting or model metadata lookup would be over-engineering -- the data arrives from the providers themselves or can be stored in a static registry.
 
 ---
 
-## 2. Bun.JSONL Built-In (Secondary Option)
+## 2. NO New Web Dependencies Required
 
-**Confidence: MEDIUM — Bun-only**
+### Recommendation: Zero new npm packages on the web
 
-Bun v1.2+ ships `Bun.JSONL.parse(text)` (batch) and `Bun.JSONL.parseChunk(buffer, start?, end?)` (streaming, returns `{ values, read, done, error }`). `parseChunk` returns consumed byte offset enabling zero-copy buffer slicing.
+**Confidence: HIGH**
+
+The UI needs for the context status badge are fully covered:
+
+| Capability | Already Have | Package/Component |
+|------------|-------------|-------------------|
+| Badge component with variants | Yes | `~/components/ui/badge.tsx` (default, info, warning, error variants) |
+| Tooltip for detailed hover info | Yes | `~/components/ui/tooltip.tsx` (Base UI primitives) |
+| Zustand store for thread state | Yes | `zustand` ^5.0.11 |
+| Icons for context indicator | Yes | `lucide-react` ^0.564.0 (has `Gauge`, `CircleAlert`, `Brain` etc.) |
+| Tailwind for progress bar styling | Yes | `tailwindcss` ^4.0.0 |
+| Responsive layout logic | Yes | `composerFooterLayout.ts` existing breakpoint system |
+
+**What NOT to add:**
+- No charting library (overkill for a simple percentage bar/badge)
+- No `@radix-ui/react-progress` (can be done with a simple div + width percentage + tailwind)
+- No external token counting library (server provides the numbers)
+
+---
+
+## 3. Provider Token Usage Data Shapes
+
+### 3a. Codex App-Server (Native Token Events)
+
+**Provider support label: native**
+**Confidence: MEDIUM** -- the payload is currently `Schema.Unknown` in the adapter; shape inferred from Codex documentation and community analysis
+
+The Codex app-server emits `thread/tokenUsage/updated` notifications natively during turns. The CodexAdapter at line 700 already maps these to `thread.token-usage.updated` runtime events with `payload: { usage: event.payload ?? {} }`.
+
+**Expected payload shape** (needs runtime validation, generate from `codex app-server generate-json-schema` for authoritative version):
 
 ```typescript
-// Bun-only streaming pattern:
-let buf = new Uint8Array(0)
-for await (const chunk of bunFileStream) {
-  const newBuf = new Uint8Array(buf.length + chunk.length)
-  newBuf.set(buf)
-  newBuf.set(chunk, buf.length)
-  buf = newBuf
-  const result = Bun.JSONL.parseChunk(buf)
-  for (const value of result.values) { /* process */ }
-  buf = buf.subarray(result.read)
+// Codex token usage payload (native from app-server)
+interface CodexTokenUsage {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  // May also include (version-dependent):
+  cached_tokens?: number;
+  reasoning_tokens?: number;
 }
 ```
 
-**Use only if:** a profiled hot path shows that line-by-line `JSON.parse` is a bottleneck and the code is confirmed Bun-only. The Effect `FileSystem.stream` approach is the right default.
+**Key characteristics:**
+- Arrives as a STREAMING notification (multiple updates per turn)
+- Cumulative within the thread (not per-turn deltas)
+- Includes context window position natively
+- Also present in `turn.completed` payload as `usage` and `modelUsage` fields
 
----
+**Integration point:** `CodexAdapter.ts` line 700-710 -- already mapped, just needs typed extraction.
 
-## 3. SQLite Read-Only Access (Codex `state_5.sqlite`)
+### 3b. Claude Code SDK (Derived-Live from Result Messages)
 
-### Recommendation: `node:sqlite` with `{ readOnly: true }` + `PRAGMA busy_timeout` + WAL-aware connection lifecycle
+**Provider support label: derived-live**
+**Confidence: HIGH** -- verified against official Anthropic documentation
 
-**Confidence: HIGH**
+The `@anthropic-ai/claude-agent-sdk` provides token usage at two levels:
 
-The codebase already has a custom `NodeSqliteClient` (`apps/server/src/persistence/NodeSqliteClient.ts`) built on `node:sqlite` (`DatabaseSync`) from Node.js 24. The `readonly` flag is already wired (`readOnly: options.readonly ?? false`). Use this existing abstraction directly.
+1. **Per-step** (on each `assistant` message): `message.message.usage` with `input_tokens`, `output_tokens`
+2. **Per-query result** (on `result` message): `result.usage`, `result.modelUsage`, `result.total_cost_usd`
 
-```typescript
-import { NodeSqliteClient } from "../../persistence/NodeSqliteClient.ts"
-import { Effect } from "effect"
+The ClaudeCodeAdapter at line 879 already extracts `result.usage` and `result.modelUsage` into `turn.completed` events.
 
-const CodexMetadataLayer = NodeSqliteClient.layer({
-  filename: `${homedir()}/.codex/state_5.sqlite`,
-  readonly: true,
-})
-```
-
-**WAL mode considerations (grounded in SQLite 3.22.0+ documentation):**
-
-Codex's SQLite database is very likely in WAL journal mode (Codex writes aggressively during sessions). Opening a WAL-mode database read-only is safe since SQLite 3.22.0 provided the `-shm` and `-wal` sidecar files either exist or the directory is writable for creation. Node.js 24's bundled SQLite is 3.45+.
-
-Key behaviors to handle:
-
-1. **SQLITE_BUSY on WAL recovery.** If the last Codex process crashed, the first reader triggers WAL recovery, which can emit `SQLITE_BUSY`. Set `PRAGMA busy_timeout = 5000` before any query to allow up to 5 seconds of automatic retry. This is a one-time pragma per connection.
-
-2. **Read-only does not mean immutable.** Other connections (Codex itself) can write concurrently. Readers see a consistent snapshot at the start of their read transaction. Long-running read transactions can delay WAL checkpointing; keep transactions short.
-
-3. **Do not open with `immutable=1` URI parameter.** That flag prevents reading a WAL database that has unsynchronized WAL content — it would miss recent sessions still in the WAL file.
-
-Concrete setup within an Effect scoped layer:
+**Usage object shape** (from official Anthropic docs):
 
 ```typescript
-// Wrap the NodeSqliteClient layer with a one-time busy_timeout pragma
-const withBusyTimeout = (client: SqlClient) =>
-  Effect.gen(function* () {
-    yield* client`PRAGMA busy_timeout = 5000`
-    return client
-  })
-```
+// Available on SDKResultMessage.usage
+interface ClaudeUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+}
 
-**What NOT to use:**
-
-- `better-sqlite3` — native addon, requires compilation; `node:sqlite` is built-in to Node.js 22+ and already used throughout the codebase. No reason to add a native dep.
-- `bun:sqlite` — Bun-only. Server must run under Node.js as well.
-- `@effect/sql-sqlite-bun` — the catalog pins a version of this package, but the existing `NodeSqliteClient.ts` deliberately replaces it with a `node:sqlite`-based implementation. Follow the existing pattern.
-- Opening with write access — do not do this. Even accidentally running `PRAGMA journal_mode = DELETE` on Codex's database would corrupt Codex's WAL chain.
-
----
-
-## 4. File System Scanning
-
-### Recommendation: `FileSystem.FileSystem.readDirectory` with manual recursion for targeted scans; `tinyglobby` for pattern-based discovery
-
-**Confidence: HIGH**
-
-Two use cases exist:
-
-**4a. Targeted provider-specific scans (Claude Code, Codex, Gemini)**
-
-Each provider stores files under a well-known root with shallow structure (1–3 levels deep). Use the Effect `FileSystem.FileSystem` service already in scope:
-
-```typescript
-const fs = yield* FileSystem.FileSystem
-
-// List project directories under ~/.claude/projects/
-const projectDirs = yield* fs.readDirectory(claudeProjectsRoot)
-
-// For each project dir, list JSONL session files
-for (const dir of projectDirs) {
-  const sessionFiles = yield* fs.readDirectory(path.join(claudeProjectsRoot, dir))
-  const jsonlFiles = sessionFiles.filter((f) => f.endsWith(".jsonl"))
-  // ...
+// Available on SDKResultMessage.modelUsage (per-model breakdown)
+interface ClaudeModelUsage {
+  [modelName: string]: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadInputTokens: number;
+    cacheCreationInputTokens: number;
+    costUSD: number;
+  };
 }
 ```
 
-`FileSystem.readDirectory` returns `string[]` (entry names, not full paths). Use `FileSystem.stat` to get file size and mtime for pre-filtering oversized files or staleness checks.
+**Key characteristics:**
+- NOT streaming -- only available at turn completion (per-step on assistant messages, cumulative on result)
+- Per-query, not cumulative across session -- must sum across turns for thread total
+- Cost data included natively (`total_cost_usd`)
+- Cache tokens provide optimization insights
 
-**4b. Pattern-based discovery across arbitrary workspace trees**
+**Integration point:** `ClaudeCodeAdapter.ts` lines 879/952 -- already extracted into `turn.completed` payload. The adapter should ALSO emit `thread.token-usage.updated` events by accumulating across turns.
 
-If a glob-style scan is needed (e.g., `~/.codex/sessions/**/*.jsonl`), use `tinyglobby`. It wraps `fdir` (the fastest Node.js directory crawler, < 1 s for 1 M files) with a glob interface and is the 2025/2026 community standard, replacing `fast-glob` across major build tools.
+### 3c. Gemini API (Derived-On-Demand from Response Metadata)
 
-```typescript
-import { glob } from "tinyglobby"
+**Provider support label: derived-on-demand**
+**Confidence: HIGH** -- verified against official Google documentation and SDK source
 
-const rolloutFiles = await glob("sessions/**/*.jsonl", {
-  cwd: `${homedir()}/.codex`,
-  absolute: true,
-  onlyFiles: true,
-})
-```
-
-`tinyglobby` is 179 KB install size vs. `fast-glob` at 513 KB. It is not yet in the monorepo — add it to `apps/server` as a dep if pattern-based scanning is needed.
-
-The existing `workspaceEntries.ts` uses `fs.promises.readdir` with concurrency 32 for large workspace trees. For the provider scan use case (small, bounded trees), concurrency is not needed. For deep Codex session trees (organized by `YYYY/MM/DD`), `tinyglobby` is simpler than manual recursion.
-
-**What NOT to use:**
-
-- `glob` (npm legacy) — the old `glob` package uses a synchronous-optional API and a heavier dependency tree. `tinyglobby` supersedes it.
-- `fast-glob` — still correct but community momentum has shifted to `tinyglobby` for new projects. `tinyglobby` is a direct replacement with a nearly identical API.
-- `chokidar` — a file watcher, not a scanner. Do not use for one-shot discovery.
-- `Bun.Glob` — Bun-specific; not available in Node.js.
-
----
-
-## 5. Fingerprinting and Deduplication
-
-### Recommendation: `crypto.createHash("sha256")` over the first and last N lines + file metadata composite key
-
-**Confidence: HIGH**
-
-The codebase already uses `node:crypto` for SHA-256 hashing (`apps/server/src/telemetry/Identify.ts`). No new dependency needed.
-
-**Strategy: composite fingerprint**
-
-A session file's identity for deduplication should be a composite of:
-
-1. **Stable provider session ID** — extracted from the first line of the JSONL (e.g., `sessionId` in Claude Code, `sessionId` in Codex rollout header). Cheap O(1) read. Use as the primary deduplication key.
-2. **File size + mtime** — from `fs.stat()`. Use as a fast staleness check: if size and mtime are unchanged since last catalog scan, skip full re-processing.
-3. **Content fingerprint** — hash of first 4 KB + last 4 KB of the file (or first N lines + last N lines) using `crypto.createHash("sha256")`. This detects silent corruption and handles the (unlikely) case where a session ID is reused or mtime is unreliable (NFS, Docker volume mounts).
+The `@google/genai` SDK's `GenerateContentResponse` includes `usageMetadata`:
 
 ```typescript
-import { createHash } from "node:crypto"
-import { createReadStream } from "node:fs"
-
-async function fingerprintFile(filePath: string, fileSize: number): Promise<string> {
-  const SAMPLE = 4096
-  const hash = createHash("sha256")
-
-  // Head sample
-  await pipeChunks(createReadStream(filePath, { start: 0, end: SAMPLE - 1 }), hash)
-
-  // Tail sample (only for files > 2 * SAMPLE)
-  if (fileSize > 2 * SAMPLE) {
-    await pipeChunks(createReadStream(filePath, { start: fileSize - SAMPLE }), hash)
-  }
-
-  // Include size in hash to distinguish same-content files of different lengths
-  hash.update(String(fileSize))
-  return hash.digest("hex")
+// Available on GenerateContentResponse.usageMetadata
+interface GeminiUsageMetadata {
+  promptTokenCount: number;       // Input tokens
+  candidatesTokenCount: number;   // Output tokens
+  totalTokenCount: number;        // Total
+  // May also include (version-dependent):
+  thoughtsTokenCount?: number;    // Thinking tokens (Gemini 2.5+)
+  cachedContentTokenCount?: number;
 }
 ```
 
-**Why NOT full-file hash:**
-- A 70 MB file takes 100–200 ms to hash fully on a typical laptop SSD. Catalog scans run on every import dialog open. Hashing all files on each scan would be unacceptably slow for users with 50+ sessions.
-- Head + tail sampling is the standard approach used by deduplication systems (rsync, Perforce, many cloud storage checkers) to get high confidence at low cost.
+**Key characteristics:**
+- NOT streaming -- available per-response only
+- The GeminiAdapter currently DOES NOT extract `usageMetadata` at all (verified by grep -- no matches for `usageMetadata`, `totalTokenCount`, etc.)
+- Each `generateContent` call returns usage for that specific call; must accumulate across the agent loop iterations
+- Multiple calls per turn (tool loop) means token counts compound
 
-**Why SHA-256 instead of xxHash or BLAKE3:**
-- `crypto.createHash("sha256")` is built into Node.js — zero dependency, zero native compilation.
-- For a deduplication use case (not cryptographic security), collision resistance of SHA-256 is far more than necessary. xxHash3 is 31 GB/s vs. SHA-256's ~0.5 GB/s, but hashing 8 KB takes microseconds at either speed; the I/O dominates.
-- If profiling reveals SHA-256 is a bottleneck (unlikely), `Bun.hash` (xxHash3, sync, built-in to Bun) is the fast-path option — but again, only under Bun.
+**Integration point:** `GeminiAdapter.ts` lines 340-364 (`callGemini` function) -- the `GenerateContentResponse` is returned but `usageMetadata` is discarded. Must extract and accumulate.
 
-**What NOT to use:**
+### 3d. Gemini models.get() for Model Metadata
 
-- Full-file SHA-256 on every catalog scan — O(total file bytes) per scan, unacceptable for 50+ large sessions.
-- UUID-only deduplication — GUIDs from provider logs are not guaranteed stable across provider upgrades. Use them as a primary key but always back with content evidence.
-- `@noble/hashes` or `blake3` npm packages — adds a dependency for marginal gain on an I/O-bound workload.
+The `@google/genai` SDK provides `ai.models.get()` which returns model metadata including `inputTokenLimit` and `outputTokenLimit`. This can be used to dynamically query context window sizes.
+
+```typescript
+const modelInfo = await ai.models.get({ model: "gemini-2.5-flash" });
+// modelInfo.inputTokenLimit  -> 1048576
+// modelInfo.outputTokenLimit -> 65536
+```
+
+**Recommendation:** Do NOT call this at runtime per-session. Use a static ContextWindowRegistry instead (see section 5). The API call adds latency and a network dependency. Hardcode known values and use `models.get()` only as a fallback for unrecognized model slugs.
 
 ---
 
-## 6. Large File Handling (70 MB+ JSONL Line-by-Line)
+## 4. Normalized Token Usage Schema
 
-### Recommendation: Effect `FileSystem.stream` pipeline with bounded concurrency and back-pressure
+### Recommendation: Single canonical schema in `packages/contracts`
 
 **Confidence: HIGH**
 
-This is covered by the pattern in section 1, but specific guidance for the 70 MB case:
-
-**Memory budget:** A 70 MB file with 64 KB chunks allocates at most one chunk in flight (64 KB) plus the current parsed line (typically < 10 KB). Heap impact is negligible compared to the raw file size.
-
-**Concurrency:** Use `Stream.mapEffect(..., { concurrency: 1 })` (the default) for sequential line processing. Parallel decoding is not needed for JSONL since lines are independent and the bottleneck is disk I/O, not CPU.
-
-**Partial-failure tolerance:** Lines in JSONL files from live agents may occasionally be malformed (partial write on crash, encrypted reasoning fields in Codex). Use `Stream.catchAll` or `Stream.orElse` at the individual line level to skip bad lines and continue, not to abort the entire file:
+Replace the `usage: Schema.Unknown` in `ThreadTokenUsageUpdatedPayload` with a typed, provider-normalized schema:
 
 ```typescript
-Stream.mapEffect((line) =>
-  Effect.try({ try: () => JSON.parse(line), catch: (e) => new ParseError(e) })
-).pipe(
-  Stream.either,                                // never fail the stream on bad lines
-  Stream.filterMap(Either.getRight),             // drop parse errors; log them separately
-)
+// In packages/contracts/src/providerRuntime.ts (or new contextStatus.ts)
+export const NormalizedTokenUsage = Schema.Struct({
+  inputTokens: Schema.Int,
+  outputTokens: Schema.Int,
+  totalTokens: Schema.Int,
+  cacheReadTokens: Schema.optional(Schema.Int),
+  cacheWriteTokens: Schema.optional(Schema.Int),
+  reasoningTokens: Schema.optional(Schema.Int),
+  costUsd: Schema.optional(Schema.Number),
+});
+
+export const ThreadContextStatus = Schema.Struct({
+  threadId: ThreadId,
+  provider: ProviderKind,
+  model: TrimmedNonEmptyString,
+  /** Cumulative token usage across all turns in this thread */
+  usage: NormalizedTokenUsage,
+  /** Context window capacity for the active model */
+  contextWindowSize: Schema.Int,
+  /** Percentage of context window consumed (0.0 - 1.0) */
+  contextUtilization: Schema.Number,
+  /** Threshold states for UI rendering */
+  contextLevel: Schema.Literals(["normal", "elevated", "warning", "critical"]),
+  /** When this status was last updated */
+  updatedAt: IsoDateTime,
+});
 ```
 
-**Streaming vs. collecting:** Never collect the full stream into an array (`Stream.runCollect`) for 70 MB files. Use `Stream.runForEach` or `Stream.run(Sink.forEach(...))` to process each record and write to the XBE SQLite as it arrives. This keeps memory flat.
+**Normalization mapping per provider:**
 
-**Progress reporting:** Wrap the import loop in an `Effect.gen` that yields progress events to a `Queue` or `PubSub`; the WS server can push these to the browser. Do not buffer all events and report at the end.
+| Canonical Field | Codex | Claude Code | Gemini |
+|----------------|-------|-------------|--------|
+| `inputTokens` | `input_tokens` | `input_tokens` | `promptTokenCount` |
+| `outputTokens` | `output_tokens` | `output_tokens` | `candidatesTokenCount` |
+| `totalTokens` | `total_tokens` | sum(input+output) | `totalTokenCount` |
+| `cacheReadTokens` | `cached_tokens` | `cache_read_input_tokens` | `cachedContentTokenCount` |
+| `cacheWriteTokens` | -- | `cache_creation_input_tokens` | -- |
+| `reasoningTokens` | `reasoning_tokens` | -- | `thoughtsTokenCount` |
+| `costUsd` | -- | `total_cost_usd` | -- |
 
-**What NOT to use:**
-
-- `JSON.parse(await fs.readFile(path, "utf8"))` — allocates the full 70 MB string plus the parsed object tree simultaneously.
-- Worker threads for JSONL parsing — the CPU cost of `JSON.parse` on individual lines is trivial. Worker threads introduce IPC overhead and complexity without benefit.
-- Any SAX-style streaming JSON parser (`stream-json`, `jsonstream`) — these are for parsing a single large JSON object whose interior exceeds memory. JSONL files are already line-delimited; a SAX parser is the wrong abstraction.
+Each adapter performs normalization at the point of emission. The orchestration engine and UI only deal with the canonical schema.
 
 ---
 
-## 7. Effect-TS Integration Patterns for File I/O and Streaming
+## 5. ContextWindowRegistry (Static Model Metadata)
 
-### Recommendation: Use `FileSystem.FileSystem` + `Path.Path` services; bridge node:sqlite via the existing `NodeSqliteClient`; use `Ndjson` from `effect/unstable/encoding` only for internal WS protocol, not file parsing
+### Recommendation: Hardcoded registry in `packages/contracts/src/model.ts`
 
-**Confidence: HIGH**
+**Confidence: HIGH** -- model context limits are well-documented by all three providers
 
-**7a. FileSystem service**
-
-Always inject `FileSystem.FileSystem` via `yield*` rather than calling `node:fs` directly in Effect code. This enables testing with `FileSystem.layerNoop` mocks and keeps side effects inside Effect's supervision tree. See `apps/server/src/telemetry/Identify.ts` for the canonical example:
+This belongs in contracts because both server and web need it. Add to the existing `model.ts` file alongside `MODEL_OPTIONS_BY_PROVIDER`:
 
 ```typescript
-const fs = yield* FileSystem.FileSystem
-const content = yield* fs.readFileString(authJsonPath)
+export interface ModelContextWindow {
+  readonly inputTokenLimit: number;
+  readonly outputTokenLimit: number;
+  /** Effective context window for utilization tracking */
+  readonly effectiveContextWindow: number;
+}
+
+export const MODEL_CONTEXT_WINDOWS: Record<string, ModelContextWindow> = {
+  // Codex models
+  "gpt-5.4":              { inputTokenLimit: 1_000_000, outputTokenLimit: 64_000,  effectiveContextWindow: 1_000_000 },
+  "gpt-5.3-codex":        { inputTokenLimit: 400_000,   outputTokenLimit: 64_000,  effectiveContextWindow: 400_000 },
+  "gpt-5.3-codex-spark":  { inputTokenLimit: 400_000,   outputTokenLimit: 64_000,  effectiveContextWindow: 400_000 },
+  "gpt-5.2-codex":        { inputTokenLimit: 400_000,   outputTokenLimit: 64_000,  effectiveContextWindow: 400_000 },
+  "gpt-5.2":              { inputTokenLimit: 272_000,   outputTokenLimit: 64_000,  effectiveContextWindow: 272_000 },
+
+  // Claude Code models
+  "claude-opus-4-6":      { inputTokenLimit: 200_000,   outputTokenLimit: 128_000, effectiveContextWindow: 200_000 },
+  "claude-sonnet-4-6":    { inputTokenLimit: 200_000,   outputTokenLimit: 64_000,  effectiveContextWindow: 200_000 },
+  "claude-haiku-4-5":     { inputTokenLimit: 200_000,   outputTokenLimit: 64_000,  effectiveContextWindow: 200_000 },
+
+  // Gemini models
+  "gemini-3.1-pro-preview":       { inputTokenLimit: 1_000_000, outputTokenLimit: 64_000,  effectiveContextWindow: 1_000_000 },
+  "gemini-3-flash-preview":       { inputTokenLimit: 200_000,   outputTokenLimit: 64_000,  effectiveContextWindow: 200_000 },
+  "gemini-3.1-flash-lite-preview":{ inputTokenLimit: 1_000_000, outputTokenLimit: 64_000,  effectiveContextWindow: 1_000_000 },
+  "gemini-2.5-pro":               { inputTokenLimit: 1_000_000, outputTokenLimit: 65_536,  effectiveContextWindow: 1_000_000 },
+  "gemini-2.5-flash":             { inputTokenLimit: 1_000_000, outputTokenLimit: 65_536,  effectiveContextWindow: 1_000_000 },
+  "gemini-2.5-flash-lite":        { inputTokenLimit: 1_000_000, outputTokenLimit: 65_536,  effectiveContextWindow: 1_000_000 },
+} as const;
+
+// Default fallback for unknown models
+export const DEFAULT_CONTEXT_WINDOW: ModelContextWindow = {
+  inputTokenLimit: 200_000,
+  outputTokenLimit: 64_000,
+  effectiveContextWindow: 200_000,
+};
+
+export function getModelContextWindow(modelSlug: string): ModelContextWindow {
+  return MODEL_CONTEXT_WINDOWS[modelSlug] ?? DEFAULT_CONTEXT_WINDOW;
+}
 ```
 
-For streaming, `fs.stream(path, { chunkSize: FileSystem.KiB(64) })` returns `Stream<Uint8Array, PlatformError>` directly composable with `Stream.decodeText` and `Stream.splitLines`.
+**Why hardcoded instead of API calls:**
+- Codex app-server does not expose a model metadata API
+- Claude Code SDK does not expose model limits
+- Gemini `models.get()` requires an API key and network call per lookup
+- Context limits change rarely (quarterly at most)
+- A static registry is deterministic, fast, and testable
+- Update cadence: bump values when new model versions are added to `MODEL_OPTIONS_BY_PROVIDER`
 
-**7b. Path service**
-
-Use `Path.Path` (`yield* Path.Path`) for all path construction rather than `node:path` directly. This is the Effect way to remain platform-neutral. See `Identify.ts`.
-
-**7c. NodeSqliteClient**
-
-The existing `NodeSqliteClient.layer(config)` and `NodeSqliteClient.layerConfig(config)` constructors create scoped Effect layers. For reading Codex SQLite, add a `readonly: true` option to the config and provide the layer in a tightly-scoped `Effect.provide` rather than the global server layer, since the Codex DB path is user-specific and not known at server startup.
-
-**7d. Ndjson from `effect/unstable/encoding`**
-
-The installed effect-smol build exposes `Ndjson` under `effect/unstable/encoding/Ndjson` (confirmed by inspecting `apps/server/node_modules/.bun/effect@.../dist/unstable/encoding/Ndjson.d.ts`). It provides `Channel`-based `decode`, `decodeSchema`, `decodeString`, `decodeSchemaString`, `encode`, `encodeSchema` constructors.
-
-This module is used by the RPC layer for WebSocket protocol serialization (`RpcSerialization.layerNdjson`). It is the right tool for the WS streaming protocol.
-
-However, for file-based import, prefer `Stream.splitLines` + per-line `JSON.parse` because:
-- `Ndjson.decode` operates as a `Channel`, requiring additional plumbing to integrate with a `Stream<Uint8Array>` from `FileSystem.stream`.
-- The `decodeSchema` variant validates every line against a Schema — useful for strict input validation, but adds overhead per line for the import path where a `Schema.decodeUnknownOption` per-line with fallback is more appropriate.
-- If full Schema validation per line is desired, `Ndjson.decodeSchema` with an `Effect.orElse` skip strategy is a valid alternative to the manual split-parse approach.
-
-**7e. Error handling**
-
-Use `Schema.decodeUnknownEither` (not `decodeUnknownSync`) when processing individual JSONL lines from untrusted files. JSONL from Claude Code and Codex uses evolving schemas; unknown fields must be tolerated. Define schemas with `Schema.Struct` using `exactOptional: false` and `ignoreUnknownKeys: true` to be forward-compatible.
-
-**7f. Scoped resource lifecycle**
-
-The import operation involves opening potentially dozens of files and one SQLite database. Use `Effect.scoped` with `Stream.acquireRelease` or `Layer.scoped` to ensure all file handles and the SQLite connection are closed even on interrupt or error. The existing `NodeSqliteClient.ts` implementation already uses `Scope.addFinalizer` to close the database.
+**LOW confidence values flagged for validation:**
+- GPT-5.4 at 1M tokens (recent, from GitHub issue #13738 discussion)
+- GPT-5.3/5.2 variants (inferred from Codex documentation mentioning 272k-400k range)
+- Gemini 3.x models (preview, limits may change before GA)
+- Claude models use 200K default; 1M beta context (`context-1m-2025-08-07`) not tracked here because the SDK manages it internally
 
 ---
 
-## Summary Table
+## 6. Server-Side Projection Pattern
 
-| Concern | Recommendation | Dependency | Confidence |
-|---------|---------------|------------|------------|
-| JSONL streaming | `FileSystem.stream` + `Stream.decodeText` + `Stream.splitLines` + `JSON.parse` | Built-in (effect-smol) | HIGH |
-| Bun fast-path JSONL | `Bun.JSONL.parseChunk` | Built-in (Bun only) | MEDIUM |
-| SQLite read-only | `NodeSqliteClient.layer({ readonly: true })` + `PRAGMA busy_timeout` | Built-in (node:sqlite) | HIGH |
-| FS scanning (targeted) | `FileSystem.readDirectory` + `FileSystem.stat` | Built-in (effect-smol) | HIGH |
-| FS scanning (glob) | `tinyglobby` | New dep: `tinyglobby` | HIGH |
-| Content fingerprinting | `crypto.createHash("sha256")` on head+tail sample | Built-in (node:crypto) | HIGH |
-| Large file processing | `Stream.runForEach`, no `Stream.runCollect`, back-pressure by default | Built-in (effect-smol) | HIGH |
-| Effect file I/O | `FileSystem.FileSystem` service + `Path.Path` service | Built-in (effect-smol) | HIGH |
-| Schema validation | `Schema.decodeUnknownEither` per-line, tolerate unknown fields | Built-in (effect-smol) | HIGH |
-| WS Ndjson protocol | `effect/unstable/encoding/Ndjson` (existing RPC usage) | Built-in (effect-smol) | HIGH |
+### Recommendation: In-memory Ref-based projection with WebSocket broadcast
+
+**Confidence: HIGH** -- follows established projection patterns in the codebase
+
+The existing projection pipeline (`ProjectionPipeline.ts`) handles persistent projections backed by SQLite. The context status projection should follow a DIFFERENT pattern:
+
+**Use an in-memory `Effect.Ref` per thread, NOT a SQLite projection.**
+
+Rationale:
+- Context status is ephemeral -- it resets when a session ends or restarts
+- It changes rapidly during turns (especially Codex which streams token updates)
+- SQLite writes per token update would be excessive and wasteful
+- The read model needs only the latest value, not history
+- On session restart, the provider sends fresh cumulative values
+
+**Pattern to follow:**
+
+```typescript
+// New service: ContextStatusProjection
+// Located: apps/server/src/orchestration/Services/ContextStatusProjection.ts
+
+import { Effect, Ref, HashMap, PubSub } from "effect";
+
+interface ContextStatusProjectionShape {
+  /** Handle a token usage update from a provider runtime event */
+  readonly handleTokenUsage: (
+    threadId: ThreadId,
+    event: ProviderRuntimeThreadTokenUsageUpdatedEvent | ProviderRuntimeTurnCompletedEvent,
+  ) => Effect.Effect<void>;
+
+  /** Get current context status for a thread */
+  readonly getStatus: (threadId: ThreadId) => Effect.Effect<ThreadContextStatus | null>;
+
+  /** Subscribe to context status changes */
+  readonly changes: PubSub.PubSub<ThreadContextStatus>;
+
+  /** Clear status when session ends */
+  readonly clearThread: (threadId: ThreadId) => Effect.Effect<void>;
+}
+```
+
+This integrates with the existing `ProviderRuntimeIngestion` flow. The ingestion layer already processes every runtime event -- add a hook that routes `thread.token-usage.updated` and `turn.completed` events to this new projection.
+
+**Broadcast to clients:** Subscribe to the `changes` PubSub in `wsServer.ts` and push on a new channel `orchestration.contextStatus` (or piggyback on the existing `orchestration.domainEvent` channel with a new event type).
 
 ---
 
-## Version Pinning Notes
+## 7. Client-Side State Pattern
 
-The monorepo pins `effect` to a private preview build at `pkg.pr.new/Effect-TS/effect-smol/effect@8881a9b`. This is an effect v4 pre-release. Module paths differ from stable effect v3:
+### Recommendation: Extend Thread type in Zustand store with contextStatus field
 
-- `effect/FileSystem` (v4) vs `@effect/platform/FileSystem` (v3)
-- `effect/unstable/encoding/Ndjson` (v4, confirmed in installed source)
-- `effect/unstable/sql/SqlClient` (v4, confirmed in `NodeSqliteClient.ts`)
+**Confidence: HIGH** -- follows existing patterns in `store.ts` and `types.ts`
 
-Do not reference `@effect/platform` module paths for file system operations; use the `effect/` paths instead. The `@effect/platform-node` package is still used for the Node.js layer (`NodeFileSystem.layer`, `NodeContext.layer`) but the types live in `effect/`.
+Add to the existing `Thread` interface in `apps/web/src/types.ts`:
+
+```typescript
+export interface ThreadContextStatus {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  contextWindowSize: number;
+  contextUtilization: number; // 0.0 - 1.0
+  contextLevel: "normal" | "elevated" | "warning" | "critical";
+  costUsd?: number;
+  updatedAt: string;
+}
+
+export interface Thread {
+  // ... existing fields ...
+  contextStatus: ThreadContextStatus | null;
+}
+```
+
+Update the store's event handler to process incoming context status push messages, similar to how `orchestration.domainEvent` updates thread state today.
+
+**NO React Query needed** -- this is a push-based update, not a fetch. The existing WebSocket subscription pattern in `wsNativeApi.ts` handles this.
+
+---
+
+## 8. UI Component Pattern
+
+### Recommendation: Composer footer badge using existing Badge + Tooltip primitives
+
+**Confidence: HIGH** -- existing components verified
+
+The UI rendering requires zero new component libraries. Use the existing stack:
+
+| Component | Source | Usage |
+|-----------|--------|-------|
+| `Badge` | `~/components/ui/badge.tsx` | Context status pill (variant by level) |
+| `Tooltip` + `TooltipPopup` | `~/components/ui/tooltip.tsx` | Detailed breakdown on hover |
+| `Gauge` or `Brain` icon | `lucide-react` | Visual indicator in badge |
+| `composerFooterLayout.ts` | Existing | Responsive breakpoint awareness |
+
+**Badge variant mapping:**
+
+| contextLevel | Badge variant | Color semantics |
+|--------------|---------------|-----------------|
+| `normal` | `outline` | Subtle, non-distracting |
+| `elevated` | `info` | Blue, informational |
+| `warning` | `warning` | Yellow/amber, attention |
+| `critical` | `error` | Red, danger |
+
+**Progress bar:** A simple Tailwind div with percentage width:
+
+```tsx
+<div className="h-1 w-full rounded-full bg-muted">
+  <div
+    className="h-full rounded-full transition-[width] duration-300"
+    style={{ width: `${Math.min(utilization * 100, 100)}%` }}
+    data-level={contextLevel}
+  />
+</div>
+```
+
+Style the inner div color with `data-level` attribute using Tailwind `data-[level=warning]:bg-warning` etc.
+
+---
+
+## 9. Context Level Thresholds
+
+### Recommendation: Configurable thresholds, sensible defaults
+
+**Confidence: HIGH** -- based on common UX patterns for resource monitors
+
+```typescript
+export const CONTEXT_LEVEL_THRESHOLDS = {
+  elevated: 0.50,  // 50% -- informational
+  warning:  0.75,  // 75% -- user should be aware
+  critical: 0.90,  // 90% -- action needed soon
+} as const;
+
+export function computeContextLevel(utilization: number): "normal" | "elevated" | "warning" | "critical" {
+  if (utilization >= CONTEXT_LEVEL_THRESHOLDS.critical) return "critical";
+  if (utilization >= CONTEXT_LEVEL_THRESHOLDS.warning) return "warning";
+  if (utilization >= CONTEXT_LEVEL_THRESHOLDS.elevated) return "elevated";
+  return "normal";
+}
+```
+
+Place in `packages/contracts` so both server and web can use it.
+
+---
+
+## 10. WebSocket Push Channel
+
+### Recommendation: New dedicated channel `orchestration.contextStatus`
+
+**Confidence: HIGH** -- follows existing channel pattern
+
+Add to `packages/contracts/src/orchestration.ts`:
+
+```typescript
+export const ORCHESTRATION_WS_CHANNELS = {
+  domainEvent: "orchestration.domainEvent",
+  contextStatus: "orchestration.contextStatus", // NEW
+} as const;
+```
+
+**Why a separate channel instead of piggybacking on `domainEvent`:**
+- Context status updates are high-frequency during turns (especially Codex)
+- Clients that do not show context status should not parse these messages
+- Keeps the domain event stream focused on orchestration state changes
+- Allows independent throttling (server can debounce context status pushes at 200-500ms without affecting domain events)
+
+---
+
+## Alternatives Considered
+
+| Category | Recommended | Alternative | Why Not |
+|----------|-------------|-------------|---------|
+| Token counting | Provider-reported values | Client-side token estimation (tiktoken/etc) | Inaccurate, adds bundle size, providers already report exact counts |
+| Model limits | Static registry | Runtime API calls to providers | Adds latency, network dependency, Codex has no such API |
+| Projection storage | In-memory Ref | SQLite table | Too many writes, ephemeral data, no replay value |
+| UI progress | Tailwind div | @radix-ui/react-progress | Unnecessary dependency for a simple percentage bar |
+| WebSocket channel | Dedicated channel | Piggyback on domainEvent | High frequency updates would pollute domain event stream |
+| State management | Zustand store field | Separate React context | Fragment state unnecessarily, thread already in store |
+| Token normalization | Adapter-side mapping | Server-side post-processing | Adapters already have provider-specific knowledge; normalize at source |
+
+---
+
+## Installation
+
+**No new packages required.** Zero changes to any `package.json`.
+
+The entire feature is buildable with:
+- `effect` (Ref, PubSub, Schema, HashMap)
+- `@anthropic-ai/claude-agent-sdk` (existing -- extract `usage` from result messages)
+- `@google/genai` (existing -- extract `usageMetadata` from responses)
+- `zustand` (existing -- extend Thread type)
+- `lucide-react` (existing -- icons for badge)
+- `tailwindcss` (existing -- progress bar styling)
+
+---
+
+## Sources
+
+### Official Documentation
+- [Anthropic Claude Agent SDK - Track Cost and Usage](https://platform.claude.com/docs/en/agent-sdk/cost-tracking) -- HIGH confidence, verified token usage structure
+- [Anthropic Claude Agent SDK - TypeScript Reference](https://platform.claude.com/docs/en/agent-sdk/typescript) -- HIGH confidence, SDKResultMessage schema
+- [Google GenerateContentResponse](https://googleapis.github.io/js-genai/release_docs/classes/types.GenerateContentResponse.html) -- HIGH confidence, usageMetadata structure
+- [Google Gemini Token Documentation](https://ai.google.dev/gemini-api/docs/tokens) -- HIGH confidence, token counting and model limits
+- [Codex App Server Documentation](https://developers.openai.com/codex/app-server/) -- MEDIUM confidence, thread/tokenUsage/updated event
+- [Codex SDK Documentation](https://developers.openai.com/codex/sdk/) -- MEDIUM confidence, general architecture
+
+### Model Context Window Limits
+- [OpenAI GPT-5 Codex Model](https://platform.openai.com/docs/models/gpt-5-codex) -- MEDIUM confidence for exact numbers
+- [Claude Models Overview](https://platform.claude.com/docs/en/about-claude/models/overview) -- HIGH confidence
+- [Claude Context Windows](https://platform.claude.com/docs/en/build-with-claude/context-windows) -- HIGH confidence, 200K default / 1M beta
+- [Gemini Models](https://ai.google.dev/gemini-api/docs/models) -- MEDIUM confidence for preview models
+- [Gemini 3 Pro Documentation](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/models/gemini/3-pro) -- MEDIUM confidence
+
+### Codebase (Primary Source)
+- `packages/contracts/src/providerRuntime.ts` lines 292-295 -- ThreadTokenUsageUpdatedPayload (Schema.Unknown)
+- `apps/server/src/provider/Layers/CodexAdapter.ts` lines 700-710 -- Codex token usage mapping
+- `apps/server/src/provider/Layers/ClaudeCodeAdapter.ts` lines 879/952 -- Claude usage extraction
+- `apps/server/src/provider/Layers/GeminiAdapter.ts` lines 340-364 -- Gemini response handling (no usage extraction)
+- `apps/server/src/orchestration/Layers/ProjectionPipeline.ts` -- Existing projection pattern
+- `apps/web/src/components/ui/badge.tsx` -- Badge component with variant system
+- `apps/web/src/components/ui/tooltip.tsx` -- Tooltip primitives
+- `apps/web/src/components/composerFooterLayout.ts` -- Responsive breakpoint logic
+- `packages/contracts/src/model.ts` -- MODEL_OPTIONS_BY_PROVIDER registry
