@@ -34,9 +34,9 @@ rm -rf ~/.wine && WINEARCH=win32 wineboot --init
 - The README uses GitHub's `/releases/latest/download/` URLs which auto-resolve to the most recent non-prerelease release.
 - Artifact filenames are version-free (`XBE-Code-{arch}.{ext}`), so the same README links work for every release.
 - No README edits needed when releasing a new version.
-- Desktop auto-update uses `electron-updater` with a generic provider pointing at `https://synkr-server.price-bee.com/xbecode/`.
-- The update server (`synkr-server`) proxies `latest*.yml` manifests and binary downloads from GCS bucket `xbecode-releases`.
-- Important: `electron-updater` resolves files in `latest*.yml` relative to the feed root, so updater payloads must be present at the bucket root as well as in the versioned archive prefix.
+- Desktop auto-update uses `electron-updater` with a generic provider pointing directly at `https://storage.googleapis.com/xbecode-releases` (the public GCS bucket).
+- Previously the feed URL pointed at `synkr-server` proxy, but that proxy doesn't serve root-level binary files — only `/{version}/{file}` paths — so downloads failed with 404.
+- Manifests use versioned URLs (`url: $V/XBE-Code-...`) so the update works for both the old proxy-based clients (v0.0.12 and earlier) and the new GCS-direct clients (v0.0.13+).
 - Cross-compilation from Linux works for all platforms (`npmRebuild: false` skips native module recompilation; prebuilt binaries are used).
 
 ## artifacts
@@ -299,11 +299,9 @@ Prerequisites: Node.js 22.13+ and at least one authorized agent CLI (Codex, Clau
 - Runtime updater: `electron-updater` in `apps/desktop/src/main.ts`.
 - Background checks run on startup delay + interval. No automatic download or install.
 - The desktop UI shows a rocket update button when an update is available; click once to download, click again to restart/install.
-- Provider: `generic` pointing at `https://synkr-server.price-bee.com/xbecode/`.
-- The update server (`synkr-server`) proxies `latest*.yml` manifests and binary downloads from GCS bucket `xbecode-releases`.
-- Because the provider is `generic`, the `path` and `files[].url` entries in `latest*.yml` are resolved relative to `/xbecode/`, not to `/$VERSION/`.
-- No GitHub token or authentication required — the GCS bucket is publicly readable.
-- Override the update URL at build time: set `XBECODE_DESKTOP_UPDATE_URL` env var.
+- Provider: `generic` pointing at `https://storage.googleapis.com/xbecode-releases` (public GCS bucket, no auth needed).
+- v0.0.12 and earlier used `synkr-server` proxy, which only serves `/{version}/{file}` paths. Manifests use versioned URLs (`url: $V/XBE-Code-...`) to work with both old and new clients.
+- Override the update URL at runtime: set `XBECODE_DESKTOP_UPDATE_URL` env var.
 
 GCS bucket structure:
 

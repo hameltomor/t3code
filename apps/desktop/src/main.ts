@@ -60,6 +60,8 @@ const LOG_FILE_MAX_FILES = 10;
 const APP_RUN_ID = Crypto.randomBytes(6).toString("hex");
 const AUTO_UPDATE_STARTUP_DELAY_MS = 15_000;
 const AUTO_UPDATE_POLL_INTERVAL_MS = 4 * 60 * 60 * 1000;
+const DESKTOP_UPDATE_URL =
+  process.env.XBECODE_DESKTOP_UPDATE_URL || "https://storage.googleapis.com/xbecode-releases";
 const DESKTOP_UPDATE_CHANNEL = "latest";
 const DESKTOP_UPDATE_ALLOW_PRERELEASE = false;
 
@@ -715,12 +717,13 @@ function configureAutoUpdater(): void {
   }
   updaterConfigured = true;
 
-  // Use our GCS-backed update server so users don't need a GitHub token for
-  // the private repository. electron-updater's "generic" provider fetches
-  // latest.yml / latest-mac.yml / latest-linux.yml from this base URL.
+  // Point directly at the public GCS bucket so electron-updater can resolve
+  // both manifests (latest*.yml) and binary payloads from the same base URL.
+  // Previously we used synkr-server proxy, but it doesn't serve root-level
+  // binary files — only /{version}/{file} paths — causing download 404s.
   autoUpdater.setFeedURL({
     provider: "generic",
-    url: "https://synkr-server.price-bee.com/xbecode",
+    url: DESKTOP_UPDATE_URL,
   });
 
   autoUpdater.autoDownload = false;
