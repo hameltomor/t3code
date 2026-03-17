@@ -126,6 +126,7 @@ export function createWsNativeApi(): NativeApi {
         }
         return window.confirm(message);
       },
+      listDirectory: (input) => transport.request(WS_METHODS.dialogsListDirectory, input),
     },
     terminal: {
       open: (input) => transport.request(WS_METHODS.terminalOpen, input),

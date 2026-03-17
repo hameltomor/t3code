@@ -41,7 +41,7 @@ import {
   TerminalWriteInput,
 } from "./terminal";
 import { KeybindingRule } from "./keybindings";
-import { ProjectSearchEntriesInput, ProjectWriteFileInput } from "./project";
+import { DirectoryListInput, ProjectSearchEntriesInput, ProjectWriteFileInput } from "./project";
 import { OpenInEditorInput } from "./editor";
 import { DRAFT_WS_METHODS, DraftDeleteInput, DraftListInput, DraftSaveInput } from "./draft";
 import {
@@ -63,6 +63,9 @@ export const WS_METHODS = {
   projectsRemove: "projects.remove",
   projectsSearchEntries: "projects.searchEntries",
   projectsWriteFile: "projects.writeFile",
+
+  // Dialog methods
+  dialogsListDirectory: "dialogs.listDirectory",
 
   // Shell methods
   shellOpenInEditor: "shell.openInEditor",
@@ -153,6 +156,9 @@ const WebSocketRequestBody = Schema.Union([
   // Project Search
   tagRequestBody(WS_METHODS.projectsSearchEntries, ProjectSearchEntriesInput),
   tagRequestBody(WS_METHODS.projectsWriteFile, ProjectWriteFileInput),
+
+  // Dialog methods
+  tagRequestBody(WS_METHODS.dialogsListDirectory, DirectoryListInput),
 
   // Shell methods
   tagRequestBody(WS_METHODS.shellOpenInEditor, OpenInEditorInput),

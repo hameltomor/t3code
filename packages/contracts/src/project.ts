@@ -39,3 +39,31 @@ export const ProjectWriteFileResult = Schema.Struct({
   relativePath: TrimmedNonEmptyString,
 });
 export type ProjectWriteFileResult = typeof ProjectWriteFileResult.Type;
+
+// ── Directory Browser ───────────────────────────────────────────────
+
+const DIRECTORY_LIST_PATH_MAX_LENGTH = 1024;
+
+export const DirectoryListInput = Schema.Struct({
+  path: TrimmedNonEmptyString.check(Schema.isMaxLength(DIRECTORY_LIST_PATH_MAX_LENGTH)),
+  showHidden: Schema.optional(Schema.Boolean),
+});
+export type DirectoryListInput = typeof DirectoryListInput.Type;
+
+const DirectoryEntryKind = Schema.Literals(["file", "directory"]);
+
+export const DirectoryEntry = Schema.Struct({
+  name: TrimmedNonEmptyString,
+  path: TrimmedNonEmptyString,
+  kind: DirectoryEntryKind,
+  size: Schema.optional(Schema.Number),
+  modifiedAt: Schema.optional(Schema.String),
+});
+export type DirectoryEntry = typeof DirectoryEntry.Type;
+
+export const DirectoryListResult = Schema.Struct({
+  entries: Schema.Array(DirectoryEntry),
+  currentPath: TrimmedNonEmptyString,
+  parentPath: Schema.NullOr(Schema.String),
+});
+export type DirectoryListResult = typeof DirectoryListResult.Type;

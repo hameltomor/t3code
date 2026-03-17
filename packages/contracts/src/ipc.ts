@@ -20,6 +20,8 @@ import type {
   GitListWorkspaceReposResult,
 } from "./git";
 import type {
+  DirectoryListInput,
+  DirectoryListResult,
   ProjectSearchEntriesInput,
   ProjectSearchEntriesResult,
   ProjectWriteFileInput,
@@ -121,6 +123,7 @@ export interface NativeApi {
   dialogs: {
     pickFolder: () => Promise<string | null>;
     confirm: (message: string) => Promise<boolean>;
+    listDirectory: (input: DirectoryListInput) => Promise<DirectoryListResult>;
   };
   terminal: {
     open: (input: TerminalOpenInput) => Promise<TerminalSessionSnapshot>;

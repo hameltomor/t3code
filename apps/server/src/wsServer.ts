@@ -48,6 +48,7 @@ import { createLogger } from "./logger";
 import { GitManager } from "./git/Services/GitManager.ts";
 import { TerminalManager } from "./terminal/Services/Manager.ts";
 import { Keybindings } from "./keybindings";
+import { listDirectory } from "./directoryBrowser";
 import { searchWorkspaceEntries } from "./workspaceEntries";
 import { OrchestrationEngineService } from "./orchestration/Services/OrchestrationEngine";
 import { ProjectionSnapshotQuery } from "./orchestration/Services/ProjectionSnapshotQuery";
@@ -843,6 +844,20 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
             new RouteRequestError({
               message: `Failed to search workspace entries: ${String(cause)}`,
             }),
+        });
+      }
+
+      case WS_METHODS.dialogsListDirectory: {
+        const body = stripRequestTag(request.body);
+        return yield* Effect.tryPromise({
+          try: () => listDirectory(body),
+          catch: (cause) => {
+            const msg =
+              cause instanceof Error && cause.message.startsWith("Access denied")
+                ? cause.message
+                : "Failed to list directory. The path may not exist or is not accessible.";
+            return new RouteRequestError({ message: msg });
+          },
         });
       }
 

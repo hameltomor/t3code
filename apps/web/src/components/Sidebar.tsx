@@ -44,6 +44,7 @@ import { toastManager } from "./ui/toast";
 import { RepoSummaryBadge } from "./RepoSwitcher";
 import { useImportWizardStore } from "./ImportWizard/ImportWizardTrigger";
 import { ImportWizard } from "./ImportWizard/ImportWizard";
+import { FolderPickerModal } from "./FolderPickerModal";
 import {
   getDesktopUpdateActionError,
   getDesktopUpdateButtonTooltip,
@@ -263,9 +264,10 @@ export default function Sidebar() {
   const removeWorkspaceWorktreesMutation = useMutation(
     gitRemoveWorkspaceWorktreesMutationOptions({ queryClient }),
   );
-  const [addingProject, setAddingProject] = useState(false);
-  const [newCwd, setNewCwd] = useState("");
   const [isPickingFolder, setIsPickingFolder] = useState(false);
+  const [showFolderPicker, setShowFolderPicker] = useState(false);
+  const [showManualPathInput, setShowManualPathInput] = useState(false);
+  const [manualPathValue, setManualPathValue] = useState("");
   const [isAddingProject, setIsAddingProject] = useState(false);
   const [renamingThreadId, setRenamingThreadId] = useState<ThreadId | null>(null);
   const [renamingTitle, setRenamingTitle] = useState("");
@@ -487,24 +489,23 @@ export default function Sidebar() {
   );
 
   const addProjectFromPath = useCallback(
-    async (rawCwd: string) => {
+    async (rawCwd: string): Promise<boolean> => {
       const cwd = rawCwd.trim();
-      if (!cwd || isAddingProject) return;
+      if (!cwd || isAddingProject) return false;
       const api = readNativeApi();
-      if (!api) return;
+      if (!api) return false;
 
       setIsAddingProject(true);
       const finishAddingProject = () => {
         setIsAddingProject(false);
-        setNewCwd("");
-        setAddingProject(false);
+        setIsPickingFolder(false);
       };
 
       const existing = projects.find((project) => project.cwd === cwd);
       if (existing) {
         focusMostRecentThreadForProject(existing.id);
         finishAddingProject();
-        return;
+        return true;
       }
 
       const projectId = newProjectId();
@@ -529,16 +530,13 @@ export default function Sidebar() {
           description:
             error instanceof Error ? error.message : "An error occurred while adding the project.",
         });
-        return;
+        return false;
       }
       finishAddingProject();
+      return true;
     },
     [focusMostRecentThreadForProject, handleNewThread, isAddingProject, projects],
   );
-
-  const handleAddProject = () => {
-    void addProjectFromPath(newCwd);
-  };
 
   const handlePickFolder = async () => {
     const api = readNativeApi();
@@ -1533,7 +1531,7 @@ export default function Sidebar() {
             </div>
           )}
 
-          {projects.length === 0 && !addingProject && !isSearching && threadsHydrated && (
+          {projects.length === 0 && !isSearching && threadsHydrated && (
             <div className="px-2 pt-4 text-center text-xs text-muted-foreground-secondary">
               No projects yet.
               <br />
@@ -1545,64 +1543,97 @@ export default function Sidebar() {
 
       <SidebarSeparator />
       <SidebarFooter className="gap-0 p-4 md:p-3">
-        {addingProject ? (
+        {showManualPathInput && !isElectron ? (
           <>
-            <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
-              Add project
-            </p>
             <input
               className="mb-2 w-full rounded-md border border-border bg-secondary px-3 md:px-2 py-3 md:py-1.5 font-mono text-sm md:text-xs text-foreground placeholder:text-muted-foreground-secondary focus:border-ring focus:outline-none"
               placeholder="/path/to/project"
-              value={newCwd}
-              onChange={(event) => setNewCwd(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") handleAddProject();
-                if (event.key === "Escape") setAddingProject(false);
+              value={manualPathValue}
+              onChange={(e) => setManualPathValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && manualPathValue.trim() && !isAddingProject) {
+                  void (async () => {
+                    const ok = await addProjectFromPath(manualPathValue.trim());
+                    if (ok) {
+                      setManualPathValue("");
+                      setShowManualPathInput(false);
+                    }
+                  })();
+                }
+                if (e.key === "Escape") {
+                  setShowManualPathInput(false);
+                  setManualPathValue("");
+                }
               }}
+              autoFocus
             />
-            {isElectron && (
-              <button
-                type="button"
-                className="mb-2 flex w-full items-center justify-center rounded-md border border-border px-3 md:px-2 h-12 md:h-auto md:py-1.5 text-sm md:text-xs text-muted-foreground transition-colors duration-150 hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
-                onClick={() => void handlePickFolder()}
-                disabled={isPickingFolder || isAddingProject}
-              >
-                {isPickingFolder ? "Picking folder..." : "Browse for folder"}
-              </button>
-            )}
             <div className="flex gap-2">
               <button
                 type="button"
-                className="flex-1 rounded-md bg-primary px-3 md:px-2 py-2.5 md:py-1 text-sm md:text-xs font-medium text-primary-foreground transition-colors duration-150 hover:bg-primary/90"
-                onClick={handleAddProject}
-                disabled={newCwd.trim().length === 0 || isAddingProject || !threadsHydrated}
+                className="flex-1 rounded-md bg-primary px-3 md:px-2 py-2.5 md:py-1 text-sm md:text-xs font-medium text-primary-foreground transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={() => {
+                  if (!manualPathValue.trim() || isAddingProject) return;
+                  void (async () => {
+                    const ok = await addProjectFromPath(manualPathValue.trim());
+                    if (ok) {
+                      setManualPathValue("");
+                      setShowManualPathInput(false);
+                    }
+                  })();
+                }}
+                disabled={!manualPathValue.trim() || isAddingProject}
               >
                 {isAddingProject ? "Adding..." : "Add"}
               </button>
               <button
                 type="button"
                 className="flex-1 rounded-md border border-border px-3 md:px-2 py-2.5 md:py-1 text-sm md:text-xs text-muted-foreground/80 transition-colors duration-150 hover:bg-secondary"
-                onClick={() => setAddingProject(false)}
+                onClick={() => {
+                  setShowManualPathInput(false);
+                  setManualPathValue("");
+                }}
               >
                 Cancel
               </button>
             </div>
           </>
         ) : (
-          <button
-            type="button"
-            className="flex w-full cursor-pointer items-center justify-center gap-1 rounded-md border border-dashed border-border h-12 md:h-auto md:py-2 text-sm md:text-xs text-muted-foreground/70 transition-colors duration-150 hover:border-ring hover:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60"
-            onClick={() => setAddingProject(true)}
-            disabled={!threadsHydrated}
-          >
-            + Add project
-          </button>
+          <>
+            <button
+              type="button"
+              className="flex w-full cursor-pointer items-center justify-center gap-1 rounded-md border border-dashed border-border h-12 md:h-auto md:py-2 text-sm md:text-xs text-muted-foreground/70 transition-colors duration-150 hover:border-ring hover:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={() => {
+                if (isElectron) {
+                  void handlePickFolder();
+                } else {
+                  setShowFolderPicker(true);
+                }
+              }}
+              disabled={!threadsHydrated || isPickingFolder}
+            >
+              {isPickingFolder ? "Picking folder..." : "+ Add project"}
+            </button>
+            {!isElectron && (
+              <button
+                type="button"
+                className="mt-1 w-full text-center text-[10px] text-muted-foreground/50 transition-colors hover:text-muted-foreground"
+                onClick={() => setShowManualPathInput(true)}
+              >
+                or enter path manually
+              </button>
+            )}
+          </>
         )}
       </SidebarFooter>
       <ImportWizard
         isOpen={importWizardState.isOpen}
         onClose={importWizardState.close}
         projectId={importWizardState.projectId}
+      />
+      <FolderPickerModal
+        isOpen={showFolderPicker}
+        onClose={() => setShowFolderPicker(false)}
+        onSelect={(path) => void addProjectFromPath(path)}
       />
     </>
   );
