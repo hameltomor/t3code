@@ -13,7 +13,6 @@ export function shouldClearThreadSelectionOnMouseDown(target: HTMLElement | null
 export interface ThreadStatusPill {
   label:
     | "Working"
-    | "Connecting"
     | "Completed"
     | "Pending Approval"
     | "Awaiting Input"
@@ -29,7 +28,12 @@ export type ThreadStatusInput = {
   lastVisitedAt?: string | undefined;
   proposedPlans: ReadonlyArray<ProposedPlan>;
   session: ThreadSession | null;
+  /** ISO timestamp of the most recent user message, if any. */
+  latestUserMessageAt?: string | undefined;
 };
+
+/** Max age (ms) for the pre-session "Working" pill before we stop showing it. */
+const PENDING_START_MAX_AGE_MS = 120_000;
 
 export function hasUnseenCompletion(thread: ThreadStatusInput): boolean {
   if (!thread.latestTurn?.completedAt) return false;
@@ -42,11 +46,21 @@ export function hasUnseenCompletion(thread: ThreadStatusInput): boolean {
   return completedAt > lastVisitedAt;
 }
 
-export function resolveThreadStatusPill(input: {
-  thread: ThreadStatusInput;
-  hasPendingApprovals: boolean;
-  hasPendingUserInput: boolean;
-}): ThreadStatusPill | null {
+const WORKING_PILL: ThreadStatusPill = {
+  label: "Working",
+  colorClass: "text-sky-600 dark:text-sky-300/80",
+  dotClass: "bg-sky-500 dark:bg-sky-300/80",
+  pulse: true,
+};
+
+export function resolveThreadStatusPill(
+  input: {
+    thread: ThreadStatusInput;
+    hasPendingApprovals: boolean;
+    hasPendingUserInput: boolean;
+  },
+  now?: number,
+): ThreadStatusPill | null {
   const { hasPendingApprovals, hasPendingUserInput, thread } = input;
 
   if (hasPendingApprovals) {
@@ -67,22 +81,22 @@ export function resolveThreadStatusPill(input: {
     };
   }
 
-  if (thread.session?.status === "running") {
-    return {
-      label: "Working",
-      colorClass: "text-sky-600 dark:text-sky-300/80",
-      dotClass: "bg-sky-500 dark:bg-sky-300/80",
-      pulse: true,
-    };
+  // Session is actively running or bootstrapping — show "Working" for both.
+  if (thread.session?.status === "running" || thread.session?.status === "connecting") {
+    return WORKING_PILL;
   }
 
-  if (thread.session?.status === "connecting") {
-    return {
-      label: "Connecting",
-      colorClass: "text-sky-600 dark:text-sky-300/80",
-      dotClass: "bg-sky-500 dark:bg-sky-300/80",
-      pulse: true,
-    };
+  // Pre-session: user sent a message but the provider session hasn't been bound yet.
+  // Time-bound to avoid getting stuck on abandoned / failed thread starts.
+  if (
+    thread.session === null &&
+    thread.latestUserMessageAt &&
+    !thread.latestTurn?.completedAt
+  ) {
+    const messageAge = (now ?? Date.now()) - Date.parse(thread.latestUserMessageAt);
+    if (messageAge < PENDING_START_MAX_AGE_MS) {
+      return WORKING_PILL;
+    }
   }
 
   const hasPlanReadyPrompt =

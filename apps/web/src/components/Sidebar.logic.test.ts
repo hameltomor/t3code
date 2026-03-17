@@ -155,14 +155,44 @@ describe("resolveThreadStatusPill", () => {
     expect(result?.pulse).toBe(true);
   });
 
-  it("shows Connecting when session is connecting", () => {
+  it("shows Working when session is connecting (collapsed into Working)", () => {
     const result = resolveThreadStatusPill({
       thread: { ...baseThread, session: makeSession({ status: "connecting" }) },
       hasPendingApprovals: false,
       hasPendingUserInput: false,
     });
-    expect(result?.label).toBe("Connecting");
+    expect(result?.label).toBe("Working");
     expect(result?.pulse).toBe(true);
+  });
+
+  it("shows Working when session is null but a recent user message exists", () => {
+    const recentTimestamp = new Date(Date.now() - 5_000).toISOString();
+    const result = resolveThreadStatusPill({
+      thread: { ...baseThread, session: null, latestUserMessageAt: recentTimestamp },
+      hasPendingApprovals: false,
+      hasPendingUserInput: false,
+    });
+    expect(result?.label).toBe("Working");
+    expect(result?.pulse).toBe(true);
+  });
+
+  it("does not show Working for pre-session thread when message is too old", () => {
+    const oldTimestamp = new Date(Date.now() - 300_000).toISOString();
+    const result = resolveThreadStatusPill({
+      thread: { ...baseThread, session: null, latestUserMessageAt: oldTimestamp },
+      hasPendingApprovals: false,
+      hasPendingUserInput: false,
+    });
+    expect(result).toBeNull();
+  });
+
+  it("does not show Working when session is null and no user messages exist", () => {
+    const result = resolveThreadStatusPill({
+      thread: { ...baseThread, session: null },
+      hasPendingApprovals: false,
+      hasPendingUserInput: false,
+    });
+    expect(result).toBeNull();
   });
 
   it("shows Plan Ready when a settled plan turn has a proposed plan", () => {

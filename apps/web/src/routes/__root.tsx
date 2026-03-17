@@ -1,4 +1,4 @@
-import { ProjectId, ThreadId } from "@xbetools/contracts";
+import { type OrchestrationEvent, ProjectId, ThreadId } from "@xbetools/contracts";
 import {
   Outlet,
   createRootRouteWithContext,
@@ -8,7 +8,7 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { QueryClient, useQueryClient } from "@tanstack/react-query";
-import { Throttler } from "@tanstack/react-pacer";
+import { Effect } from "effect";
 
 import { APP_DISPLAY_NAME } from "../branding";
 import { Button } from "../components/ui/button";
@@ -27,6 +27,7 @@ import { terminalRunningSubprocessFromEvent } from "../terminalActivity";
 import { onServerConfigUpdated, onServerWelcome } from "../wsNativeApi";
 import { providerQueryKeys } from "../lib/providerReactQuery";
 import { collectActiveTerminalThreadIds } from "../lib/terminalStateCleanup";
+import { projectEvent } from "@xbetools/shared/orchestration-projector";
 
 export const Route = createRootRouteWithContext<{
   queryClient: QueryClient;
@@ -158,15 +159,19 @@ function EventRouter() {
     if (!api) return;
     let disposed = false;
     let latestSequence = 0;
-    let syncing = false;
-    let pending = false;
     let needsProviderInvalidation = false;
+    let syncing = false;
+    let pendingSnapshot = false;
+    let domainEventChain = Promise.resolve();
+    const readModelRef: {
+      current: Awaited<ReturnType<typeof api.orchestration.getSnapshot>> | null;
+    } = {
+      current: null,
+    };
 
-    const flushSnapshotSync = async (): Promise<void> => {
-      const snapshot = await api.orchestration.getSnapshot();
-      if (disposed) return;
-      latestSequence = Math.max(latestSequence, snapshot.snapshotSequence);
-      syncServerReadModel(snapshot);
+    const syncTerminalStateCleanup = (
+      snapshot: Awaited<ReturnType<typeof api.orchestration.getSnapshot>>,
+    ) => {
       const draftThreadIds = Object.keys(
         useComposerDraftStore.getState().draftThreadsByThreadId,
       ) as ThreadId[];
@@ -175,19 +180,28 @@ function EventRouter() {
         draftThreadIds,
       });
       removeOrphanedTerminalStates(activeThreadIds);
-      if (pending) {
-        pending = false;
+    };
+
+    const flushSnapshotSync = async (): Promise<void> => {
+      const snapshot = await api.orchestration.getSnapshot();
+      if (disposed) return;
+      latestSequence = Math.max(latestSequence, snapshot.snapshotSequence);
+      readModelRef.current = snapshot;
+      syncServerReadModel(snapshot);
+      syncTerminalStateCleanup(snapshot);
+      if (pendingSnapshot) {
+        pendingSnapshot = false;
         await flushSnapshotSync();
       }
     };
 
-    const syncSnapshot = async () => {
+    const syncSnapshot = async (): Promise<void> => {
       if (syncing) {
-        pending = true;
+        pendingSnapshot = true;
         return;
       }
       syncing = true;
-      pending = false;
+      pendingSnapshot = false;
       try {
         await flushSnapshotSync();
       } catch {
@@ -196,30 +210,38 @@ function EventRouter() {
       syncing = false;
     };
 
-    const domainEventFlushThrottler = new Throttler(
-      () => {
-        if (needsProviderInvalidation) {
-          needsProviderInvalidation = false;
-          void queryClient.invalidateQueries({ queryKey: providerQueryKeys.all });
-        }
-        void syncSnapshot();
-      },
-      {
-        wait: 100,
-        leading: false,
-        trailing: true,
-      },
-    );
-
-    const unsubDomainEvent = api.orchestration.onDomainEvent((event) => {
+    const processDomainEvent = async (event: OrchestrationEvent) => {
       if (event.sequence <= latestSequence) {
         return;
       }
-      latestSequence = event.sequence;
       if (event.type === "thread.turn-diff-completed" || event.type === "thread.reverted") {
         needsProviderInvalidation = true;
       }
-      domainEventFlushThrottler.maybeExecute();
+
+      const currentReadModel = readModelRef.current;
+      if (currentReadModel === null || event.sequence !== latestSequence + 1) {
+        await syncSnapshot();
+      } else {
+        try {
+          const nextReadModel = await Effect.runPromise(projectEvent(currentReadModel, event));
+          if (disposed) return;
+          latestSequence = event.sequence;
+          readModelRef.current = nextReadModel;
+          syncServerReadModel(nextReadModel);
+          syncTerminalStateCleanup(nextReadModel);
+        } catch {
+          await syncSnapshot();
+        }
+      }
+
+      if (needsProviderInvalidation) {
+        needsProviderInvalidation = false;
+        await queryClient.invalidateQueries({ queryKey: providerQueryKeys.all });
+      }
+    };
+
+    const unsubDomainEvent = api.orchestration.onDomainEvent((event) => {
+      domainEventChain = domainEventChain.then(() => processDomainEvent(event)).catch(() => undefined);
     });
     const unsubTerminalEvent = api.terminal.onEvent((event) => {
       const hasRunningSubprocess = terminalRunningSubprocessFromEvent(event);
@@ -318,7 +340,6 @@ function EventRouter() {
     return () => {
       disposed = true;
       needsProviderInvalidation = false;
-      domainEventFlushThrottler.cancel();
       unsubDomainEvent();
       unsubTerminalEvent();
       unsubWelcome();

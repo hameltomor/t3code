@@ -1328,8 +1328,12 @@ export default function Sidebar() {
                           const isActive = routeThreadId === thread.id;
                           const isSelected = selectedThreadIds.has(thread.id);
                           const isHighlighted = isActive || isSelected;
+                          const latestUserMsg = thread.messages.findLast((m) => m.role === "user");
                           const threadStatus = resolveThreadStatusPill({
-                            thread,
+                            thread: {
+                              ...thread,
+                              latestUserMessageAt: latestUserMsg?.createdAt,
+                            },
                             hasPendingApprovals: pendingApprovalByThreadId.get(thread.id) === true,
                             hasPendingUserInput: pendingUserInputByThreadId.get(thread.id) === true,
                           });
