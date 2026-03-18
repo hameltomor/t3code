@@ -114,6 +114,7 @@ import {
   DEFAULT_RUNTIME_MODE,
   DEFAULT_THREAD_TERMINAL_ID,
   MAX_THREAD_TERMINAL_COUNT,
+  type ChatAttachment,
   type ChatMessage,
   type Thread,
   type TurnDiffFileChange,
@@ -236,6 +237,8 @@ import { Toggle } from "./ui/toggle";
 import { SidebarTrigger, useSidebar } from "./ui/sidebar";
 import { newCommandId, newMessageId, newThreadId } from "~/lib/utils";
 import { readNativeApi } from "~/nativeApi";
+import { useMessageQueueStore, useQueueVersion } from "~/messageQueueStore";
+import { QueueBar } from "./QueueBar";
 import {
   type AppSettings,
   getAppModelOptions,
@@ -762,6 +765,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const attachmentPreviewHandoffByMessageIdRef = useRef<Record<string, string[]>>({});
   const attachmentPreviewHandoffTimeoutByMessageIdRef = useRef<Record<string, number>>({});
   const sendInFlightRef = useRef(false);
+  const turnPendingRef = useRef(false);
   const dragDepthRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const terminalOpenByThreadRef = useRef<Record<string, boolean>>({});
@@ -2598,11 +2602,68 @@ export default function ChatView({ threadId }: ChatViewProps) {
     images: ComposerImageAttachment[];
     files: ComposerFileAttachment[];
     clearComposerDraft: boolean;
+    fromQueue?: boolean;
+    messageId?: string;
   }) => {
     const api = readNativeApi();
-    if (!api || !activeThread || isSendBusy || isConnecting || sendInFlightRef.current) return;
+    if (!api || !activeThread || isConnecting) return;
     const trimmed = input.text.trim();
     if (!trimmed && input.images.length === 0 && input.files.length === 0) return;
+
+    // If busy or a turn is pending/active, enqueue instead of blocking
+    if ((isSendBusy || sendInFlightRef.current || turnPendingRef.current) && !input.fromQueue) {
+      const queueMessageId = newMessageId();
+      const queueId = crypto.randomUUID();
+      const optimisticImageAttachments = input.images.map((image) => ({
+        type: "image" as const,
+        id: image.id,
+        name: image.name,
+        mimeType: image.mimeType,
+        sizeBytes: image.sizeBytes,
+        previewUrl: image.previewUrl,
+      }));
+      const optimisticFileAttachments = input.files.map((file) => ({
+        type: "file" as const,
+        id: file.id,
+        name: file.name,
+        mimeType: file.mimeType,
+        sizeBytes: file.sizeBytes,
+      }));
+      const optimisticAttachments = [
+        ...optimisticImageAttachments,
+        ...optimisticFileAttachments,
+      ];
+      useMessageQueueStore.getState().enqueueMessage(activeThread.id, {
+        id: queueId,
+        messageId: queueMessageId,
+        text: trimmed,
+        attachments: optimisticAttachments,
+      });
+      setOptimisticUserMessages((existing) => [
+        ...existing,
+        {
+          id: queueMessageId,
+          role: "user",
+          text: trimmed,
+          ...(optimisticAttachments.length > 0 ? { attachments: optimisticAttachments } : {}),
+          createdAt: new Date().toISOString(),
+          streaming: false,
+        },
+      ]);
+      shouldAutoScrollRef.current = true;
+      forceStickToBottom();
+      if (input.clearComposerDraft) {
+        promptRef.current = "";
+        clearComposerDraftContent(activeThread.id);
+        setComposerHighlightedItemId(null);
+        setComposerCursor(0);
+        setComposerTrigger(null);
+      }
+      return;
+    }
+
+    // If busy or turn pending AND this is from the queue, wait — the effect will retry
+    if ((isSendBusy || sendInFlightRef.current || turnPendingRef.current) && input.fromQueue) return;
     if (!activeProject) return;
     const threadIdForSend = activeThread.id;
     const isFirstMessage = !isServerThread || activeThread.messages.length === 0;
@@ -2624,11 +2685,12 @@ export default function ChatView({ threadId }: ChatViewProps) {
     }
 
     sendInFlightRef.current = true;
+    turnPendingRef.current = true;
     beginSendPhase(baseBranchForWorktree ? "preparing-worktree" : "sending-turn");
 
     const composerImagesSnapshot = [...input.images];
     const composerFilesSnapshot = [...input.files];
-    const messageIdForSend = newMessageId();
+    const messageIdForSend = input.messageId ? (input.messageId as ReturnType<typeof newMessageId>) : newMessageId();
     const messageCreatedAt = new Date().toISOString();
     const turnImageAttachmentsPromise = Promise.all(
       composerImagesSnapshot.map(async (image) => ({
@@ -2648,36 +2710,39 @@ export default function ChatView({ threadId }: ChatViewProps) {
         dataUrl: await readFileAsDataUrl(file.file),
       })),
     );
-    const optimisticImageAttachments = composerImagesSnapshot.map((image) => ({
-      type: "image" as const,
-      id: image.id,
-      name: image.name,
-      mimeType: image.mimeType,
-      sizeBytes: image.sizeBytes,
-      previewUrl: image.previewUrl,
-    }));
-    const optimisticFileAttachments = composerFilesSnapshot.map((file) => ({
-      type: "file" as const,
-      id: file.id,
-      name: file.name,
-      mimeType: file.mimeType,
-      sizeBytes: file.sizeBytes,
-    }));
-    const optimisticAttachments = [
-      ...optimisticImageAttachments,
-      ...optimisticFileAttachments,
-    ];
-    setOptimisticUserMessages((existing) => [
-      ...existing,
-      {
-        id: messageIdForSend,
-        role: "user",
-        text: trimmed,
-        ...(optimisticAttachments.length > 0 ? { attachments: optimisticAttachments } : {}),
-        createdAt: messageCreatedAt,
-        streaming: false,
-      },
-    ]);
+    // Skip optimistic message for queue-driven sends (already added when enqueued)
+    if (!input.fromQueue) {
+      const optimisticImageAttachments = composerImagesSnapshot.map((image) => ({
+        type: "image" as const,
+        id: image.id,
+        name: image.name,
+        mimeType: image.mimeType,
+        sizeBytes: image.sizeBytes,
+        previewUrl: image.previewUrl,
+      }));
+      const optimisticFileAttachments = composerFilesSnapshot.map((file) => ({
+        type: "file" as const,
+        id: file.id,
+        name: file.name,
+        mimeType: file.mimeType,
+        sizeBytes: file.sizeBytes,
+      }));
+      const optimisticAttachments = [
+        ...optimisticImageAttachments,
+        ...optimisticFileAttachments,
+      ];
+      setOptimisticUserMessages((existing) => [
+        ...existing,
+        {
+          id: messageIdForSend,
+          role: "user",
+          text: trimmed,
+          ...(optimisticAttachments.length > 0 ? { attachments: optimisticAttachments } : {}),
+          createdAt: messageCreatedAt,
+          streaming: false,
+        },
+      ]);
+    }
     // Sending a message should always bring the latest user turn into view.
     shouldAutoScrollRef.current = true;
     forceStickToBottom();
@@ -2915,6 +2980,26 @@ export default function ChatView({ threadId }: ChatViewProps) {
         clearDraftThread(threadIdForSend);
       }
     })().catch(async (err: unknown) => {
+      // Server rejected because a turn is already active — auto-enqueue instead of showing error
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (errMsg.includes("already has active turn")) {
+        const attachments: ChatAttachment[] = composerImagesSnapshot.map((img) => ({
+          id: img.id,
+          type: "image" as const,
+          name: img.name,
+          mimeType: img.mimeType,
+          sizeBytes: img.sizeBytes,
+          previewUrl: img.previewUrl,
+        }));
+        useMessageQueueStore.getState().enqueueMessage(threadIdForSend, {
+          id: messageIdForSend,
+          messageId: messageIdForSend,
+          text: trimmed,
+          attachments,
+        });
+        return;
+      }
+
       if (createdServerThreadForLocalDraft && !turnStartSucceeded) {
         await api.orchestration
           .dispatchCommand({
@@ -2955,9 +3040,70 @@ export default function ChatView({ threadId }: ChatViewProps) {
     });
     sendInFlightRef.current = false;
     if (!turnStartSucceeded) {
+      turnPendingRef.current = false;
       resetSendPhase();
     }
   };
+
+  // ── Queue state ────
+  const queueVersion = useQueueVersion();
+  const queuedMessageIdsRef = useRef(new Set<string>());
+  // Keep the ref in sync — avoids creating a new Set on every render
+  useMemo(() => {
+    void queueVersion;
+    if (!activeThreadId) {
+      queuedMessageIdsRef.current = new Set<string>();
+      return;
+    }
+    const threadQueue = useMessageQueueStore.getState().queue.get(activeThreadId);
+    queuedMessageIdsRef.current = threadQueue
+      ? new Set(threadQueue.map((m) => m.messageId))
+      : new Set<string>();
+  }, [activeThreadId, queueVersion]);
+
+  // Session is ready to accept a new turn: either the latest turn settled normally,
+  // or the session stopped/became ready without an active turn (e.g. after runtime error).
+  const sessionStatus = activeThread?.session?.orchestrationStatus ?? null;
+  const sessionActiveTurnId = activeThread?.session?.activeTurnId ?? null;
+  const canAcceptTurn =
+    latestTurnSettled ||
+    (sessionStatus !== null && sessionStatus !== "running" && !sessionActiveTurnId);
+
+  // ── Clear turnPendingRef when session can accept a new turn ────
+  useEffect(() => {
+    if (canAcceptTurn) {
+      turnPendingRef.current = false;
+    }
+  }, [canAcceptTurn]);
+
+  // ── Queue drain: auto-send next queued message when turn settles ────
+  const queueDrainInFlightRef = useRef(false);
+  useEffect(() => {
+    if (!activeThread || !canAcceptTurn || isSendBusy || sendInFlightRef.current) return;
+    if (queueDrainInFlightRef.current) return;
+
+    const threadQueue = useMessageQueueStore.getState().queue.get(activeThread.id);
+    if (!threadQueue || threadQueue.length === 0) return;
+
+    const next = useMessageQueueStore.getState().dequeueMessage(activeThread.id);
+    if (!next) return;
+
+    queueDrainInFlightRef.current = true;
+    // Use setTimeout to break out of the React render cycle
+    setTimeout(() => {
+      submitUserTurn({
+        text: next.text,
+        images: [],
+        files: [],
+        clearComposerDraft: false,
+        fromQueue: true,
+        messageId: next.messageId,
+      }).finally(() => {
+        queueDrainInFlightRef.current = false;
+      });
+    }, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeThread?.id, canAcceptTurn, isSendBusy, queueVersion]);
 
   const onSend = async (e?: { preventDefault: () => void }) => {
     e?.preventDefault();
@@ -3044,6 +3190,18 @@ export default function ChatView({ threadId }: ChatViewProps) {
       createdAt: new Date().toISOString(),
     });
   };
+
+  const onPromoteQueuedMessage = useCallback(
+    (queuedMessageId: string) => {
+      if (!activeThread) return;
+      // Move the promoted message to the front of the queue
+      useMessageQueueStore.getState().promoteQueuedMessage(activeThread.id, queuedMessageId);
+      // Interrupt the current turn — the queue drain effect will pick up the promoted message
+      void onInterrupt();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeThread?.id],
+  );
 
   const onRespondToApproval = useCallback(
     async (requestId: ApprovalRequestId, decision: ProviderApprovalDecision) => {
@@ -3901,6 +4059,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
           onCancelEditUserMessage={onCancelEditUserMessage}
           onSubmitEditUserMessage={onSubmitEditUserMessage}
           isRevertingCheckpoint={isRevertingCheckpoint}
+          queuedMessageIds={queuedMessageIdsRef.current}
           onImageExpand={onExpandTimelineImage}
           markdownCwd={gitCwd ?? undefined}
           resolvedTheme={resolvedTheme}
@@ -3908,8 +4067,14 @@ export default function ChatView({ threadId }: ChatViewProps) {
         />
       </div>
 
-      {/* Input bar */}
+      {/* Queue bar + Input bar */}
       <div className="px-3 pt-1.5 sm:px-5 sm:pt-2">
+        {activeThread && (
+          <QueueBar
+            threadId={activeThread.id}
+            onPromote={onPromoteQueuedMessage}
+          />
+        )}
         <form
           ref={composerFormRef}
           onSubmit={onSend}
@@ -4291,22 +4456,49 @@ export default function ChatView({ threadId }: ChatViewProps) {
                       </Button>
                     </div>
                   ) : phase === "running" ? (
-                    <button
-                      type="button"
-                      className="flex size-8 cursor-pointer items-center justify-center rounded-full bg-rose-500/90 text-white transition-all duration-150 hover:bg-rose-500 hover:scale-105 sm:h-8 sm:w-8"
-                      onClick={() => void onInterrupt()}
-                      aria-label="Stop generation"
-                    >
-                      <svg
-                        width="12"
-                        height="12"
-                        viewBox="0 0 12 12"
-                        fill="currentColor"
-                        aria-hidden="true"
+                    <div className="flex items-center gap-1.5">
+                      {/* Queue-send button: visible when there's text to queue */}
+                      {(prompt.trim() || composerImages.length > 0) && (
+                        <button
+                          type="submit"
+                          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-primary/90 text-primary-foreground transition-all duration-150 hover:bg-primary hover:scale-105 disabled:cursor-default disabled:opacity-30 disabled:hover:scale-100"
+                          disabled={isConnecting}
+                          aria-label="Queue message"
+                        >
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 14 14"
+                            fill="none"
+                            aria-hidden="true"
+                          >
+                            <path
+                              d="M7 11.5V2.5M7 2.5L3 6.5M7 2.5L11 6.5"
+                              stroke="currentColor"
+                              strokeWidth="1.8"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="flex size-8 cursor-pointer items-center justify-center rounded-full bg-rose-500/90 text-white transition-all duration-150 hover:bg-rose-500 hover:scale-105 sm:h-8 sm:w-8"
+                        onClick={() => void onInterrupt()}
+                        aria-label="Stop generation"
                       >
-                        <rect x="2" y="2" width="8" height="8" rx="1.5" />
-                      </svg>
-                    </button>
+                        <svg
+                          width="12"
+                          height="12"
+                          viewBox="0 0 12 12"
+                          fill="currentColor"
+                          aria-hidden="true"
+                        >
+                          <rect x="2" y="2" width="8" height="8" rx="1.5" />
+                        </svg>
+                      </button>
+                    </div>
                   ) : pendingUserInputs.length === 0 ? (
                     showPlanFollowUpPrompt ? (
                       prompt.trim().length > 0 ? (
@@ -4358,7 +4550,6 @@ export default function ChatView({ threadId }: ChatViewProps) {
                         type="submit"
                         className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-primary/90 text-primary-foreground transition-all duration-150 hover:bg-primary hover:scale-105 disabled:cursor-default disabled:opacity-30 disabled:hover:scale-100 sm:h-8 sm:w-8"
                         disabled={
-                          isSendBusy ||
                           isConnecting ||
                           (!prompt.trim() && composerImages.length === 0 && composerFiles.length === 0)
                         }
@@ -4368,7 +4559,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
                             : isPreparingWorktree
                               ? "Preparing worktree"
                               : isSendBusy
-                                ? "Sending"
+                                ? "Queue message"
                                 : "Send message"
                         }
                       >
@@ -5020,6 +5211,7 @@ const EditableUserMessageBubble = memo(function EditableUserMessageBubble(props:
   editingText: string;
   isBusy: boolean;
   isRevertingCheckpoint: boolean;
+  isQueued?: boolean;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   onTimelineImageLoad: () => void;
   onRevertUserMessage: (messageId: MessageId) => void;
@@ -5064,6 +5256,11 @@ const EditableUserMessageBubble = memo(function EditableUserMessageBubble(props:
   return (
     <div className="flex justify-end">
       <div className="group relative max-w-[80%] rounded-2xl rounded-br-sm border border-border bg-secondary px-4 py-3">
+        {props.isQueued && (
+          <span className="mb-1 inline-block rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+            In queue
+          </span>
+        )}
         {userImages.length > 0 && (
           <div className="mb-2 grid max-w-[420px] grid-cols-2 gap-2">
             {userImages.map((image) => (
@@ -5604,6 +5801,7 @@ interface MessagesTimelineProps {
   onCancelEditUserMessage: () => void;
   onSubmitEditUserMessage: (message: TimelineMessage) => void;
   isRevertingCheckpoint: boolean;
+  queuedMessageIds: Set<string>;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   markdownCwd: string | undefined;
   resolvedTheme: "light" | "dark";
@@ -5664,6 +5862,7 @@ const MessagesTimeline = memo(function MessagesTimeline({
   onCancelEditUserMessage,
   onSubmitEditUserMessage,
   isRevertingCheckpoint,
+  queuedMessageIds,
   onImageExpand,
   markdownCwd,
   resolvedTheme,
@@ -5987,6 +6186,7 @@ const MessagesTimeline = memo(function MessagesTimeline({
               editingText={editingUserMessageText}
               isBusy={isWorking || isRevertingCheckpoint}
               isRevertingCheckpoint={isRevertingCheckpoint}
+              isQueued={queuedMessageIds.has(row.message.id)}
               onImageExpand={onImageExpand}
               onTimelineImageLoad={onTimelineImageLoad}
               onRevertUserMessage={onRevertUserMessage}
