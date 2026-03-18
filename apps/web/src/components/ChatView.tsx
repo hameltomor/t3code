@@ -117,6 +117,10 @@ import {
   type TurnDiffFileChange,
   type TurnDiffSummary,
 } from "../types";
+import {
+  navigateComposerPromptHistory,
+  resolveComposerPromptHistoryEntries,
+} from "../composerPromptHistory";
 import { basenameOfPath, getVscodeIconUrlForEntry } from "../vscode-icons";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useTheme } from "../hooks/useTheme";
@@ -372,6 +376,7 @@ function buildLocalDraftThread(
     messages: [],
     error,
     createdAt: draftThread.createdAt,
+    updatedAt: draftThread.createdAt,
     latestTurn: null,
     lastVisitedAt: draftThread.createdAt,
     branch: draftThread.branch,
@@ -723,6 +728,11 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const composerFormHeightRef = useRef(0);
   const composerImagesRef = useRef<ComposerImageAttachment[]>([]);
   const composerSelectLockRef = useRef(false);
+  const composerPromptHistoryNavigationRef = useRef<{
+    draftPrompt: string;
+    historyIndex: number;
+  } | null>(null);
+  const isApplyingComposerPromptHistoryRef = useRef(false);
   const composerMenuOpenRef = useRef(false);
   const composerMenuItemsRef = useRef<ComposerCommandItem[]>([]);
   const activeComposerMenuItemRef = useRef<ComposerCommandItem | null>(null);
@@ -735,6 +745,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const setMessagesScrollContainerRef = useCallback((element: HTMLDivElement | null) => {
     messagesScrollRef.current = element;
     setMessagesScrollElement(element);
+  }, []);
+  const resetComposerPromptHistoryNavigation = useCallback(() => {
+    composerPromptHistoryNavigationRef.current = null;
+    isApplyingComposerPromptHistoryRef.current = false;
   }, []);
 
   // Detect when the composer is too narrow for full controls layout (e.g. when diff panel is open).
@@ -2049,7 +2063,12 @@ export default function ChatView({ threadId }: ChatViewProps) {
   useEffect(() => {
     promptRef.current = prompt;
     setComposerCursor((existing) => Math.min(Math.max(0, existing), prompt.length));
-  }, [prompt]);
+    if (isApplyingComposerPromptHistoryRef.current) {
+      isApplyingComposerPromptHistoryRef.current = false;
+    } else {
+      resetComposerPromptHistoryNavigation();
+    }
+  }, [prompt, resetComposerPromptHistoryNavigation]);
 
   useEffect(() => {
     setOptimisticUserMessages((existing) => {
@@ -2068,7 +2087,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
     dragDepthRef.current = 0;
     setIsDragOverComposer(false);
     setExpandedImage(null);
-  }, [threadId]);
+    resetComposerPromptHistoryNavigation();
+  }, [threadId, resetComposerPromptHistoryNavigation]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2792,6 +2812,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
           proposedPlans: [],
           error: null,
           createdAt: activeThread.createdAt,
+          updatedAt: activeThread.createdAt,
           latestTurn: null,
           lastVisitedAt: activeThread.createdAt,
           branch: nextThreadBranch,
@@ -3398,16 +3419,31 @@ export default function ChatView({ threadId }: ChatViewProps) {
     [activePendingProgress?.activeQuestion, activePendingUserInput, setPrompt],
   );
 
-  const readComposerSnapshot = useCallback((): { value: string; cursor: number } => {
+  const readComposerSnapshot = useCallback((): {
+    value: string;
+    cursor: number;
+    isOnFirstVisualLine: boolean;
+    isOnLastVisualLine: boolean;
+  } => {
     const editorSnapshot = composerEditorRef.current?.readSnapshot();
     if (editorSnapshot) {
       return editorSnapshot;
     }
-    return { value: promptRef.current, cursor: composerCursor };
+    return {
+      value: promptRef.current,
+      cursor: composerCursor,
+      isOnFirstVisualLine: true,
+      isOnLastVisualLine: true,
+    };
   }, [composerCursor]);
 
   const resolveActiveComposerTrigger = useCallback((): {
-    snapshot: { value: string; cursor: number };
+    snapshot: {
+      value: string;
+      cursor: number;
+      isOnFirstVisualLine: boolean;
+      isOnLastVisualLine: boolean;
+    };
     trigger: ComposerTrigger | null;
   } => {
     const snapshot = readComposerSnapshot();
@@ -3558,6 +3594,42 @@ export default function ChatView({ threadId }: ChatViewProps) {
         const selectedItem = activeComposerMenuItemRef.current ?? currentItems[0];
         if (selectedItem) {
           onSelectComposerItem(selectedItem);
+          return true;
+        }
+      }
+    }
+
+    if (
+      (key === "ArrowUp" || key === "ArrowDown") &&
+      !isComposerApprovalState &&
+      !activePendingProgress &&
+      !event.shiftKey &&
+      !event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey
+    ) {
+      const snapshot = readComposerSnapshot();
+      const isOnBoundaryLine =
+        key === "ArrowUp" ? snapshot.isOnFirstVisualLine : snapshot.isOnLastVisualLine;
+      if (isOnBoundaryLine) {
+        const storeState = useStore.getState();
+        const entries = resolveComposerPromptHistoryEntries({
+          currentProjectId: activeThread?.projectId ?? null,
+          currentThreadMessages: timelineMessages,
+          projects: storeState.projects,
+          threads: storeState.threads,
+          ignoredMessageTexts: [IMAGE_ONLY_BOOTSTRAP_PROMPT],
+        });
+        const navigation = navigateComposerPromptHistory({
+          currentPrompt: snapshot.value,
+          direction: key === "ArrowUp" ? "up" : "down",
+          entries,
+          navigationState: composerPromptHistoryNavigationRef.current,
+        });
+        if (navigation.handled) {
+          composerPromptHistoryNavigationRef.current = navigation.nextNavigationState;
+          isApplyingComposerPromptHistoryRef.current = true;
+          setPrompt(navigation.nextPrompt);
           return true;
         }
       }
@@ -5429,7 +5501,8 @@ type TimelineRow =
 
 function estimateTimelineProposedPlanHeight(proposedPlan: TimelineProposedPlan): number {
   const estimatedLines = Math.max(1, Math.ceil(proposedPlan.planMarkdown.length / 72));
-  return 120 + Math.min(estimatedLines * 22, 880);
+  // +16 for pb-4 row wrapper padding
+  return 136 + Math.min(estimatedLines * 22, 880);
 }
 
 const MessagesTimeline = memo(function MessagesTimeline({
@@ -5597,15 +5670,15 @@ const MessagesTimeline = memo(function MessagesTimeline({
     // Use stable row ids so virtual measurements do not leak across thread switches.
     getItemKey: (index: number) => rows[index]?.id ?? index,
     estimateSize: (index: number) => {
+      // All estimates include +16 for the pb-4 row wrapper padding.
       const row = rows[index];
-      if (!row) return 96;
-      if (row.kind === "work") return 112;
+      if (!row) return 112;
+      if (row.kind === "work") return 128;
       if (row.kind === "proposed-plan") return estimateTimelineProposedPlanHeight(row.proposedPlan);
-      if (row.kind === "working") return 40;
+      if (row.kind === "working") return 56;
       return estimateTimelineMessageHeight(row.message, { timelineWidthPx });
     },
     measureElement: measureVirtualElement,
-    useAnimationFrameWithResizeObserver: true,
     overscan: 8,
   });
   useEffect(() => {
@@ -5639,6 +5712,30 @@ const MessagesTimeline = memo(function MessagesTimeline({
       }
     };
   }, []);
+
+  // Safety net: force position recalculation after scrolling settles.
+  // `measure()` rebuilds the layout cache from per-item measurements without
+  // clearing individual item sizes, correcting any accumulated position drift.
+  const scrollIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!scrollContainer) return;
+    const handler = () => {
+      if (scrollIdleTimerRef.current !== null) {
+        clearTimeout(scrollIdleTimerRef.current);
+      }
+      scrollIdleTimerRef.current = setTimeout(() => {
+        scrollIdleTimerRef.current = null;
+        rowVirtualizer.measure();
+      }, 200);
+    };
+    scrollContainer.addEventListener("scroll", handler, { passive: true });
+    return () => {
+      scrollContainer.removeEventListener("scroll", handler);
+      if (scrollIdleTimerRef.current !== null) {
+        clearTimeout(scrollIdleTimerRef.current);
+      }
+    };
+  }, [scrollContainer, rowVirtualizer]);
 
   const virtualRows = rowVirtualizer.getVirtualItems();
   const nonVirtualizedRows = rows.slice(virtualizedRowCount);

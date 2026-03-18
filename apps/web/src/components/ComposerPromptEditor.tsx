@@ -387,7 +387,12 @@ export interface ComposerPromptEditorHandle {
   focus: () => void;
   focusAt: (cursor: number) => void;
   focusAtEnd: () => void;
-  readSnapshot: () => { value: string; cursor: number };
+  readSnapshot: () => {
+    value: string;
+    cursor: number;
+    isOnFirstVisualLine: boolean;
+    isOnLastVisualLine: boolean;
+  };
 }
 
 interface ComposerPromptEditorProps {
@@ -406,6 +411,69 @@ interface ComposerPromptEditorProps {
 
 interface ComposerPromptEditorInnerProps extends ComposerPromptEditorProps {
   editorRef: Ref<ComposerPromptEditorHandle>;
+}
+
+function readComposerVisualLineState(
+  rootElement: HTMLElement | null,
+  value: string,
+): {
+  isOnFirstVisualLine: boolean;
+  isOnLastVisualLine: boolean;
+} {
+  const bothTrue = { isOnFirstVisualLine: true, isOnLastVisualLine: true };
+  const bothFalse = { isOnFirstVisualLine: false, isOnLastVisualLine: false };
+  if (!rootElement || value.length === 0 || typeof window === "undefined") {
+    return bothTrue;
+  }
+
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    return bothTrue;
+  }
+
+  // Non-collapsed selection (text is highlighted) — never trigger history so
+  // that normal Shift+Arrow and drag-select behavior is preserved.
+  if (!selection.isCollapsed) {
+    return bothFalse;
+  }
+
+  const selectionRange = selection.getRangeAt(0);
+  if (!selectionRange || !rootElement.contains(selectionRange.startContainer)) {
+    return bothTrue;
+  }
+
+  const caretRange = selectionRange.cloneRange();
+  caretRange.collapse(true);
+  const caretRect = caretRange.getClientRects()[0] ?? caretRange.getBoundingClientRect();
+  if (!caretRect || (!caretRect.width && !caretRect.height && !caretRect.top && !caretRect.bottom)) {
+    return bothTrue;
+  }
+
+  const contentRange = document.createRange();
+  contentRange.selectNodeContents(rootElement);
+  const contentRect = contentRange.getBoundingClientRect();
+  if (
+    !contentRect ||
+    (!contentRect.width && !contentRect.height && !contentRect.top && !contentRect.bottom)
+  ) {
+    return bothTrue;
+  }
+
+  const rootRect = rootElement.getBoundingClientRect();
+  const computedLineHeight = Number.parseFloat(window.getComputedStyle(rootElement).lineHeight);
+  const tolerance = Number.isFinite(computedLineHeight)
+    ? Math.max(2, computedLineHeight / 2)
+    : 4;
+  const scrollTop = rootElement.scrollTop;
+  const maxScrollTop = Math.max(0, rootElement.scrollHeight - rootElement.clientHeight);
+  const visibleTop = Math.max(contentRect.top, rootRect.top);
+  const visibleBottom = Math.min(contentRect.bottom, rootRect.bottom);
+
+  return {
+    isOnFirstVisualLine: scrollTop <= tolerance && caretRect.top <= visibleTop + tolerance,
+    isOnLastVisualLine:
+      scrollTop >= maxScrollTop - tolerance && caretRect.bottom >= visibleBottom - tolerance,
+  };
 }
 
 function ComposerCommandKeyPlugin(props: {
@@ -685,7 +753,12 @@ function ComposerPromptEditorInner({
     [editor],
   );
 
-  const readSnapshot = useCallback((): { value: string; cursor: number } => {
+  const readSnapshot = useCallback((): {
+    value: string;
+    cursor: number;
+    isOnFirstVisualLine: boolean;
+    isOnLastVisualLine: boolean;
+  } => {
     let snapshot = snapshotRef.current;
     editor.getEditorState().read(() => {
       const nextValue = $getRoot().getTextContent();
@@ -700,7 +773,10 @@ function ComposerPromptEditorInner({
       };
     });
     snapshotRef.current = snapshot;
-    return snapshot;
+    return {
+      ...snapshot,
+      ...readComposerVisualLineState(editor.getRootElement(), snapshot.value),
+    };
   }, [editor]);
 
   useImperativeHandle(
