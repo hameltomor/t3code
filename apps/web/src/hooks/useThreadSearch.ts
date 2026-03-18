@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 
 import type { Thread, Project } from "../types";
 import type { ProjectId } from "@xbetools/contracts";
+import { compareThreadsByRecency } from "../components/Sidebar.logic";
 
 export interface ThreadSearchEntry {
   thread: Thread;
@@ -84,9 +85,5 @@ export function getProjectThreadsForSearch(
     projectThreads = projectThreads.filter((t) => filteredThreadIdSet.has(t.id));
   }
 
-  return projectThreads.toSorted((a, b) => {
-    const byDate = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-    if (byDate !== 0) return byDate;
-    return b.id.localeCompare(a.id);
-  });
+  return projectThreads.toSorted(compareThreadsByRecency);
 }

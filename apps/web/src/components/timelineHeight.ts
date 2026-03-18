@@ -1,8 +1,9 @@
 const ASSISTANT_CHARS_PER_LINE_FALLBACK = 72;
 const USER_CHARS_PER_LINE_FALLBACK = 56;
 const LINE_HEIGHT_PX = 22;
-const ASSISTANT_BASE_HEIGHT_PX = 78;
-const USER_BASE_HEIGHT_PX = 96;
+// Base heights include the pb-4 (16px) row wrapper padding from renderRowContent.
+const ASSISTANT_BASE_HEIGHT_PX = 94;
+const USER_BASE_HEIGHT_PX = 112;
 const ATTACHMENTS_PER_ROW = 2;
 // Attachment thumbnails render with `max-h-[220px]` plus ~8px row gap.
 const USER_ATTACHMENT_ROW_HEIGHT_PX = 228;

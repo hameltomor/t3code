@@ -27,6 +27,8 @@ import { useStore } from "../store";
 import { isChatNewLocalShortcut, isChatNewShortcut, shortcutLabelForCommand } from "../keybindings";
 import { derivePendingApprovals, derivePendingUserInputs } from "../session-logic";
 import {
+  compareThreadsByRecency,
+  getThreadRecencyMs,
   resolveThreadStatusPill,
   shouldClearThreadSelectionOnMouseDown,
 } from "./Sidebar.logic";
@@ -308,10 +310,7 @@ export default function Sidebar() {
   const sortedProjects = useMemo(() => {
     const latestUpdateByProjectId = new Map<ProjectId, number>();
     for (const thread of threads) {
-      const threadTimestamp = Math.max(
-        new Date(thread.session?.updatedAt ?? thread.createdAt).getTime(),
-        new Date(thread.createdAt).getTime(),
-      );
+      const threadTimestamp = getThreadRecencyMs(thread);
       const existing = latestUpdateByProjectId.get(thread.projectId) ?? 0;
       if (threadTimestamp > existing) {
         latestUpdateByProjectId.set(thread.projectId, threadTimestamp);
@@ -473,11 +472,7 @@ export default function Sidebar() {
     (projectId: ProjectId) => {
       const latestThread = threads
         .filter((thread) => thread.projectId === projectId)
-        .toSorted((a, b) => {
-          const byDate = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-          if (byDate !== 0) return byDate;
-          return b.id.localeCompare(a.id);
-        })[0];
+        .toSorted(compareThreadsByRecency)[0];
       if (!latestThread) return;
 
       void navigate({
@@ -1485,7 +1480,7 @@ export default function Sidebar() {
                                       isHighlighted ? "text-foreground/65" : "text-muted-foreground-secondary"
                                     }`}
                                   >
-                                    {formatRelativeTime(thread.createdAt)}
+                                    {formatRelativeTime(thread.updatedAt)}
                                   </span>
                                 </div>
                               </SidebarMenuSubButton>

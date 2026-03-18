@@ -28,6 +28,7 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     proposedPlans: [],
     error: null,
     createdAt: "2026-02-13T00:00:00.000Z",
+    updatedAt: "2026-02-13T00:00:00.000Z",
     latestTurn: null,
     branch: null,
     worktreePath: null,
@@ -245,6 +246,21 @@ describe("store read model sync", () => {
     const next = syncServerReadModel(initialState, readModel);
 
     expect(next.threads[0]?.model).toBe("claude-opus-4-6");
+  });
+
+  it("maps thread updatedAt from the server read model", () => {
+    const initialState = makeState(makeThread());
+    const readModel = makeReadModel(
+      makeReadModelThread({
+        createdAt: "2026-02-27T00:00:00.000Z",
+        updatedAt: "2026-03-10T12:00:00.000Z",
+      }),
+    );
+
+    const next = syncServerReadModel(initialState, readModel);
+
+    expect(next.threads[0]?.updatedAt).toBe("2026-03-10T12:00:00.000Z");
+    expect(next.threads[0]?.createdAt).toBe("2026-02-27T00:00:00.000Z");
   });
 
   it("falls back to the codex default for unknown models without an active session", () => {
