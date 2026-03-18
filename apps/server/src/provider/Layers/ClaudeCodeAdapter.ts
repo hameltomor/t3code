@@ -2015,14 +2015,17 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
 
         Effect.runFork(
           runSdkStream(context).pipe(
-            Effect.catchCause((cause) =>
-              Effect.sync(() => {
+            Effect.catchCause((cause) => {
+              if (Cause.hasInterruptsOnly(cause) || context.stopped) {
+                return Effect.void;
+              }
+              return Effect.sync(() => {
                 console.error(
                   `[ClaudeCodeAdapter] Unhandled SDK stream fiber failure for thread ${context.sessionKey}:`,
                   cause,
                 );
-              }),
-            ),
+              });
+            }),
           ),
         );
 

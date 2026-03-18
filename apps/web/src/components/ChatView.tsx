@@ -5028,17 +5028,16 @@ const EditableUserMessageBubble = memo(function EditableUserMessageBubble(props:
           </div>
         )}
         {userFiles.length > 0 && (
-          <div className="mb-2 flex flex-wrap gap-2">
+          <div className="mb-1.5 flex flex-wrap gap-x-3 gap-y-1">
             {userFiles.map((file) => (
-              <div
+              <span
                 key={file.id}
-                className="flex items-center gap-2 rounded-lg border border-border/80 bg-background/70 px-3 py-2"
+                className="inline-flex items-center gap-1.5 text-xs opacity-80"
+                title={file.name}
               >
-                <FileIcon className="size-4 shrink-0 text-muted-foreground" />
-                <span className="truncate text-xs" title={file.name}>
-                  {file.name}
-                </span>
-              </div>
+                <PaperclipIcon className="size-3.5 shrink-0" />
+                <span className="truncate">{file.name}</span>
+              </span>
             ))}
           </div>
         )}
