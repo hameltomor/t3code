@@ -12,6 +12,7 @@ import { readFileSync } from "node:fs";
 import type { ChatAttachment } from "@xbetools/contracts";
 
 import { resolveAttachmentPath } from "../attachmentStore.ts";
+import { extractTextFromDocument } from "./documentExtractor.ts";
 
 export interface MaterializedImageAttachment {
   readonly id: string;
@@ -19,6 +20,15 @@ export interface MaterializedImageAttachment {
   readonly mimeType: string;
   readonly sizeBytes: number;
   readonly base64: string;
+}
+
+export interface MaterializedFileAttachment {
+  readonly id: string;
+  readonly name: string;
+  readonly mimeType: string;
+  readonly sizeBytes: number;
+  readonly base64: string;
+  readonly extractedText: string | null;
 }
 
 /**
@@ -57,6 +67,49 @@ export function materializeImageAttachments(input: {
       // Attachment file unreadable — skip silently. The provider adapter
       // will still receive the attachment metadata and can include a text
       // description as a deterministic fallback.
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Read persisted file attachments from disk, return their base64-encoded
+ * content and extracted text. Used by provider adapters that support native
+ * document formats (e.g. Claude/Gemini for PDF) or need extracted text
+ * (e.g. Codex).
+ */
+export async function materializeFileAttachments(input: {
+  readonly stateDir: string;
+  readonly attachments: ReadonlyArray<ChatAttachment>;
+}): Promise<MaterializedFileAttachment[]> {
+  const result: MaterializedFileAttachment[] = [];
+
+  for (const attachment of input.attachments) {
+    if (attachment.type !== "file") continue;
+
+    const filePath = resolveAttachmentPath({
+      stateDir: input.stateDir,
+      attachment,
+    });
+    if (!filePath) continue;
+
+    try {
+      const bytes = readFileSync(filePath);
+      if (bytes.byteLength === 0) continue;
+
+      const extractedText = await extractTextFromDocument(filePath, attachment.mimeType);
+
+      result.push({
+        id: attachment.id,
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.sizeBytes,
+        base64: bytes.toString("base64"),
+        extractedText,
+      });
+    } catch {
+      // Attachment file unreadable — skip silently.
     }
   }
 

@@ -12,6 +12,7 @@ import { normalizeModelSlug } from "@xbetools/shared/model";
 import {
   DEFAULT_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
+  type ChatFileAttachment,
   type ChatImageAttachment,
 } from "./types";
 import { Debouncer } from "@tanstack/react-pacer";
@@ -65,6 +66,10 @@ export interface ComposerImageAttachment extends Omit<ChatImageAttachment, "prev
   file: File;
 }
 
+export interface ComposerFileAttachment extends ChatFileAttachment {
+  file: File;
+}
+
 interface PersistedComposerThreadDraftState {
   prompt: string;
   attachments: PersistedComposerImageAttachment[];
@@ -95,6 +100,7 @@ interface PersistedComposerDraftStoreState {
 interface ComposerThreadDraftState {
   prompt: string;
   images: ComposerImageAttachment[];
+  files: ComposerFileAttachment[];
   nonPersistedImageIds: string[];
   persistedAttachments: PersistedComposerImageAttachment[];
   provider: ProviderKind | null;
@@ -165,6 +171,8 @@ interface ComposerDraftStoreState {
   addImage: (threadId: ThreadId, image: ComposerImageAttachment) => void;
   addImages: (threadId: ThreadId, images: ComposerImageAttachment[]) => void;
   removeImage: (threadId: ThreadId, imageId: string) => void;
+  addFiles: (threadId: ThreadId, files: ComposerFileAttachment[]) => void;
+  removeFile: (threadId: ThreadId, fileId: string) => void;
   clearPersistedAttachments: (threadId: ThreadId) => void;
   syncPersistedAttachments: (
     threadId: ThreadId,
@@ -181,14 +189,17 @@ const EMPTY_PERSISTED_DRAFT_STORE_STATE: PersistedComposerDraftStoreState = {
 };
 
 const EMPTY_IMAGES: ComposerImageAttachment[] = [];
+const EMPTY_FILES: ComposerFileAttachment[] = [];
 const EMPTY_IDS: string[] = [];
 const EMPTY_PERSISTED_ATTACHMENTS: PersistedComposerImageAttachment[] = [];
 Object.freeze(EMPTY_IMAGES);
+Object.freeze(EMPTY_FILES);
 Object.freeze(EMPTY_IDS);
 Object.freeze(EMPTY_PERSISTED_ATTACHMENTS);
 const EMPTY_THREAD_DRAFT = Object.freeze({
   prompt: "",
   images: EMPTY_IMAGES,
+  files: EMPTY_FILES,
   nonPersistedImageIds: EMPTY_IDS,
   persistedAttachments: EMPTY_PERSISTED_ATTACHMENTS,
   provider: null,
@@ -207,6 +218,7 @@ function createEmptyThreadDraft(): ComposerThreadDraftState {
   return {
     prompt: "",
     images: [],
+    files: [],
     nonPersistedImageIds: [],
     persistedAttachments: [],
     provider: null,
@@ -228,6 +240,7 @@ function shouldRemoveDraft(draft: ComposerThreadDraftState): boolean {
   return (
     draft.prompt.length === 0 &&
     draft.images.length === 0 &&
+    draft.files.length === 0 &&
     draft.persistedAttachments.length === 0 &&
     draft.provider === null &&
     draft.model === null &&
@@ -541,6 +554,7 @@ function toHydratedThreadDraft(
   return {
     prompt: persistedDraft.prompt,
     images: hydrateImagesFromPersisted(persistedDraft.attachments),
+    files: [],
     nonPersistedImageIds: [],
     persistedAttachments: persistedDraft.attachments,
     provider: persistedDraft.provider ?? null,
@@ -665,6 +679,7 @@ export async function hydrateDraftsFromServer(projectId: ProjectId): Promise<voi
       updates[serverDraft.threadId] = {
         prompt: serverDraft.prompt,
         images: [],
+        files: [],
         nonPersistedImageIds: [],
         persistedAttachments: [],
         provider: normalizeProviderKind(serverDraft.provider),
@@ -1213,6 +1228,50 @@ export const useComposerDraftStore = create<ComposerDraftStoreState>()(
           return { draftsByThreadId: nextDraftsByThreadId };
         });
       },
+      addFiles: (threadId, files) => {
+        if (threadId.length === 0 || files.length === 0) {
+          return;
+        }
+        set((state) => {
+          const existing = state.draftsByThreadId[threadId] ?? createEmptyThreadDraft();
+          const existingIds = new Set(existing.files.map((f) => f.id));
+          const deduped = files.filter((f) => !existingIds.has(f.id));
+          if (deduped.length === 0) {
+            return state;
+          }
+          return {
+            draftsByThreadId: {
+              ...state.draftsByThreadId,
+              [threadId]: {
+                ...existing,
+                files: [...existing.files, ...deduped],
+              },
+            },
+          };
+        });
+      },
+      removeFile: (threadId, fileId) => {
+        if (threadId.length === 0) {
+          return;
+        }
+        set((state) => {
+          const current = state.draftsByThreadId[threadId];
+          if (!current) {
+            return state;
+          }
+          const nextDraft: ComposerThreadDraftState = {
+            ...current,
+            files: current.files.filter((f) => f.id !== fileId),
+          };
+          const nextDraftsByThreadId = { ...state.draftsByThreadId };
+          if (shouldRemoveDraft(nextDraft)) {
+            delete nextDraftsByThreadId[threadId];
+          } else {
+            nextDraftsByThreadId[threadId] = nextDraft;
+          }
+          return { draftsByThreadId: nextDraftsByThreadId };
+        });
+      },
       clearPersistedAttachments: (threadId) => {
         if (threadId.length === 0) {
           return;
@@ -1304,6 +1363,7 @@ export const useComposerDraftStore = create<ComposerDraftStoreState>()(
             ...current,
             prompt: "",
             images: [],
+            files: [],
             nonPersistedImageIds: [],
             persistedAttachments: [],
           };
