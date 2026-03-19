@@ -451,7 +451,7 @@ function resolvePublishConfig():
   | undefined {
   const url =
     process.env.XBECODE_DESKTOP_UPDATE_URL?.trim() ||
-    "https://synkr-server.price-bee.com/xbecode";
+    "https://storage.googleapis.com/xbecode-releases";
   return { provider: "generic", url };
 }
 

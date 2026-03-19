@@ -38,6 +38,8 @@ rm -rf ~/.wine && WINEARCH=win32 wineboot --init
 - Previously the feed URL pointed at `synkr-server` proxy, but that proxy doesn't serve root-level binary files — only `/{version}/{file}` paths — so downloads failed with 404.
 - Manifests use versioned URLs (`url: $V/XBE-Code-...`) so the update works for both the old proxy-based clients (v0.0.12 and earlier) and the new GCS-direct clients (v0.0.13+).
 - Cross-compilation from Linux works for all platforms (`npmRebuild: false` skips native module recompilation; prebuilt binaries are used).
+- The manifest files (`latest*.yml`) are the release switch for desktop auto-update. Upload payloads first, verify them, and upload manifests last.
+- The bucket root payloads and the versioned `gs://xbecode-releases/$V/` payloads must be byte-identical copies of the exact same local build artifacts. Do not rebuild between uploads.
 
 ## artifacts
 
@@ -191,13 +193,18 @@ gh release create "v$V" \
 ### 8. upload to GCS (auto-update)
 
 ```bash
-# upload manifests to bucket root (electron-updater reads these)
-gsutil cp release/latest-mac.yml gs://xbecode-releases/latest-mac.yml
-gsutil cp release/latest-mac-x64.yml gs://xbecode-releases/latest-mac-x64.yml
-gsutil cp release/latest-linux.yml gs://xbecode-releases/latest-linux.yml
-gsutil cp release/latest.yml gs://xbecode-releases/latest.yml
+# upload binaries to version prefix first
+gsutil -m cp \
+  release/XBE-Code-arm64.zip \
+  release/XBE-Code-arm64.zip.blockmap \
+  release/XBE-Code-x64.exe \
+  release/XBE-Code-x64.exe.blockmap \
+  release/XBE-Code-x64.zip \
+  release/XBE-Code-x64.zip.blockmap \
+  release/XBE-Code-x86_64.AppImage \
+  gs://xbecode-releases/$V/
 
-# upload binaries to bucket root (electron-updater resolves manifest paths here)
+# upload the exact same binaries to bucket root
 gsutil -m cp \
   release/XBE-Code-arm64.zip \
   release/XBE-Code-arm64.zip.blockmap \
@@ -208,16 +215,11 @@ gsutil -m cp \
   release/XBE-Code-x86_64.AppImage \
   gs://xbecode-releases/
 
-# upload binaries to version prefix (historical archive / rollback)
-gsutil -m cp \
-  release/XBE-Code-arm64.zip \
-  release/XBE-Code-arm64.zip.blockmap \
-  release/XBE-Code-x64.exe \
-  release/XBE-Code-x64.exe.blockmap \
-  release/XBE-Code-x64.zip \
-  release/XBE-Code-x64.zip.blockmap \
-  release/XBE-Code-x86_64.AppImage \
-  gs://xbecode-releases/$V/
+# upload manifests last; this makes the new version visible to clients
+gsutil cp release/latest-mac.yml gs://xbecode-releases/latest-mac.yml
+gsutil cp release/latest-mac-x64.yml gs://xbecode-releases/latest-mac-x64.yml
+gsutil cp release/latest-linux.yml gs://xbecode-releases/latest-linux.yml
+gsutil cp release/latest.yml gs://xbecode-releases/latest.yml
 ```
 
 ### 9. verify everything
@@ -230,18 +232,21 @@ node scripts/validate-release.mjs --version "$V"
 This validates:
 
 - local `release/` artifacts
-- local `latest*.yml` manifest versions and referenced files
+- local `latest*.yml` manifest versions, referenced files, and sha512/size entries
 - GitHub release asset names
-- GCS bucket root objects and versioned archive objects
-- remote updater manifests and payload URLs under `https://synkr-server.price-bee.com/xbecode/`
+- GCS bucket root objects, versioned archive objects, and root/versioned binary parity
+- remote updater manifests and payload bytes under `https://storage.googleapis.com/xbecode-releases/`
 
 Optional: if you only want part of the validation while debugging, use one or more of:
 
 ```bash
+node scripts/validate-release.mjs --version "$V" --skip-local --skip-gh
 node scripts/validate-release.mjs --version "$V" --skip-gh
 node scripts/validate-release.mjs --version "$V" --skip-gcs
 node scripts/validate-release.mjs --version "$V" --skip-remote
 ```
+
+The first command is useful when you need to debug a broken published release directly from GCS without rebuilding a local `release/` directory first.
 
 ## CI release (alternative)
 
@@ -273,8 +278,12 @@ bun dist:desktop:artifact -- --platform linux --target AppImage --arch x64 --bui
 gh release upload "v$V" release/XBE-Code-x86_64.AppImage --repo x-b-e/xbe-code --clobber
 
 # re-upload to GCS
+gsutil cp release/XBE-Code-x86_64.AppImage gs://xbecode-releases/XBE-Code-x86_64.AppImage
 gsutil cp release/XBE-Code-x86_64.AppImage gs://xbecode-releases/$V/
 gsutil cp release/latest-linux.yml gs://xbecode-releases/latest-linux.yml
+
+# re-run validation
+node scripts/validate-release.mjs --version "$V"
 ```
 
 ## installing the web server (for team members)
@@ -301,6 +310,8 @@ Prerequisites: Node.js 22.13+ and at least one authorized agent CLI (Codex, Clau
 - The desktop UI shows a rocket update button when an update is available; click once to download, click again to restart/install.
 - Provider: `generic` pointing at `https://storage.googleapis.com/xbecode-releases` (public GCS bucket, no auth needed).
 - v0.0.12 and earlier used `synkr-server` proxy, which only serves `/{version}/{file}` paths. Manifests use versioned URLs (`url: $V/XBE-Code-...`) to work with both old and new clients.
+- Clients always discover updates from `latest*.yml` at the bucket root, but the payload URLs inside those manifests are versioned (`$V/...`).
+- Because of that split, a release is only complete when the same payload bytes exist at both bucket root and `/$V/`, and the manifest checksum matches the versioned payload it references.
 - Override the update URL at runtime: set `XBECODE_DESKTOP_UPDATE_URL` env var.
 
 GCS bucket structure:
@@ -373,8 +384,9 @@ Set these environment variables:
 | Forgot `--latest` flag | Older release stays as "latest" | `gh release edit v$V --repo x-b-e/xbe-code --latest` |
 | Forgot `bun run build:desktop` | Missing `apps/server/dist/client/index.html` | Run `bun run build:desktop` before artifact builds |
 | macOS x64 overwrites `latest-mac.yml` | arm64 users get wrong binary | Rename to `latest-mac-x64.yml` and recreate arm64 manifest (step 5) |
-| Uploaded to GCS but forgot manifests | Auto-updater doesn't see new version | Upload `latest*.yml` to bucket root |
-| Update is visible but download returns `404` | Manifest exists, but root updater payload is missing | Upload the matching zip/exe/AppImage and blockmap to `gs://xbecode-releases/` root |
+| Uploaded manifests before payloads | Clients can see an incomplete release | Always upload payloads first and `latest*.yml` last |
+| Rebuilt or re-uploaded only one GCS location | Manifest checksum mismatch during download | Upload the exact same local artifacts to both `gs://xbecode-releases/` and `gs://xbecode-releases/$V/`, then rerun validation |
+| Uploaded to GCS but forgot manifests | Auto-updater doesn't see new version | Upload `latest*.yml` to bucket root after payload uploads complete |
 | Wine not initialized | Windows build fails with `kernel32.dll` error | `rm -rf ~/.wine && WINEARCH=win32 wineboot --init` |
 
 ## troubleshooting
@@ -382,6 +394,7 @@ Set these environment variables:
 - **Build fails with `sips` not found**: You're on Linux. Ensure ImageMagick (`convert`) and `icnsutils` (`png2icns`) are installed.
 - **Build fails with `wine: could not load kernel32.dll`**: Recreate Wine prefix: `rm -rf ~/.wine && WINEARCH=win32 wineboot --init`
 - **Build fails with `Missing bundled server client`**: Run `bun run build:desktop` first.
-- **`electron-updater` doesn't find updates**: Ensure `latest*.yml` files are uploaded to GCS bucket root and updater payloads also exist at bucket root.
+- **`electron-updater` doesn't find updates**: Ensure `latest*.yml` files are uploaded to GCS bucket root after the payload uploads complete.
+- **Update downloads but fails with checksum mismatch**: The manifest checksum does not match the payload bytes at the referenced versioned URL. Re-upload the same local artifacts to both GCS locations and rerun `node scripts/validate-release.mjs --version "$V"`.
 - **Build fails with signing error**: Retry without `--signed` to confirm unsigned path works, then re-check credentials.
 - **Private repo download 404**: Ensure the user is logged into GitHub and has repo access, or set `GH_TOKEN` for CLI use.
