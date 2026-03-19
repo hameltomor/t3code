@@ -1,7 +1,6 @@
 import {
   ArrowLeftIcon,
   ChevronRightIcon,
-  FolderIcon,
   GitPullRequestIcon,
   GripVerticalIcon,
   PlusIcon,
@@ -203,34 +202,64 @@ function getServerHttpOrigin(): string {
 
 const serverHttpOrigin = getServerHttpOrigin();
 
-function ProjectFavicon({ cwd }: { cwd: string }) {
+/**
+ * Deterministic color from a string — picks one of the XBE brand-adjacent
+ * hues so fallback avatars have visual variety without random flickering.
+ */
+const AVATAR_COLORS = [
+  "bg-pink-500/15 text-pink-400",
+  "bg-violet-500/15 text-violet-400",
+  "bg-teal-500/15 text-teal-400",
+  "bg-sky-500/15 text-sky-400",
+  "bg-amber-500/15 text-amber-400",
+] as const;
+
+function avatarColorForName(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = (hash * 31 + name.charCodeAt(i)) | 0;
+  }
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length]!;
+}
+
+function ProjectFavicon({ cwd, name }: { cwd: string; name: string }) {
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
 
   const src = `${serverHttpOrigin}/api/project-favicon?cwd=${encodeURIComponent(cwd)}`;
+  const initial = (name[0] ?? "?").toUpperCase();
+  const colorClass = avatarColorForName(name);
+
+  const fallback = (
+    <span
+      className={`flex size-5 md:size-4 shrink-0 items-center justify-center rounded ${colorClass} text-[10px] md:text-[9px] font-semibold leading-none`}
+      aria-hidden
+    >
+      {initial}
+    </span>
+  );
 
   if (status === "error") {
-    return <FolderIcon className="size-3.5 shrink-0 text-muted-foreground-secondary" />;
+    return fallback;
   }
 
   return (
-    <img
-      src={src}
-      alt=""
-      className={`size-3.5 shrink-0 rounded-sm object-contain ${status === "loading" ? "hidden" : ""}`}
-      onLoad={() => setStatus("loaded")}
-      onError={() => setStatus("error")}
-    />
+    <>
+      {status === "loading" && fallback}
+      <img
+        src={src}
+        alt=""
+        className={`size-5 md:size-4 shrink-0 rounded object-contain ${status === "loading" ? "hidden" : ""}`}
+        onLoad={() => setStatus("loaded")}
+        onError={() => setStatus("error")}
+      />
+    </>
   );
 }
 
 function SidebarSettingsRow({
   isOnSettings,
-  showManualPathFallback,
-  onShowManualPath,
 }: {
   isOnSettings: boolean;
-  showManualPathFallback: boolean;
-  onShowManualPath: () => void;
 }) {
   const router = useRouter();
   const navigate = useNavigate();
@@ -273,15 +302,6 @@ function SidebarSettingsRow({
           <span>Settings</span>
           {versionBadge}
         </Link>
-      )}
-      {showManualPathFallback && (
-        <button
-          type="button"
-          className="w-full pb-1 text-center text-[10px] text-muted-foreground/50 transition-colors hover:text-muted-foreground"
-          onClick={onShowManualPath}
-        >
-          or enter project path manually
-        </button>
       )}
     </div>
   );
@@ -341,8 +361,6 @@ export default function Sidebar() {
   );
   const [isPickingFolder, setIsPickingFolder] = useState(false);
   const [showFolderPicker, setShowFolderPicker] = useState(false);
-  const [showManualPathInput, setShowManualPathInput] = useState(false);
-  const [manualPathValue, setManualPathValue] = useState("");
   const [isAddingProject, setIsAddingProject] = useState(false);
   const [renamingThreadId, setRenamingThreadId] = useState<ThreadId | null>(null);
   const [renamingTitle, setRenamingTitle] = useState("");
@@ -1493,7 +1511,7 @@ export default function Sidebar() {
                             project.expanded ? "rotate-90" : ""
                           }`}
                         />
-                        <ProjectFavicon cwd={project.cwd} />
+                        <ProjectFavicon cwd={project.cwd} name={project.name} />
                         <span className="flex-1 truncate text-sm md:text-xs font-medium text-foreground/90">
                           {project.name}
                         </span>
@@ -1754,66 +1772,7 @@ export default function Sidebar() {
 
       <SidebarSeparator />
       <SidebarFooter className="gap-0 p-2 md:p-2">
-        {showManualPathInput && !isElectron ? (
-          <div className="px-2 pb-2">
-            <input
-              className="mb-2 w-full rounded-md border border-border bg-secondary px-3 md:px-2 py-3 md:py-1.5 font-mono text-sm md:text-xs text-foreground placeholder:text-muted-foreground-secondary focus:border-ring focus:outline-none"
-              placeholder="/path/to/project"
-              value={manualPathValue}
-              onChange={(e) => setManualPathValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && manualPathValue.trim() && !isAddingProject) {
-                  void (async () => {
-                    const ok = await addProjectFromPath(manualPathValue.trim());
-                    if (ok) {
-                      setManualPathValue("");
-                      setShowManualPathInput(false);
-                    }
-                  })();
-                }
-                if (e.key === "Escape") {
-                  setShowManualPathInput(false);
-                  setManualPathValue("");
-                }
-              }}
-              autoFocus
-            />
-            <div className="flex gap-2">
-              <button
-                type="button"
-                className="flex-1 rounded-md bg-primary px-3 md:px-2 py-2.5 md:py-1 text-sm md:text-xs font-medium text-primary-foreground transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
-                onClick={() => {
-                  if (!manualPathValue.trim() || isAddingProject) return;
-                  void (async () => {
-                    const ok = await addProjectFromPath(manualPathValue.trim());
-                    if (ok) {
-                      setManualPathValue("");
-                      setShowManualPathInput(false);
-                    }
-                  })();
-                }}
-                disabled={!manualPathValue.trim() || isAddingProject}
-              >
-                {isAddingProject ? "Adding..." : "Add"}
-              </button>
-              <button
-                type="button"
-                className="flex-1 rounded-md border border-border px-3 md:px-2 py-2.5 md:py-1 text-sm md:text-xs text-muted-foreground/80 transition-colors duration-150 hover:bg-secondary"
-                onClick={() => {
-                  setShowManualPathInput(false);
-                  setManualPathValue("");
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        ) : null}
-        <SidebarSettingsRow
-          isOnSettings={isOnSettings}
-          showManualPathFallback={!isElectron && !showManualPathInput}
-          onShowManualPath={() => setShowManualPathInput(true)}
-        />
+        <SidebarSettingsRow isOnSettings={isOnSettings} />
       </SidebarFooter>
       <ImportWizard
         isOpen={importWizardState.isOpen}

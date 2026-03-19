@@ -195,7 +195,7 @@ export function FolderPickerModal({ isOpen, onClose, onSelect, initialPath }: Fo
             value={pathInput}
             onChange={(e) => setPathInput(e.target.value)}
             onKeyDown={handlePathInputKeyDown}
-            placeholder="/path/to/directory"
+            placeholder="Type a path and press Enter"
           />
         </div>
 
