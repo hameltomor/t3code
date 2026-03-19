@@ -32,6 +32,7 @@ import Migration0017 from "./Migrations/017_HistoryImportCatalog.ts";
 import Migration0018 from "./Migrations/018_ThreadExternalLinks.ts";
 import Migration0019 from "./Migrations/019_ProjectionThreadsProviderThreadId.ts";
 import Migration0020 from "./Migrations/020_ProjectionThreadContextStatus.ts";
+import Migration0021 from "./Migrations/021_ProjectionUsageAggregate.ts";
 import { Effect } from "effect";
 
 /**
@@ -65,6 +66,7 @@ const loader = Migrator.fromRecord({
   "18_ThreadExternalLinks": Migration0018,
   "19_ProjectionThreadsProviderThreadId": Migration0019,
   "20_ProjectionThreadContextStatus": Migration0020,
+  "21_ProjectionUsageAggregate": Migration0021,
 });
 
 /**
