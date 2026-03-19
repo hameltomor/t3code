@@ -12,6 +12,7 @@ import {
 
 import type { ActivePlanState, LatestProposedPlanState } from "~/session-logic";
 import { formatTimestamp } from "~/session-logic";
+import { useAppSettings } from "~/appSettings";
 import {
   buildProposedPlanMarkdownFilename,
   downloadPlanAsTextFile,
@@ -60,6 +61,7 @@ export default memo(function PlanSidebar({
   markdownCwd,
   onClose,
 }: PlanSidebarProps) {
+  const { settings: { timestampFormat } } = useAppSettings();
   const [proposedExpanded, setProposedExpanded] = useState(false);
 
   const planMarkdown = activeProposedPlan?.planMarkdown;
@@ -90,7 +92,7 @@ export default memo(function PlanSidebar({
         </Badge>
         {updatedAt && (
           <span className="truncate text-[11px] text-muted-foreground">
-            {formatTimestamp(updatedAt)}
+            {formatTimestamp(updatedAt, timestampFormat)}
           </span>
         )}
         <span className="flex-1" />

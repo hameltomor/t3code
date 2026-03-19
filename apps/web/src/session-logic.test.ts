@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   deriveActiveWorkStartedAt,
   deriveActivePlanState,
+  formatTimestamp,
   PROVIDER_OPTIONS,
   derivePendingApprovals,
   derivePendingUserInputs,
@@ -659,5 +660,33 @@ describe("PROVIDER_OPTIONS", () => {
       label: "Cursor",
       available: false,
     });
+  });
+});
+
+describe("formatTimestamp", () => {
+  const ISO_DATE = "2026-03-19T14:30:45.000Z";
+
+  it("returns a non-empty string with default locale format", () => {
+    const result = formatTimestamp(ISO_DATE);
+    expect(result).toBeTruthy();
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  it("uses 12-hour format when specified", () => {
+    const result = formatTimestamp(ISO_DATE, "12-hour");
+    // 12-hour format should contain AM or PM
+    expect(result).toMatch(/AM|PM/i);
+  });
+
+  it("uses 24-hour format when specified", () => {
+    const result = formatTimestamp(ISO_DATE, "24-hour");
+    // 24-hour format should NOT contain AM or PM
+    expect(result).not.toMatch(/AM|PM/i);
+  });
+
+  it("locale format delegates to browser default", () => {
+    const localeResult = formatTimestamp(ISO_DATE, "locale");
+    const defaultResult = formatTimestamp(ISO_DATE);
+    expect(localeResult).toBe(defaultResult);
   });
 });

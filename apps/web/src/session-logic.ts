@@ -84,12 +84,23 @@ export type TimelineEntry =
       entry: WorkLogEntry;
     };
 
-export function formatTimestamp(isoDate: string): string {
-  return new Intl.DateTimeFormat(undefined, {
+export type TimestampFormatPreference = "locale" | "12-hour" | "24-hour";
+
+export function formatTimestamp(
+  isoDate: string,
+  format: TimestampFormatPreference = "locale",
+): string {
+  const options: Intl.DateTimeFormatOptions = {
     hour: "numeric",
     minute: "2-digit",
     second: "2-digit",
-  }).format(new Date(isoDate));
+  };
+  if (format === "12-hour") {
+    options.hour12 = true;
+  } else if (format === "24-hour") {
+    options.hour12 = false;
+  }
+  return new Intl.DateTimeFormat(undefined, options).format(new Date(isoDate));
 }
 
 export function formatDuration(durationMs: number): string {

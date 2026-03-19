@@ -12,6 +12,15 @@ const BUILT_IN_MODEL_SLUGS_BY_PROVIDER: Record<ProviderKind, ReadonlySet<string>
   gemini: new Set(getModelOptions("gemini").map((option) => option.slug)),
 };
 
+export const TIMESTAMP_FORMAT_OPTIONS = ["locale", "12-hour", "24-hour"] as const;
+export type TimestampFormat = (typeof TIMESTAMP_FORMAT_OPTIONS)[number];
+
+export const THREAD_ENV_MODE_OPTIONS = ["local", "worktree"] as const;
+export type ThreadEnvMode = (typeof THREAD_ENV_MODE_OPTIONS)[number];
+
+const TimestampFormatSchema = Schema.Literals(TIMESTAMP_FORMAT_OPTIONS);
+const ThreadEnvModeSchema = Schema.Literals(THREAD_ENV_MODE_OPTIONS);
+
 const AppSettingsSchema = Schema.Struct({
   codexBinaryPath: Schema.String.check(Schema.isMaxLength(4096)).pipe(
     Schema.withConstructorDefault(() => Option.some("")),
@@ -35,6 +44,12 @@ const AppSettingsSchema = Schema.Struct({
   enableNotifications: Schema.Boolean.pipe(Schema.withConstructorDefault(() => Option.some(false))),
   enableNotificationSound: Schema.Boolean.pipe(
     Schema.withConstructorDefault(() => Option.some(true)),
+  ),
+  timestampFormat: TimestampFormatSchema.pipe(
+    Schema.withConstructorDefault((): Option.Option<TimestampFormat> => Option.some("locale")),
+  ),
+  defaultThreadEnvMode: ThreadEnvModeSchema.pipe(
+    Schema.withConstructorDefault((): Option.Option<ThreadEnvMode> => Option.some("local")),
   ),
 });
 export type AppSettings = typeof AppSettingsSchema.Type;

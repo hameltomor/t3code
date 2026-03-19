@@ -5,6 +5,8 @@ import { type ProviderKind } from "@xbetools/contracts";
 import { getModelOptions, normalizeModelSlug } from "@xbetools/shared/model";
 import {
   MAX_CUSTOM_MODEL_LENGTH,
+  TIMESTAMP_FORMAT_OPTIONS,
+  THREAD_ENV_MODE_OPTIONS,
   getCustomModelsForProvider,
   patchCustomModelsForProvider,
   useAppSettings,
@@ -502,6 +504,120 @@ function SettingsRouteView() {
                         enableAssistantStreaming: defaults.enableAssistantStreaming,
                       })
                     }
+                  >
+                    Restore default
+                  </Button>
+                </div>
+              ) : null}
+            </section>
+
+            <section className="rounded-2xl border border-border bg-card p-5">
+              <div className="mb-4">
+                <h2 className="text-sm font-medium text-foreground">Timestamps</h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Choose how timestamps appear in chat messages.
+                </p>
+              </div>
+
+              <div className="space-y-2" role="radiogroup" aria-label="Timestamp format">
+                {TIMESTAMP_FORMAT_OPTIONS.map((format) => {
+                  const selected = settings.timestampFormat === format;
+                  const label = format === "locale" ? "System locale" : format === "12-hour" ? "12-hour" : "24-hour";
+                  const description =
+                    format === "locale"
+                      ? "Use your browser\u2019s locale setting."
+                      : format === "12-hour"
+                        ? "Always show 12-hour format (e.g. 2:30:00 PM)."
+                        : "Always show 24-hour format (e.g. 14:30:00).";
+                  return (
+                    <button
+                      key={format}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      className={`flex w-full items-start justify-between rounded-lg border px-3 py-2 text-left transition-colors ${
+                        selected
+                          ? "border-primary/60 bg-primary/8 text-foreground"
+                          : "border-border bg-background text-muted-foreground hover:bg-accent"
+                      }`}
+                      onClick={() => updateSettings({ timestampFormat: format })}
+                    >
+                      <span className="flex flex-col">
+                        <span className="text-sm font-medium">{label}</span>
+                        <span className="text-xs">{description}</span>
+                      </span>
+                      {selected ? (
+                        <span className="rounded border border-primary/30 bg-primary/8 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-foreground dark:text-primary dark:border-transparent dark:bg-primary/14">
+                          Selected
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {settings.timestampFormat !== defaults.timestampFormat ? (
+                <div className="mt-3 flex justify-end">
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={() => updateSettings({ timestampFormat: defaults.timestampFormat })}
+                  >
+                    Restore default
+                  </Button>
+                </div>
+              ) : null}
+            </section>
+
+            <section className="rounded-2xl border border-border bg-card p-5">
+              <div className="mb-4">
+                <h2 className="text-sm font-medium text-foreground">New threads</h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Default environment for newly created threads.
+                </p>
+              </div>
+
+              <div className="space-y-2" role="radiogroup" aria-label="Default thread environment">
+                {THREAD_ENV_MODE_OPTIONS.map((mode) => {
+                  const selected = settings.defaultThreadEnvMode === mode;
+                  const label = mode === "local" ? "Local" : "Worktree";
+                  const description =
+                    mode === "local"
+                      ? "Run in the project\u2019s working directory."
+                      : "Create a new git worktree for each thread.";
+                  return (
+                    <button
+                      key={mode}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      className={`flex w-full items-start justify-between rounded-lg border px-3 py-2 text-left transition-colors ${
+                        selected
+                          ? "border-primary/60 bg-primary/8 text-foreground"
+                          : "border-border bg-background text-muted-foreground hover:bg-accent"
+                      }`}
+                      onClick={() => updateSettings({ defaultThreadEnvMode: mode })}
+                    >
+                      <span className="flex flex-col">
+                        <span className="text-sm font-medium">{label}</span>
+                        <span className="text-xs">{description}</span>
+                      </span>
+                      {selected ? (
+                        <span className="rounded border border-primary/30 bg-primary/8 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-foreground dark:text-primary dark:border-transparent dark:bg-primary/14">
+                          Selected
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {settings.defaultThreadEnvMode !== defaults.defaultThreadEnvMode ? (
+                <div className="mt-3 flex justify-end">
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={() => updateSettings({ defaultThreadEnvMode: defaults.defaultThreadEnvMode })}
                   >
                     Restore default
                   </Button>

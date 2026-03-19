@@ -7,7 +7,14 @@ import {
 } from "@xbetools/contracts";
 import { describe, expect, it } from "vitest";
 
-import { markThreadUnread, promoteDraftThread, syncServerReadModel, type AppState } from "./store";
+import {
+  applyProjectOrder,
+  markThreadUnread,
+  promoteDraftThread,
+  reorderProjects,
+  syncServerReadModel,
+  type AppState,
+} from "./store";
 import { DEFAULT_INTERACTION_MODE, DEFAULT_RUNTIME_MODE, type Thread } from "./types";
 
 function makeThread(overrides: Partial<Thread> = {}): Thread {
@@ -278,5 +285,72 @@ describe("store read model sync", () => {
     const next = syncServerReadModel(initialState, readModel);
 
     expect(next.threads[0]?.model).toBe(DEFAULT_MODEL_BY_PROVIDER.codex);
+  });
+});
+
+describe("project ordering", () => {
+  const makeProject = (id: string, cwd: string, name = id) => ({
+    id: ProjectId.makeUnsafe(id),
+    name,
+    cwd,
+    model: "gpt-5-codex",
+    expanded: true,
+    scripts: [],
+    workspaceMembers: [],
+  });
+
+  it("applies a saved manual order and appends unknown projects at the end", () => {
+    const projects = [
+      makeProject("project-a", "/tmp/project-a", "Project A"),
+      makeProject("project-b", "/tmp/project-b", "Project B"),
+      makeProject("project-c", "/tmp/project-c", "Project C"),
+    ];
+
+    const ordered = applyProjectOrder(projects, ["/tmp/project-c", "/tmp/project-a"]);
+
+    expect(ordered.map((project) => project.cwd)).toEqual([
+      "/tmp/project-c",
+      "/tmp/project-a",
+      "/tmp/project-b",
+    ]);
+  });
+
+  it("reorders projects by index and stores the resulting cwd order", () => {
+    const state: AppState = {
+      projects: [
+        makeProject("project-a", "/tmp/project-a", "Project A"),
+        makeProject("project-b", "/tmp/project-b", "Project B"),
+        makeProject("project-c", "/tmp/project-c", "Project C"),
+      ],
+      threads: [],
+      threadsHydrated: true,
+      selectedRepoCwdByProject: {},
+      projectOrder: ["/tmp/project-a", "/tmp/project-b", "/tmp/project-c"],
+    };
+
+    const next = reorderProjects(state, 0, 2);
+
+    expect(next.projectOrder).toEqual([
+      "/tmp/project-b",
+      "/tmp/project-c",
+      "/tmp/project-a",
+    ]);
+  });
+
+  it("treats same-index reorder as a no-op", () => {
+    const state: AppState = {
+      projects: [
+        makeProject("project-a", "/tmp/project-a", "Project A"),
+        makeProject("project-b", "/tmp/project-b", "Project B"),
+      ],
+      threads: [],
+      threadsHydrated: true,
+      selectedRepoCwdByProject: {},
+      projectOrder: ["/tmp/project-a", "/tmp/project-b"],
+    };
+
+    const next = reorderProjects(state, 1, 1);
+
+    expect(next).toBe(state);
   });
 });

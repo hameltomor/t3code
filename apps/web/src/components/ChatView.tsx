@@ -88,6 +88,7 @@ import {
   isLatestTurnSettled,
   formatElapsed,
   formatTimestamp,
+  type TimestampFormatPreference,
 } from "../session-logic";
 import { AUTO_SCROLL_BOTTOM_THRESHOLD_PX, isScrollContainerNearBottom } from "../chat-scroll";
 import {
@@ -260,9 +261,13 @@ import { clamp } from "effect/Number";
 import { ComposerPromptEditor, type ComposerPromptEditorHandle } from "./ComposerPromptEditor";
 import { ROW_WRAPPER_PADDING_PX, estimateTimelineMessageHeight } from "./timelineHeight";
 
-function formatMessageMeta(createdAt: string, duration: string | null): string {
-  if (!duration) return formatTimestamp(createdAt);
-  return `${formatTimestamp(createdAt)} • ${duration}`;
+function formatMessageMeta(
+  createdAt: string,
+  duration: string | null,
+  timestampFormat: TimestampFormatPreference = "locale",
+): string {
+  if (!duration) return formatTimestamp(createdAt, timestampFormat);
+  return `${formatTimestamp(createdAt, timestampFormat)} • ${duration}`;
 }
 
 function formatWorkingTimer(startIso: string, endIso: string): string | null {
@@ -5252,6 +5257,7 @@ const EditableUserMessageBubble = memo(function EditableUserMessageBubble(props:
     onCancelEdit,
     onSubmitEdit,
   } = props;
+  const { settings: { timestampFormat } } = useAppSettings();
   const editTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const allAttachments = message.attachments ?? [];
   const userImages = allAttachments.filter((a) => a.type === "image");
@@ -5411,7 +5417,7 @@ const EditableUserMessageBubble = memo(function EditableUserMessageBubble(props:
                 )}
               </div>
               <p className="text-right text-[10px] text-secondary-foreground/50">
-                {formatTimestamp(message.createdAt)}
+                {formatTimestamp(message.createdAt, timestampFormat)}
               </p>
             </div>
           </>
@@ -5885,6 +5891,7 @@ const MessagesTimeline = memo(function MessagesTimeline({
   resolvedTheme,
   workspaceRoot,
 }: MessagesTimelineProps) {
+  const { settings: { timestampFormat } } = useAppSettings();
   const timelineRootRef = useRef<HTMLDivElement | null>(null);
   const [timelineWidthPx, setTimelineWidthPx] = useState<number | null>(null);
 
@@ -6298,6 +6305,7 @@ const MessagesTimeline = memo(function MessagesTimeline({
                     row.message.streaming
                       ? formatElapsed(row.message.createdAt, nowIso)
                       : formatElapsed(row.message.createdAt, row.message.completedAt),
+                    timestampFormat,
                   )}
                 </p>
               </div>
