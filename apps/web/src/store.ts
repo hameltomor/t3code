@@ -73,7 +73,12 @@ function readPersistedState(): AppState {
     }
     persistedModelByProjectCwd.clear();
     for (const [cwd, model] of Object.entries(parsed.modelByProjectCwd ?? {})) {
-      if (typeof cwd === "string" && cwd.length > 0 && typeof model === "string" && model.length > 0) {
+      if (
+        typeof cwd === "string" &&
+        cwd.length > 0 &&
+        typeof model === "string" &&
+        model.length > 0
+      ) {
         persistedModelByProjectCwd.set(cwd, model);
       }
     }
@@ -461,7 +466,10 @@ export function setThreadBranch(
  * Sort projects according to a persisted order array.
  * Projects not in the order are appended at the end, preserving their relative position.
  */
-export function applyProjectOrder(projects: readonly Project[], order: readonly string[]): Project[] {
+export function applyProjectOrder(
+  projects: readonly Project[],
+  order: readonly string[],
+): Project[] {
   if (order.length === 0) return [...projects];
   const cwdIndex = new Map(order.map((cwd, i) => [cwd, i]));
   return [...projects].toSorted((a, b) => {
@@ -471,13 +479,20 @@ export function applyProjectOrder(projects: readonly Project[], order: readonly 
   });
 }
 
-export function reorderProjects(state: AppState, fromIndex: number, toIndex: number): AppState {
-  if (fromIndex === toIndex) return state;
+export function reorderProjects(
+  state: AppState,
+  draggedProjectId: Project["id"],
+  targetProjectId: Project["id"],
+): AppState {
+  if (draggedProjectId === targetProjectId) return state;
   const ordered = applyProjectOrder(state.projects, state.projectOrder);
-  const moved = ordered[fromIndex];
+  const draggedIndex = ordered.findIndex((project) => project.id === draggedProjectId);
+  const targetIndex = ordered.findIndex((project) => project.id === targetProjectId);
+  if (draggedIndex < 0 || targetIndex < 0) return state;
+  const [moved] = ordered.splice(draggedIndex, 1);
   if (!moved) return state;
-  const next = ordered.filter((_, i) => i !== fromIndex);
-  next.splice(toIndex, 0, moved);
+  ordered.splice(targetIndex, 0, moved);
+  const next = ordered;
   return { ...state, projectOrder: next.map((p) => p.cwd) };
 }
 
@@ -494,7 +509,7 @@ interface AppStore extends AppState {
   setError: (threadId: ThreadId, error: string | null) => void;
   setThreadBranch: (threadId: ThreadId, branch: string | null, worktreePath: string | null) => void;
   setSelectedRepoCwd: (projectId: Project["id"], repoCwd: string | null) => void;
-  reorderProjects: (fromIndex: number, toIndex: number) => void;
+  reorderProjects: (draggedProjectId: Project["id"], targetProjectId: Project["id"]) => void;
 }
 
 export const useStore = create<AppStore>((set) => ({
@@ -507,15 +522,14 @@ export const useStore = create<AppStore>((set) => ({
   toggleProject: (projectId) => set((state) => toggleProject(state, projectId)),
   setProjectExpanded: (projectId, expanded) =>
     set((state) => setProjectExpanded(state, projectId, expanded)),
-  setProjectModel: (projectId, model) =>
-    set((state) => setProjectModel(state, projectId, model)),
+  setProjectModel: (projectId, model) => set((state) => setProjectModel(state, projectId, model)),
   setError: (threadId, error) => set((state) => setError(state, threadId, error)),
   setThreadBranch: (threadId, branch, worktreePath) =>
     set((state) => setThreadBranch(state, threadId, branch, worktreePath)),
   setSelectedRepoCwd: (projectId, repoCwd) =>
     set((state) => setSelectedRepoCwd(state, projectId, repoCwd)),
-  reorderProjects: (fromIndex, toIndex) =>
-    set((state) => reorderProjects(state, fromIndex, toIndex)),
+  reorderProjects: (draggedProjectId, targetProjectId) =>
+    set((state) => reorderProjects(state, draggedProjectId, targetProjectId)),
 }));
 
 // Persist state changes with debouncing to avoid localStorage thrashing
@@ -538,8 +552,7 @@ if (typeof window !== "undefined") {
 export function useThread(threadId: ThreadId | null | undefined): Thread | undefined {
   return useStore(
     useCallback(
-      (store: AppStore) =>
-        threadId ? store.threads.find((t) => t.id === threadId) : undefined,
+      (store: AppStore) => (threadId ? store.threads.find((t) => t.id === threadId) : undefined),
       [threadId],
     ),
   );
@@ -548,10 +561,7 @@ export function useThread(threadId: ThreadId | null | undefined): Thread | undef
 /** Check whether a thread exists without subscribing to its contents. */
 export function useThreadExists(threadId: ThreadId): boolean {
   return useStore(
-    useCallback(
-      (store: AppStore) => store.threads.some((t) => t.id === threadId),
-      [threadId],
-    ),
+    useCallback((store: AppStore) => store.threads.some((t) => t.id === threadId), [threadId]),
   );
 }
 
@@ -559,8 +569,7 @@ export function useThreadExists(threadId: ThreadId): boolean {
 export function useProject(projectId: ProjectId | null | undefined): Project | undefined {
   return useStore(
     useCallback(
-      (store: AppStore) =>
-        projectId ? store.projects.find((p) => p.id === projectId) : undefined,
+      (store: AppStore) => (projectId ? store.projects.find((p) => p.id === projectId) : undefined),
       [projectId],
     ),
   );
@@ -570,8 +579,7 @@ export function useProject(projectId: ProjectId | null | undefined): Project | u
 export function useSelectedRepoCwd(projectId: ProjectId | null | undefined): string | null {
   return useStore(
     useCallback(
-      (store: AppStore) =>
-        projectId ? (store.selectedRepoCwdByProject[projectId] ?? null) : null,
+      (store: AppStore) => (projectId ? (store.selectedRepoCwdByProject[projectId] ?? null) : null),
       [projectId],
     ),
   );

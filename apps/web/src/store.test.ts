@@ -193,8 +193,20 @@ describe("promoteDraftThread", () => {
       projectOrder: [],
     };
     const entries = [
-      { name: "repo-a", relativePath: "./repo-a", originalPath: "/repo-a", worktreePath: "/wt/repo-a", branch: "feature" },
-      { name: "repo-b", relativePath: "./repo-b", originalPath: "/repo-b", worktreePath: "/wt/repo-b", branch: "feature" },
+      {
+        name: "repo-a",
+        relativePath: "./repo-a",
+        originalPath: "/repo-a",
+        worktreePath: "/wt/repo-a",
+        branch: "feature",
+      },
+      {
+        name: "repo-b",
+        relativePath: "./repo-b",
+        originalPath: "/repo-b",
+        worktreePath: "/wt/repo-b",
+        branch: "feature",
+      },
     ];
     const draftThread = makeThread({
       id: ThreadId.makeUnsafe("multi-repo"),
@@ -315,7 +327,7 @@ describe("project ordering", () => {
     ]);
   });
 
-  it("reorders projects by index and stores the resulting cwd order", () => {
+  it("reorders projects by id and stores the resulting cwd order", () => {
     const state: AppState = {
       projects: [
         makeProject("project-a", "/tmp/project-a", "Project A"),
@@ -328,16 +340,12 @@ describe("project ordering", () => {
       projectOrder: ["/tmp/project-a", "/tmp/project-b", "/tmp/project-c"],
     };
 
-    const next = reorderProjects(state, 0, 2);
+    const next = reorderProjects(state, "project-a" as ProjectId, "project-c" as ProjectId);
 
-    expect(next.projectOrder).toEqual([
-      "/tmp/project-b",
-      "/tmp/project-c",
-      "/tmp/project-a",
-    ]);
+    expect(next.projectOrder).toEqual(["/tmp/project-b", "/tmp/project-c", "/tmp/project-a"]);
   });
 
-  it("treats same-index reorder as a no-op", () => {
+  it("treats same-id reorder as a no-op", () => {
     const state: AppState = {
       projects: [
         makeProject("project-a", "/tmp/project-a", "Project A"),
@@ -349,7 +357,7 @@ describe("project ordering", () => {
       projectOrder: ["/tmp/project-a", "/tmp/project-b"],
     };
 
-    const next = reorderProjects(state, 1, 1);
+    const next = reorderProjects(state, "project-b" as ProjectId, "project-b" as ProjectId);
 
     expect(next).toBe(state);
   });
