@@ -753,14 +753,88 @@ describe("ChatView timeline estimator parity (full app)", () => {
     },
   );
 
-  it("does not overlap adjacent virtual rows after scrolling to the top", async () => {
-    const targetMessageId = "msg-user-3" as MessageId;
+  it("does not overlap adjacent virtual rows while scrolling upward through long content", async () => {
+    // Build a fixture that stresses the virtualizer: 30 message pairs with one
+    // very long user message (~6000 chars) near the middle.  The long message
+    // creates a large height-estimate-to-measured delta, which is where the
+    // position-drift bug surfaced in production.
+    const messages: Array<OrchestrationReadModel["threads"][number]["messages"][number]> = [];
+    const PAIR_COUNT = 30;
+    const LONG_MESSAGE_INDEX = 14;
+    for (let i = 0; i < PAIR_COUNT; i += 1) {
+      const isLong = i === LONG_MESSAGE_INDEX;
+      const userText = isLong
+        ? "Long message paragraph.\n".repeat(80) + "x".repeat(2_000)
+        : `User message ${i} with some reasonable filler content to occupy space.`;
+      messages.push(
+        createUserMessage({
+          id: `msg-user-${i}` as MessageId,
+          text: userText,
+          offsetSeconds: i * 6,
+        }),
+      );
+      messages.push(
+        createAssistantMessage({
+          id: `msg-assistant-${i}` as MessageId,
+          text: `Assistant reply ${i}: ${"filler ".repeat(30)}`,
+          offsetSeconds: i * 6 + 3,
+        }),
+      );
+    }
+
+    const snapshot: OrchestrationReadModel = {
+      snapshotSequence: 1,
+      projects: [
+        {
+          id: PROJECT_ID,
+          title: "Project",
+          workspaceRoot: "/repo/project",
+          defaultModel: "gpt-5",
+          scripts: [],
+          workspaceMembers: [],
+          createdAt: NOW_ISO,
+          updatedAt: NOW_ISO,
+          deletedAt: null,
+        },
+      ],
+      threads: [
+        {
+          id: THREAD_ID,
+          projectId: PROJECT_ID,
+          title: "Overlap regression thread",
+          model: "gpt-5",
+          interactionMode: "default",
+          runtimeMode: "full-access",
+          branch: "main",
+          worktreePath: null,
+          worktreeEntries: [],
+          providerThreadId: null,
+          latestTurn: null,
+          createdAt: NOW_ISO,
+          updatedAt: NOW_ISO,
+          deletedAt: null,
+          messages,
+          activities: [],
+          proposedPlans: [],
+          checkpoints: [],
+          session: {
+            threadId: THREAD_ID,
+            status: "ready",
+            providerName: "codex",
+            runtimeMode: "full-access",
+            activeTurnId: null,
+            lastError: null,
+            updatedAt: NOW_ISO,
+          },
+          contextStatus: null,
+        },
+      ],
+      updatedAt: NOW_ISO,
+    };
+
     const mounted = await mountChatView({
       viewport: DEFAULT_VIEWPORT,
-      snapshot: createSnapshotForTargetUser({
-        targetMessageId,
-        targetText: "overlap regression target",
-      }),
+      snapshot,
     });
 
     try {
@@ -769,33 +843,59 @@ describe("ChatView timeline estimator parity (full app)", () => {
         "Unable to find ChatView message scroll container.",
       );
 
-      // Scroll to top and wait for measurements to settle.
-      scrollContainer.scrollTop = 0;
-      scrollContainer.dispatchEvent(new Event("scroll"));
+      // ChatView auto-scrolls to bottom on mount.  Wait for initial layout.
       await waitForLayout();
-      // Extra settle time for the scroll-idle remeasure (200ms debounce).
       await new Promise<void>((resolve) => {
         setTimeout(resolve, 350);
       });
       await waitForLayout();
 
-      // Collect all rendered virtual rows and assert none overlap.
-      const virtualRows = Array.from(
-        scrollContainer.querySelectorAll<HTMLElement>("[data-index]"),
-      ).toSorted((a, b) => Number(a.dataset.index) - Number(b.dataset.index));
+      // Helper: collect visible virtual rows sorted by data-index and assert
+      // no pair of adjacent rows overlaps.
+      const assertNoOverlap = (label: string) => {
+        const virtualRows = Array.from(
+          scrollContainer.querySelectorAll<HTMLElement>("[data-index]"),
+        ).toSorted((a, b) => Number(a.dataset.index) - Number(b.dataset.index));
+        expect(virtualRows.length, `${label}: expected rendered rows`).toBeGreaterThanOrEqual(2);
 
-      expect(virtualRows.length).toBeGreaterThanOrEqual(2);
+        for (let i = 1; i < virtualRows.length; i++) {
+          const prevRect = virtualRows[i - 1]!.getBoundingClientRect();
+          const currentRect = virtualRows[i]!.getBoundingClientRect();
+          const gap = currentRect.top - prevRect.bottom;
+          // 1px tolerance for sub-pixel rounding; no real overlap allowed.
+          expect(
+            gap,
+            `${label}: row ${virtualRows[i]!.dataset.index} overlaps previous by ${-gap}px`,
+          ).toBeGreaterThanOrEqual(-1);
+        }
+      };
 
-      for (let i = 1; i < virtualRows.length; i++) {
-        const prevRect = virtualRows[i - 1]!.getBoundingClientRect();
-        const currentRect = virtualRows[i]!.getBoundingClientRect();
-        const gap = currentRect.top - prevRect.bottom;
-        // Allow a tiny tolerance (1px) for sub-pixel rounding but no actual overlap.
-        expect(
-          gap,
-          `Row index ${virtualRows[i]!.dataset.index} overlaps previous row by ${-gap}px`,
-        ).toBeGreaterThanOrEqual(-1);
+      // Scroll upward in page-sized steps, pausing for the scroll-idle
+      // remeasure (200ms debounce) at each stop.  This reproduces the
+      // production failure path: the virtualizer measures rows as they enter
+      // the viewport, and position drift accumulates across multiple
+      // estimate→measure corrections.
+      const viewportHeight = scrollContainer.clientHeight;
+      const stepPx = Math.max(100, Math.floor(viewportHeight * 0.75));
+      let position = scrollContainer.scrollTop;
+      let stepCount = 0;
+
+      while (position > 0) {
+        position = Math.max(0, position - stepPx);
+        scrollContainer.scrollTop = position;
+        scrollContainer.dispatchEvent(new Event("scroll"));
+        await waitForLayout();
+        // Wait for the scroll-idle debounce (200ms) plus extra headroom.
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 350);
+        });
+        await waitForLayout();
+        assertNoOverlap(`step ${stepCount} (scrollTop=${Math.round(position)})`);
+        stepCount += 1;
       }
+
+      // Verify we actually scrolled through meaningful content.
+      expect(stepCount).toBeGreaterThanOrEqual(3);
     } finally {
       await mounted.cleanup();
     }
