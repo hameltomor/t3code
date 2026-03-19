@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 
 import type { Thread, Project } from "../types";
 import type { ProjectId } from "@xbetools/contracts";
-import { compareThreadsByRecency } from "../components/Sidebar.logic";
+import { compareThreadsByRecency } from "../lib/threadRecency";
 
 export interface ThreadSearchEntry {
   thread: Thread;

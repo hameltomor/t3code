@@ -1,11 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  compareThreadsByRecency,
-  getThreadRecencyMs,
   hasUnseenCompletion,
   resolveThreadStatusPill,
   shouldClearThreadSelectionOnMouseDown,
-  type ThreadRecencyFields,
   type ThreadStatusInput,
 } from "./Sidebar.logic";
 
@@ -298,82 +295,3 @@ describe("resolveThreadStatusPill", () => {
   });
 });
 
-function makeRecencyThread(overrides: Partial<ThreadRecencyFields> = {}): ThreadRecencyFields {
-  return {
-    id: "thread-1",
-    createdAt: "2026-03-01T00:00:00.000Z",
-    updatedAt: "2026-03-01T00:00:00.000Z",
-    ...overrides,
-  };
-}
-
-describe("compareThreadsByRecency", () => {
-  it("sorts by updatedAt descending (most recent first)", () => {
-    const older = makeRecencyThread({
-      id: "thread-old",
-      createdAt: "2026-03-10T00:00:00.000Z",
-      updatedAt: "2026-03-10T00:00:00.000Z",
-    });
-    const newer = makeRecencyThread({
-      id: "thread-new",
-      createdAt: "2026-03-01T00:00:00.000Z",
-      updatedAt: "2026-03-15T00:00:00.000Z",
-    });
-
-    const sorted = [older, newer].toSorted(compareThreadsByRecency);
-    expect(sorted[0]!.id).toBe("thread-new");
-    expect(sorted[1]!.id).toBe("thread-old");
-  });
-
-  it("thread with older createdAt but newer updatedAt sorts above a newer-created inactive thread", () => {
-    const oldCreatedRecentlyActive = makeRecencyThread({
-      id: "thread-active",
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-03-15T12:00:00.000Z",
-    });
-    const newCreatedInactive = makeRecencyThread({
-      id: "thread-inactive",
-      createdAt: "2026-03-14T00:00:00.000Z",
-      updatedAt: "2026-03-14T00:00:00.000Z",
-    });
-
-    const sorted = [newCreatedInactive, oldCreatedRecentlyActive].toSorted(compareThreadsByRecency);
-    expect(sorted[0]!.id).toBe("thread-active");
-    expect(sorted[1]!.id).toBe("thread-inactive");
-  });
-
-  it("falls back to createdAt when updatedAt is equal", () => {
-    const a = makeRecencyThread({
-      id: "thread-a",
-      createdAt: "2026-03-05T00:00:00.000Z",
-      updatedAt: "2026-03-10T00:00:00.000Z",
-    });
-    const b = makeRecencyThread({
-      id: "thread-b",
-      createdAt: "2026-03-08T00:00:00.000Z",
-      updatedAt: "2026-03-10T00:00:00.000Z",
-    });
-
-    const sorted = [a, b].toSorted(compareThreadsByRecency);
-    expect(sorted[0]!.id).toBe("thread-b");
-  });
-
-  it("falls back to id when both timestamps are equal", () => {
-    const a = makeRecencyThread({ id: "aaa" });
-    const b = makeRecencyThread({ id: "zzz" });
-
-    const sorted = [a, b].toSorted(compareThreadsByRecency);
-    expect(sorted[0]!.id).toBe("zzz");
-  });
-});
-
-describe("getThreadRecencyMs", () => {
-  it("returns the updatedAt timestamp in milliseconds", () => {
-    const thread: ThreadRecencyFields = {
-      id: "t1",
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-03-15T12:00:00.000Z",
-    };
-    expect(getThreadRecencyMs(thread)).toBe(new Date("2026-03-15T12:00:00.000Z").getTime());
-  });
-});

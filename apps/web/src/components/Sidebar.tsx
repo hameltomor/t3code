@@ -26,9 +26,8 @@ import { isMacPlatform, newCommandId, newProjectId, newThreadId } from "../lib/u
 import { useStore } from "../store";
 import { isChatNewLocalShortcut, isChatNewShortcut, shortcutLabelForCommand } from "../keybindings";
 import { derivePendingApprovals, derivePendingUserInputs } from "../session-logic";
+import { compareThreadsByRecency, getThreadRecencyMs } from "../lib/threadRecency";
 import {
-  compareThreadsByRecency,
-  getThreadRecencyMs,
   resolveThreadStatusPill,
   shouldClearThreadSelectionOnMouseDown,
 } from "./Sidebar.logic";
