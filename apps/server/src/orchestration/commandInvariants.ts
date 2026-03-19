@@ -106,6 +106,22 @@ export function requireThreadAbsent(input: {
   );
 }
 
+export function requireNoActiveTurn(input: {
+  readonly command: OrchestrationCommand;
+  readonly thread: OrchestrationThread;
+}): Effect.Effect<void, OrchestrationCommandInvariantError> {
+  const activeTurnId = input.thread.session?.activeTurnId;
+  if (!activeTurnId) {
+    return Effect.void;
+  }
+  return Effect.fail(
+    invariantError(
+      input.command.type,
+      `Thread '${input.thread.id}' already has active turn '${activeTurnId}'. Queue the message on the client.`,
+    ),
+  );
+}
+
 export function requireNonNegativeInteger(input: {
   readonly commandType: OrchestrationCommand["type"];
   readonly field: string;

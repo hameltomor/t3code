@@ -52,6 +52,14 @@ export interface ChatFileAttachment {
 
 export type ChatAttachment = ChatImageAttachment | ChatFileAttachment;
 
+export interface QueuedMessage {
+  id: string;
+  messageId: MessageId;
+  text: string;
+  attachments: ChatAttachment[];
+  queuedAt: string;
+}
+
 export interface ChatMessage {
   id: MessageId;
   role: "user" | "assistant" | "system";

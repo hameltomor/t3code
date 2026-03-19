@@ -7,6 +7,7 @@ import { Effect } from "effect";
 
 import { OrchestrationCommandInvariantError } from "./Errors.ts";
 import {
+  requireNoActiveTurn,
   requireProject,
   requireProjectAbsent,
   requireThread,
@@ -271,10 +272,14 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.turn.start": {
-      yield* requireThread({
+      const thread = yield* requireThread({
         readModel,
         command,
         threadId: command.threadId,
+      });
+      yield* requireNoActiveTurn({
+        command,
+        thread,
       });
       const userMessageEvent: Omit<OrchestrationEvent, "sequence"> = {
         ...withEventBase({
