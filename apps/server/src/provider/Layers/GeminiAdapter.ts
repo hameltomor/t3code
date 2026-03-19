@@ -42,7 +42,9 @@ import {
 } from "../Errors.ts";
 import { GeminiAdapter, type GeminiAdapterShape } from "../Services/GeminiAdapter.ts";
 import {
+  materializeFileAttachments,
   materializeImageAttachments,
+  type MaterializedFileAttachment,
   type MaterializedImageAttachment,
 } from "../attachmentMaterializer.ts";
 
@@ -840,11 +842,29 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
               })
             : undefined;
 
-        const userMessage = buildUserMessage(input, materializedImages);
+        const materializedFiles =
+          options?.stateDir && input.attachments && input.attachments.length > 0
+            ? yield* Effect.tryPromise({
+                try: () =>
+                  materializeFileAttachments({
+                    stateDir: options.stateDir!,
+                    attachments: input.attachments!,
+                  }),
+                catch: () =>
+                  new ProviderAdapterProcessError({
+                    provider: PROVIDER,
+                    threadId: input.threadId,
+                    detail: "Failed to materialize file attachments.",
+                  }),
+              })
+            : undefined;
+
+        const userMessage = buildUserMessage(input, materializedImages, materializedFiles);
         const providerParts = buildProviderMessage(userMessage, {
           cwd: ctx.session.cwd,
           projectContext: ctx.projectContext,
           ...(materializedImages ? { materializedImages } : {}),
+          ...(materializedFiles ? { materializedFiles } : {}),
         });
         const threadId = input.threadId;
 
@@ -1166,12 +1186,27 @@ function buildSystemInstruction(cwd?: string, projectContext?: string): string |
 function buildUserMessage(
   input: ProviderSendTurnInput,
   materializedImages?: MaterializedImageAttachment[],
+  materializedFiles?: MaterializedFileAttachment[],
 ): string {
   const parts: string[] = [];
   if (input.input) {
     parts.push(input.input);
   }
-  const materializedIds = new Set(materializedImages?.map((img) => img.id) ?? []);
+  const materializedIds = new Set([
+    ...(materializedImages?.map((img) => img.id) ?? []),
+    ...(materializedFiles?.map((f) => f.id) ?? []),
+  ]);
+
+  // Include extracted text for non-native file attachments
+  if (materializedFiles && materializedFiles.length > 0) {
+    for (const file of materializedFiles) {
+      if (GEMINI_NATIVE_DOCUMENT_MIMES.has(file.mimeType.toLowerCase())) continue;
+      if (file.extractedText) {
+        parts.push(`[File: ${file.name}]\n${file.extractedText}`);
+      }
+    }
+  }
+
   if (input.attachments && input.attachments.length > 0) {
     for (const attachment of input.attachments) {
       if (materializedIds.has(attachment.id)) continue;
@@ -1183,12 +1218,16 @@ function buildUserMessage(
   return parts.join("\n\n") || "Continue.";
 }
 
+/** MIME types that Gemini supports natively via inlineData. */
+const GEMINI_NATIVE_DOCUMENT_MIMES = new Set(["application/pdf"]);
+
 function buildProviderMessage(
   userMessage: string,
   opts: {
     cwd: string | undefined;
     projectContext: string | undefined;
     materializedImages?: MaterializedImageAttachment[];
+    materializedFiles?: MaterializedFileAttachment[];
   },
 ): Part[] {
   const parts: Part[] = [];
@@ -1205,6 +1244,20 @@ function buildProviderMessage(
           data: img.base64,
         },
       });
+    }
+  }
+
+  // Add native document parts (PDF) via inlineData
+  if (opts.materializedFiles && opts.materializedFiles.length > 0) {
+    for (const file of opts.materializedFiles) {
+      if (GEMINI_NATIVE_DOCUMENT_MIMES.has(file.mimeType.toLowerCase())) {
+        parts.push({
+          inlineData: {
+            mimeType: file.mimeType,
+            data: file.base64,
+          },
+        });
+      }
     }
   }
 

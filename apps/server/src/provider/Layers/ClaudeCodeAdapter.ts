@@ -54,7 +54,9 @@ import {
 import { ClaudeCodeAdapter, type ClaudeCodeAdapterShape } from "../Services/ClaudeCodeAdapter.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import {
+  materializeFileAttachments,
   materializeImageAttachments,
+  type MaterializedFileAttachment,
   type MaterializedImageAttachment,
 } from "../attachmentMaterializer.ts";
 import { normalizeClaudeUsage } from "../normalization/tokenUsageNormalization.ts";
@@ -441,9 +443,13 @@ function parseAccumulatedToolInput(parts: string[]): Record<string, unknown> {
   }
 }
 
+/** MIME types that Claude supports natively as document content blocks. */
+const CLAUDE_NATIVE_DOCUMENT_MIMES = new Set(["application/pdf"]);
+
 function buildUserMessage(
   input: ProviderSendTurnInput,
   materializedImages?: MaterializedImageAttachment[],
+  materializedFiles?: MaterializedFileAttachment[],
 ): SDKUserMessage {
   const content: Array<Record<string, unknown>> = [];
 
@@ -467,10 +473,40 @@ function buildUserMessage(
     }
   }
 
+  // Add file attachment content blocks
+  const materializedFileIds = new Set(materializedFiles?.map((f) => f.id) ?? []);
+  if (materializedFiles && materializedFiles.length > 0) {
+    for (const file of materializedFiles) {
+      materializedIds.add(file.id);
+      if (CLAUDE_NATIVE_DOCUMENT_MIMES.has(file.mimeType.toLowerCase())) {
+        // PDF: send as native document content block
+        content.push({
+          type: "document",
+          source: {
+            type: "base64",
+            media_type: file.mimeType,
+            data: file.base64,
+          },
+        });
+      } else if (file.extractedText) {
+        // Text-based documents: send extracted text
+        content.push({
+          type: "text",
+          text: `[File: ${file.name}]\n${file.extractedText}`,
+        });
+      } else {
+        content.push({
+          type: "text",
+          text: `[Attachment: ${file.name} (${file.mimeType})]`,
+        });
+      }
+    }
+  }
+
   // Text fallback for attachments that could not be materialized
   if (input.attachments && input.attachments.length > 0) {
     for (const attachment of input.attachments) {
-      if (materializedIds.has(attachment.id)) continue;
+      if (materializedIds.has(attachment.id) || materializedFileIds.has(attachment.id)) continue;
       if (attachment.name) {
         content.push({
           type: "text",
@@ -1979,14 +2015,17 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
 
         Effect.runFork(
           runSdkStream(context).pipe(
-            Effect.catchCause((cause) =>
-              Effect.sync(() => {
+            Effect.catchCause((cause) => {
+              if (Cause.hasInterruptsOnly(cause) || context.stopped) {
+                return Effect.void;
+              }
+              return Effect.sync(() => {
                 console.error(
                   `[ClaudeCodeAdapter] Unhandled SDK stream fiber failure for thread ${context.sessionKey}:`,
                   cause,
                 );
-              }),
-            ),
+              });
+            }),
           ),
         );
 
@@ -2056,7 +2095,24 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
               })
             : undefined;
 
-        const message = buildUserMessage(input, materializedImages);
+        const materializedFiles =
+          options?.stateDir && input.attachments && input.attachments.length > 0
+            ? yield* Effect.tryPromise({
+                try: () =>
+                  materializeFileAttachments({
+                    stateDir: options.stateDir!,
+                    attachments: input.attachments!,
+                  }),
+                catch: () =>
+                  new ProviderAdapterProcessError({
+                    provider: PROVIDER,
+                    threadId: input.threadId,
+                    detail: "Failed to materialize file attachments.",
+                  }),
+              })
+            : undefined;
+
+        const message = buildUserMessage(input, materializedImages, materializedFiles);
 
         yield* Queue.offer(context.promptQueue, {
           type: "message",

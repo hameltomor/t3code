@@ -29,6 +29,26 @@ export const SAFE_IMAGE_FILE_EXTENSIONS = new Set([
   ".webp",
 ]);
 
+export const DOCUMENT_EXTENSION_BY_MIME_TYPE: Record<string, string> = {
+  "application/pdf": ".pdf",
+  "text/plain": ".txt",
+  "text/csv": ".csv",
+  "text/markdown": ".md",
+  "application/msword": ".doc",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+  "application/vnd.ms-excel": ".xls",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+};
+
+export const SAFE_DOCUMENT_FILE_EXTENSIONS = new Set(
+  Object.values(DOCUMENT_EXTENSION_BY_MIME_TYPE),
+);
+
+export const SAFE_ALL_FILE_EXTENSIONS = new Set([
+  ...SAFE_IMAGE_FILE_EXTENSIONS,
+  ...SAFE_DOCUMENT_FILE_EXTENSIONS,
+]);
+
 export function parseBase64DataUrl(
   dataUrl: string,
 ): { readonly mimeType: string; readonly base64: string } | null {
@@ -52,6 +72,25 @@ export function parseBase64DataUrl(
   if (!mimeType || !base64) return null;
 
   return { mimeType, base64 };
+}
+
+export function inferDocumentExtension(input: { mimeType: string; fileName?: string }): string {
+  const key = input.mimeType.toLowerCase();
+  const fromMime = Object.hasOwn(DOCUMENT_EXTENSION_BY_MIME_TYPE, key)
+    ? DOCUMENT_EXTENSION_BY_MIME_TYPE[key]
+    : undefined;
+  if (fromMime) {
+    return fromMime;
+  }
+
+  const fileName = input.fileName?.trim() ?? "";
+  const extensionMatch = /\.([a-z0-9]{1,8})$/i.exec(fileName);
+  const fileNameExtension = extensionMatch ? `.${extensionMatch[1]!.toLowerCase()}` : "";
+  if (SAFE_DOCUMENT_FILE_EXTENSIONS.has(fileNameExtension)) {
+    return fileNameExtension;
+  }
+
+  return ".bin";
 }
 
 export function inferImageExtension(input: { mimeType: string; fileName?: string }): string {

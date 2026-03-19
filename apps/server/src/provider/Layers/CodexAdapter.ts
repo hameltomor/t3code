@@ -36,6 +36,7 @@ import {
   type CodexAppServerStartSessionInput,
 } from "../../codexAppServerManager.ts";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
+import { extractTextFromDocument } from "../documentExtractor.ts";
 import { ServerConfig } from "../../config.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import {
@@ -1332,7 +1333,10 @@ const makeCodexAdapter = (options?: CodexAdapterLiveOptions) =>
 
     const sendTurn: CodexAdapterShape["sendTurn"] = (input) =>
       Effect.gen(function* () {
-        const codexAttachments = yield* Effect.forEach(
+        const codexAttachments: Array<{ type: "image"; url: string }> = [];
+        const fileTextParts: string[] = [];
+
+        yield* Effect.forEach(
           input.attachments ?? [],
           (attachment) =>
             Effect.gen(function* () {
@@ -1347,24 +1351,49 @@ const makeCodexAdapter = (options?: CodexAdapterLiveOptions) =>
                   new Error(`Invalid attachment id '${attachment.id}'.`),
                 );
               }
-              const bytes = yield* fileSystem
-                .readFile(attachmentPath)
-                .pipe(
-                  Effect.mapError((cause) => toRequestError(input.threadId, "turn/start", cause)),
-                );
-              return {
-                type: "image" as const,
-                url: `data:${attachment.mimeType};base64,${Buffer.from(bytes).toString("base64")}`,
-              };
+
+              if (attachment.type === "image") {
+                const bytes = yield* fileSystem
+                  .readFile(attachmentPath)
+                  .pipe(
+                    Effect.mapError((cause) =>
+                      toRequestError(input.threadId, "turn/start", cause),
+                    ),
+                  );
+                codexAttachments.push({
+                  type: "image" as const,
+                  url: `data:${attachment.mimeType};base64,${Buffer.from(bytes).toString("base64")}`,
+                });
+              } else {
+                // File attachments: extract text and prepend to input
+                const text = yield* Effect.tryPromise({
+                  try: () => extractTextFromDocument(attachmentPath, attachment.mimeType),
+                  catch: (cause) => toRequestError(input.threadId, "turn/start", cause),
+                });
+                if (text) {
+                  fileTextParts.push(`[File: ${attachment.name}]\n${text}`);
+                } else {
+                  fileTextParts.push(`[Attachment: ${attachment.name} (${attachment.mimeType})]`);
+                }
+              }
             }),
           { concurrency: 1 },
         );
+
+        // Prepend extracted file content to the user input
+        const augmentedInput =
+          fileTextParts.length > 0
+            ? [
+                ...fileTextParts,
+                ...(input.input ? [input.input] : []),
+              ].join("\n\n")
+            : input.input;
 
         return yield* Effect.tryPromise({
           try: () => {
             const managerInput = {
               threadId: input.threadId,
-              ...(input.input !== undefined ? { input: input.input } : {}),
+              ...(augmentedInput !== undefined ? { input: augmentedInput } : {}),
               ...(input.model !== undefined ? { model: input.model } : {}),
               ...(input.modelOptions?.codex?.reasoningEffort !== undefined
                 ? { effort: input.modelOptions.codex.reasoningEffort }
