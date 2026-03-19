@@ -53,6 +53,7 @@ function makeState(thread: Thread): AppState {
     threads: [thread],
     threadsHydrated: true,
     selectedRepoCwdByProject: {},
+    projectOrder: [],
   };
 }
 
@@ -151,6 +152,7 @@ describe("promoteDraftThread", () => {
       threads: [],
       threadsHydrated: true,
       selectedRepoCwdByProject: {},
+      projectOrder: [],
     };
     const draftThread = makeThread({
       id: ThreadId.makeUnsafe("new-draft"),
@@ -181,6 +183,7 @@ describe("promoteDraftThread", () => {
       threads: [],
       threadsHydrated: true,
       selectedRepoCwdByProject: {},
+      projectOrder: [],
     };
     const entries = [
       { name: "repo-a", relativePath: "./repo-a", originalPath: "/repo-a", worktreePath: "/wt/repo-a", branch: "feature" },
@@ -212,6 +215,7 @@ describe("promoteDraftThread", () => {
       threads: [],
       threadsHydrated: true,
       selectedRepoCwdByProject: {},
+      projectOrder: [],
     };
     const placeholder = makeThread({
       id: ThreadId.makeUnsafe("thread-1"),

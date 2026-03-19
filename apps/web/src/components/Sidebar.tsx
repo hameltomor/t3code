@@ -23,11 +23,11 @@ import {
   type ResolvedKeybindingsConfig,
 } from "@xbetools/contracts";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate, useParams, useRouterState } from "@tanstack/react-router";
+import { Link, useNavigate, useParams, useRouter, useRouterState } from "@tanstack/react-router";
 import { useAppSettings } from "../appSettings";
 import { isElectron } from "../env";
 import { isMacPlatform, newCommandId, newProjectId, newThreadId } from "../lib/utils";
-import { getOrderedProjects, setProjectOrder, useStore } from "../store";
+import { applyProjectOrder, useStore } from "../store";
 import { isChatNewLocalShortcut, isChatNewShortcut, shortcutLabelForCommand } from "../keybindings";
 import { derivePendingApprovals, derivePendingUserInputs } from "../session-logic";
 import { compareThreadsByRecency } from "../lib/threadRecency";
@@ -232,34 +232,48 @@ function SidebarSettingsRow({
   showManualPathFallback: boolean;
   onShowManualPath: () => void;
 }) {
+  const router = useRouter();
+  const navigate = useNavigate();
+
+  const handleBackClick = useCallback(() => {
+    // Use history.back() if there is a previous entry in the session, otherwise go home.
+    if (window.history.length > 1) {
+      router.history.back();
+    } else {
+      void navigate({ to: "/" });
+    }
+  }, [navigate, router.history]);
+
+  const rowClassName = "flex h-10 md:h-8 items-center gap-2 rounded-md px-3 md:px-2 text-sm md:text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground";
+
+  const versionBadge = (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span className="ml-auto text-[10px] text-muted-foreground-faint">
+            v{__APP_VERSION__}
+          </span>
+        }
+      />
+      <TooltipPopup side="top">XBE Code v{__APP_VERSION__}</TooltipPopup>
+    </Tooltip>
+  );
+
   return (
     <div className="flex flex-col gap-0.5">
-      <Link
-        to={isOnSettings ? "/" : "/settings"}
-        className="flex h-10 md:h-8 items-center gap-2 rounded-md px-3 md:px-2 text-sm md:text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-      >
-        {isOnSettings ? (
-          <>
-            <ArrowLeftIcon className="size-4 md:size-3.5 shrink-0" />
-            <span>Back</span>
-          </>
-        ) : (
-          <>
-            <SettingsIcon className="size-4 md:size-3.5 shrink-0" />
-            <span>Settings</span>
-          </>
-        )}
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <span className="ml-auto text-[10px] text-muted-foreground-faint">
-                v{__APP_VERSION__}
-              </span>
-            }
-          />
-          <TooltipPopup side="top">XBE Code v{__APP_VERSION__}</TooltipPopup>
-        </Tooltip>
-      </Link>
+      {isOnSettings ? (
+        <button type="button" className={rowClassName} onClick={handleBackClick}>
+          <ArrowLeftIcon className="size-4 md:size-3.5 shrink-0" />
+          <span>Back</span>
+          {versionBadge}
+        </button>
+      ) : (
+        <Link to="/settings" className={rowClassName}>
+          <SettingsIcon className="size-4 md:size-3.5 shrink-0" />
+          <span>Settings</span>
+          {versionBadge}
+        </Link>
+      )}
       {showManualPathFallback && (
         <button
           type="button"
@@ -307,13 +321,14 @@ export default function Sidebar() {
   });
 
   // Auto-close mobile sidebar drawer when route changes
-  const prevRouteThreadIdRef = useRef(routeThreadId);
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const prevPathnameRef = useRef(pathname);
   useEffect(() => {
-    if (prevRouteThreadIdRef.current !== routeThreadId && isMobile) {
+    if (prevPathnameRef.current !== pathname && isMobile) {
       setOpenMobile(false);
     }
-    prevRouteThreadIdRef.current = routeThreadId;
-  }, [routeThreadId, isMobile, setOpenMobile]);
+    prevPathnameRef.current = pathname;
+  }, [pathname, isMobile, setOpenMobile]);
 
   const { data: keybindings = EMPTY_KEYBINDINGS } = useQuery({
     ...serverConfigQueryOptions(),
@@ -375,7 +390,9 @@ export default function Sidebar() {
     () => new Map(projects.map((project) => [project.id, project.cwd] as const)),
     [projects],
   );
-  const sortedProjects = useMemo(() => getOrderedProjects(projects), [projects]);
+  const projectOrder = useStore((store) => store.projectOrder);
+  const reorderProjects = useStore((store) => store.reorderProjects);
+  const sortedProjects = useMemo(() => applyProjectOrder(projects, projectOrder), [projects, projectOrder]);
   const threadGitTargets = useMemo(
     () =>
       threads.map((thread) => ({
@@ -1215,22 +1232,6 @@ export default function Sidebar() {
   }, []);
 
   // ── Drag-and-drop handlers ──
-  const commitDragReorder = useCallback(
-    (fromIndex: number, toIndex: number) => {
-      if (fromIndex === toIndex) return;
-      const ordered = getOrderedProjects(projects);
-      const moved = ordered[fromIndex];
-      if (!moved) return;
-      const next = ordered.filter((_, i) => i !== fromIndex);
-      next.splice(toIndex, 0, moved);
-      const newOrder = next.map((p) => p.cwd);
-      setProjectOrder(newOrder);
-      // Trigger a re-render and persist by touching any Zustand setter
-      // (toggling a no-op on the store causes re-persist via subscription)
-      useStore.setState((state) => ({ ...state }));
-    },
-    [projects],
-  );
 
   const handleDragPointerDown = useCallback(
     (event: React.PointerEvent<HTMLButtonElement>, index: number) => {
@@ -1274,11 +1275,11 @@ export default function Sidebar() {
     (_event: React.PointerEvent<HTMLButtonElement>) => {
       if (!dragState) return;
       if (suppressProjectClickAfterDragRef.current) {
-        commitDragReorder(dragState.dragIndex, dragState.overIndex);
+        reorderProjects(dragState.dragIndex, dragState.overIndex);
       }
       setDragState(null);
     },
-    [commitDragReorder, dragState],
+    [dragState, reorderProjects],
   );
 
   const handleDragPointerCancel = useCallback(() => {

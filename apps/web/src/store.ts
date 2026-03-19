@@ -25,6 +25,8 @@ export interface AppState {
   threadsHydrated: boolean;
   /** UI-only: selected repo cwd per project for multi-repo workspaces. Not persisted to server. */
   selectedRepoCwdByProject: Record<string, string>;
+  /** User-controlled project display order. Array of project cwds. */
+  projectOrder: string[];
 }
 
 const PERSISTED_STATE_KEY = "xbecode:renderer-state:v8";
@@ -45,6 +47,7 @@ const initialState: AppState = {
   threads: [],
   threadsHydrated: false,
   selectedRepoCwdByProject: {},
+  projectOrder: [],
 };
 const persistedExpandedProjectCwds = new Set<string>();
 const persistedModelByProjectCwd = new Map<string, string>();
@@ -80,7 +83,7 @@ function readPersistedState(): AppState {
         persistedProjectOrder.push(cwd);
       }
     }
-    return { ...initialState };
+    return { ...initialState, projectOrder: persistedProjectOrder };
   } catch {
     return initialState;
   }
@@ -98,7 +101,7 @@ function persistState(state: AppState): void {
         modelByProjectCwd: Object.fromEntries(
           state.projects.map((project) => [project.cwd, project.model]),
         ),
-        projectOrder: persistedProjectOrder,
+        projectOrder: state.projectOrder,
       }),
     );
     for (const legacyKey of LEGACY_PERSISTED_STATE_KEYS) {
@@ -455,21 +458,27 @@ export function setThreadBranch(
 }
 
 /**
- * Returns the current persisted project ordering.
- * Projects not in the persisted list are appended at the end.
+ * Sort projects according to a persisted order array.
+ * Projects not in the order are appended at the end, preserving their relative position.
  */
-export function getOrderedProjects(projects: readonly Project[]): Project[] {
-  if (persistedProjectOrder.length === 0) return [...projects];
-  const cwdIndex = new Map(persistedProjectOrder.map((cwd, i) => [cwd, i]));
+export function applyProjectOrder(projects: readonly Project[], order: readonly string[]): Project[] {
+  if (order.length === 0) return [...projects];
+  const cwdIndex = new Map(order.map((cwd, i) => [cwd, i]));
   return [...projects].toSorted((a, b) => {
-    const ai = cwdIndex.get(a.cwd) ?? persistedProjectOrder.length;
-    const bi = cwdIndex.get(b.cwd) ?? persistedProjectOrder.length;
+    const ai = cwdIndex.get(a.cwd) ?? order.length;
+    const bi = cwdIndex.get(b.cwd) ?? order.length;
     return ai - bi;
   });
 }
 
-export function setProjectOrder(cwds: string[]): void {
-  persistedProjectOrder = cwds;
+export function reorderProjects(state: AppState, fromIndex: number, toIndex: number): AppState {
+  if (fromIndex === toIndex) return state;
+  const ordered = applyProjectOrder(state.projects, state.projectOrder);
+  const moved = ordered[fromIndex];
+  if (!moved) return state;
+  const next = ordered.filter((_, i) => i !== fromIndex);
+  next.splice(toIndex, 0, moved);
+  return { ...state, projectOrder: next.map((p) => p.cwd) };
 }
 
 // ── Zustand store ────────────────────────────────────────────────────
@@ -485,6 +494,7 @@ interface AppStore extends AppState {
   setError: (threadId: ThreadId, error: string | null) => void;
   setThreadBranch: (threadId: ThreadId, branch: string | null, worktreePath: string | null) => void;
   setSelectedRepoCwd: (projectId: Project["id"], repoCwd: string | null) => void;
+  reorderProjects: (fromIndex: number, toIndex: number) => void;
 }
 
 export const useStore = create<AppStore>((set) => ({
@@ -504,6 +514,8 @@ export const useStore = create<AppStore>((set) => ({
     set((state) => setThreadBranch(state, threadId, branch, worktreePath)),
   setSelectedRepoCwd: (projectId, repoCwd) =>
     set((state) => setSelectedRepoCwd(state, projectId, repoCwd)),
+  reorderProjects: (fromIndex, toIndex) =>
+    set((state) => reorderProjects(state, fromIndex, toIndex)),
 }));
 
 // Persist state changes with debouncing to avoid localStorage thrashing
