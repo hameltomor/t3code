@@ -14,7 +14,7 @@
     },
     "apps/desktop": {
       "name": "@xbetools/desktop",
-      "version": "0.0.13",
+      "version": "0.0.14",
       "dependencies": {
         "effect": "catalog:",
         "electron": "40.6.0",
@@ -43,7 +43,7 @@
     },
     "apps/server": {
       "name": "xbe",
-      "version": "0.0.13",
+      "version": "0.0.14",
       "bin": {
         "xbe": "./dist/index.mjs",
       },
@@ -80,7 +80,7 @@
     },
     "apps/web": {
       "name": "@xbetools/web",
-      "version": "0.0.13",
+      "version": "0.0.14",
       "dependencies": {
         "@base-ui/react": "^1.2.0",
         "@dnd-kit/core": "^6.3.1",
@@ -129,7 +129,7 @@
     },
     "packages/contracts": {
       "name": "@xbetools/contracts",
-      "version": "0.0.13",
+      "version": "0.0.14",
       "dependencies": {
         "effect": "catalog:",
       },

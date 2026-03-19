@@ -1,6 +1,6 @@
 {
   "name": "@xbetools/desktop",
-  "version": "0.0.13",
+  "version": "0.0.14",
   "private": true,
   "main": "dist-electron/main.js",
   "scripts": {
