@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(grep -r \"All fibers interrupted\\\\|causeSquash\" /home/amor/workspace/xbe-code --include=*.ts --include=*.js)"
+      "Bash(grep -r \"All fibers interrupted\\\\|causeSquash\" /home/amor/workspace/xbe-code --include=*.ts --include=*.js)",
+      "Bash(gh api:*)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   }
 }
