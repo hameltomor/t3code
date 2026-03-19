@@ -738,6 +738,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const [messagesScrollElement, setMessagesScrollElement] = useState<HTMLDivElement | null>(null);
   const shouldAutoScrollRef = useRef(true);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const lastKnownScrollTopRef = useRef(0);
   const isPointerScrollActiveRef = useRef(false);
   const lastTouchClientYRef = useRef<number | null>(null);
@@ -1938,6 +1939,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     }
 
     lastKnownScrollTopRef.current = currentScrollTop;
+    setShowScrollToBottom(!isNearBottom);
   }, []);
   const onMessagesWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
     if (event.deltaY < 0) {
@@ -2027,6 +2029,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
 
   useEffect(() => {
     setExpandedWorkGroups({});
+    setShowScrollToBottom(false);
   }, [activeThread?.id]);
 
   useEffect(() => {
@@ -4066,6 +4069,20 @@ export default function ChatView({ threadId }: ChatViewProps) {
           workspaceRoot={activeProject?.cwd ?? undefined}
         />
       </div>
+
+      {/* Scroll-to-bottom pill */}
+      {showScrollToBottom && (
+        <div className="flex justify-center pb-1">
+          <button
+            type="button"
+            className="flex items-center gap-1.5 rounded-full border border-border bg-background/90 px-3 py-1 text-xs font-medium text-muted-foreground shadow-sm backdrop-blur-sm transition-colors hover:bg-accent hover:text-foreground"
+            onClick={() => scrollMessagesToBottom("smooth")}
+          >
+            <ChevronDownIcon className="size-3.5" />
+            <span>Scroll to bottom</span>
+          </button>
+        </div>
+      )}
 
       {/* Queue bar + Input bar */}
       <div className="px-3 pt-1.5 sm:px-5 sm:pt-2">

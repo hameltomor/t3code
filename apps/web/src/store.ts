@@ -48,6 +48,7 @@ const initialState: AppState = {
 };
 const persistedExpandedProjectCwds = new Set<string>();
 const persistedModelByProjectCwd = new Map<string, string>();
+let persistedProjectOrder: string[] = [];
 
 // ── Persist helpers ──────────────────────────────────────────────────
 
@@ -59,6 +60,7 @@ function readPersistedState(): AppState {
     const parsed = JSON.parse(raw) as {
       expandedProjectCwds?: string[];
       modelByProjectCwd?: Record<string, string>;
+      projectOrder?: string[];
     };
     persistedExpandedProjectCwds.clear();
     for (const cwd of parsed.expandedProjectCwds ?? []) {
@@ -70,6 +72,12 @@ function readPersistedState(): AppState {
     for (const [cwd, model] of Object.entries(parsed.modelByProjectCwd ?? {})) {
       if (typeof cwd === "string" && cwd.length > 0 && typeof model === "string" && model.length > 0) {
         persistedModelByProjectCwd.set(cwd, model);
+      }
+    }
+    persistedProjectOrder = [];
+    for (const cwd of parsed.projectOrder ?? []) {
+      if (typeof cwd === "string" && cwd.length > 0) {
+        persistedProjectOrder.push(cwd);
       }
     }
     return { ...initialState };
@@ -90,6 +98,7 @@ function persistState(state: AppState): void {
         modelByProjectCwd: Object.fromEntries(
           state.projects.map((project) => [project.cwd, project.model]),
         ),
+        projectOrder: persistedProjectOrder,
       }),
     );
     for (const legacyKey of LEGACY_PERSISTED_STATE_KEYS) {
@@ -443,6 +452,24 @@ export function setThreadBranch(
     };
   });
   return threads === state.threads ? state : { ...state, threads };
+}
+
+/**
+ * Returns the current persisted project ordering.
+ * Projects not in the persisted list are appended at the end.
+ */
+export function getOrderedProjects(projects: readonly Project[]): Project[] {
+  if (persistedProjectOrder.length === 0) return [...projects];
+  const cwdIndex = new Map(persistedProjectOrder.map((cwd, i) => [cwd, i]));
+  return [...projects].toSorted((a, b) => {
+    const ai = cwdIndex.get(a.cwd) ?? persistedProjectOrder.length;
+    const bi = cwdIndex.get(b.cwd) ?? persistedProjectOrder.length;
+    return ai - bi;
+  });
+}
+
+export function setProjectOrder(cwds: string[]): void {
+  persistedProjectOrder = cwds;
 }
 
 // ── Zustand store ────────────────────────────────────────────────────

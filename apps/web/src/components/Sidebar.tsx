@@ -1,9 +1,13 @@
 import {
+  ArrowLeftIcon,
   ChevronRightIcon,
   FolderIcon,
   GitPullRequestIcon,
+  GripVerticalIcon,
+  PlusIcon,
   RocketIcon,
   SearchIcon,
+  SettingsIcon,
   SquarePenIcon,
   TerminalIcon,
   XIcon,
@@ -19,14 +23,14 @@ import {
   type ResolvedKeybindingsConfig,
 } from "@xbetools/contracts";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useNavigate, useParams, useRouterState } from "@tanstack/react-router";
 import { useAppSettings } from "../appSettings";
 import { isElectron } from "../env";
 import { isMacPlatform, newCommandId, newProjectId, newThreadId } from "../lib/utils";
-import { useStore } from "../store";
+import { getOrderedProjects, setProjectOrder, useStore } from "../store";
 import { isChatNewLocalShortcut, isChatNewShortcut, shortcutLabelForCommand } from "../keybindings";
 import { derivePendingApprovals, derivePendingUserInputs } from "../session-logic";
-import { compareThreadsByRecency, getThreadRecencyMs } from "../lib/threadRecency";
+import { compareThreadsByRecency } from "../lib/threadRecency";
 import {
   resolveThreadStatusPill,
   shouldClearThreadSelectionOnMouseDown,
@@ -61,6 +65,8 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
+  SidebarGroupAction,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenuAction,
   SidebarMenu,
@@ -217,6 +223,56 @@ function ProjectFavicon({ cwd }: { cwd: string }) {
   );
 }
 
+function SidebarSettingsRow({
+  isOnSettings,
+  showManualPathFallback,
+  onShowManualPath,
+}: {
+  isOnSettings: boolean;
+  showManualPathFallback: boolean;
+  onShowManualPath: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <Link
+        to={isOnSettings ? "/" : "/settings"}
+        className="flex h-10 md:h-8 items-center gap-2 rounded-md px-3 md:px-2 text-sm md:text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      >
+        {isOnSettings ? (
+          <>
+            <ArrowLeftIcon className="size-4 md:size-3.5 shrink-0" />
+            <span>Back</span>
+          </>
+        ) : (
+          <>
+            <SettingsIcon className="size-4 md:size-3.5 shrink-0" />
+            <span>Settings</span>
+          </>
+        )}
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <span className="ml-auto text-[10px] text-muted-foreground-faint">
+                v{__APP_VERSION__}
+              </span>
+            }
+          />
+          <TooltipPopup side="top">XBE Code v{__APP_VERSION__}</TooltipPopup>
+        </Tooltip>
+      </Link>
+      {showManualPathFallback && (
+        <button
+          type="button"
+          className="w-full pb-1 text-center text-[10px] text-muted-foreground/50 transition-colors hover:text-muted-foreground"
+          onClick={onShowManualPath}
+        >
+          or enter project path manually
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function Sidebar() {
   const { isMobile, setOpenMobile } = useSidebar();
   const projects = useStore((store) => store.projects);
@@ -245,6 +301,9 @@ export default function Sidebar() {
   const routeThreadId = useParams({
     strict: false,
     select: (params) => (params.threadId ? ThreadId.makeUnsafe(params.threadId) : null),
+  });
+  const isOnSettings = useRouterState({
+    select: (state) => state.location.pathname === "/settings",
   });
 
   // Auto-close mobile sidebar drawer when route changes
@@ -286,6 +345,16 @@ export default function Sidebar() {
   const removeFromSelection = useThreadSelectionStore((s) => s.removeFromSelection);
   const setSelectionAnchor = useThreadSelectionStore((s) => s.setAnchor);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  // ── Drag-and-drop project reordering (desktop only) ──
+  const [dragState, setDragState] = useState<{
+    dragIndex: number;
+    overIndex: number;
+    startY: number;
+    currentY: number;
+  } | null>(null);
+  const projectItemRefs = useRef<Map<string, HTMLElement>>(new Map());
+  const suppressProjectClickAfterDragRef = useRef(false);
+
   const { query: searchQuery, setQuery: setSearchQuery, filteredThreadIdSet, isSearching } =
     useThreadSearch(threads, projects);
   const pendingApprovalByThreadId = useMemo(() => {
@@ -306,21 +375,7 @@ export default function Sidebar() {
     () => new Map(projects.map((project) => [project.id, project.cwd] as const)),
     [projects],
   );
-  const sortedProjects = useMemo(() => {
-    const latestUpdateByProjectId = new Map<ProjectId, number>();
-    for (const thread of threads) {
-      const threadTimestamp = getThreadRecencyMs(thread);
-      const existing = latestUpdateByProjectId.get(thread.projectId) ?? 0;
-      if (threadTimestamp > existing) {
-        latestUpdateByProjectId.set(thread.projectId, threadTimestamp);
-      }
-    }
-    return [...projects].toSorted((a, b) => {
-      const aTime = latestUpdateByProjectId.get(a.id) ?? 0;
-      const bTime = latestUpdateByProjectId.get(b.id) ?? 0;
-      return bTime - aTime;
-    });
-  }, [projects, threads]);
+  const sortedProjects = useMemo(() => getOrderedProjects(projects), [projects]);
   const threadGitTargets = useMemo(
     () =>
       threads.map((thread) => ({
@@ -735,6 +790,7 @@ export default function Sidebar() {
           { id: "rename", label: "Rename thread" },
           { id: "mark-unread", label: "Mark unread" },
           { id: "copy-thread-id", label: "Copy Thread ID" },
+          { id: "copy-workspace-path", label: "Copy workspace path" },
           { id: "delete", label: "Delete", destructive: true },
         ],
         position,
@@ -770,6 +826,29 @@ export default function Sidebar() {
         }
         return;
       }
+      if (clicked === "copy-workspace-path") {
+        const project = projects.find((p) => p.id === thread.projectId);
+        const workspacePath = thread.worktreePath ?? project?.cwd;
+        if (!workspacePath) {
+          toastManager.add({ type: "warning", title: "No workspace path available" });
+          return;
+        }
+        try {
+          await copyTextToClipboard(workspacePath);
+          toastManager.add({
+            type: "success",
+            title: "Workspace path copied",
+            description: workspacePath,
+          });
+        } catch (error) {
+          toastManager.add({
+            type: "error",
+            title: "Failed to copy workspace path",
+            description: error instanceof Error ? error.message : "An error occurred.",
+          });
+        }
+        return;
+      }
       if (clicked !== "delete") return;
       if (appSettings.confirmThreadDelete) {
         const confirmed = await api.dialogs.confirm(
@@ -784,7 +863,7 @@ export default function Sidebar() {
       }
       await deleteThread(threadId);
     },
-    [appSettings.confirmThreadDelete, deleteThread, markThreadUnread, threads],
+    [appSettings.confirmThreadDelete, deleteThread, markThreadUnread, projects, threads],
   );
 
   const handleMultiSelectContextMenu = useCallback(
@@ -1135,6 +1214,88 @@ export default function Sidebar() {
     });
   }, []);
 
+  // ── Drag-and-drop handlers ──
+  const commitDragReorder = useCallback(
+    (fromIndex: number, toIndex: number) => {
+      if (fromIndex === toIndex) return;
+      const ordered = getOrderedProjects(projects);
+      const moved = ordered[fromIndex];
+      if (!moved) return;
+      const next = ordered.filter((_, i) => i !== fromIndex);
+      next.splice(toIndex, 0, moved);
+      const newOrder = next.map((p) => p.cwd);
+      setProjectOrder(newOrder);
+      // Trigger a re-render and persist by touching any Zustand setter
+      // (toggling a no-op on the store causes re-persist via subscription)
+      useStore.setState((state) => ({ ...state }));
+    },
+    [projects],
+  );
+
+  const handleDragPointerDown = useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>, index: number) => {
+      if (isMobile) return;
+      event.preventDefault();
+      event.stopPropagation();
+      suppressProjectClickAfterDragRef.current = false;
+      setDragState({ dragIndex: index, overIndex: index, startY: event.clientY, currentY: event.clientY });
+      (event.target as HTMLElement).setPointerCapture(event.pointerId);
+    },
+    [isMobile],
+  );
+
+  const handleDragPointerMove = useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      if (!dragState) return;
+      const dy = event.clientY - dragState.startY;
+      // Determine which index we're over based on item rects
+      let newOverIndex = dragState.dragIndex;
+      const items = sortedProjects.map((p) => projectItemRefs.current.get(p.id));
+      for (let i = 0; i < items.length; i++) {
+        const el = items[i];
+        if (!el) continue;
+        const rect = el.getBoundingClientRect();
+        const midY = rect.top + rect.height / 2;
+        if (event.clientY < midY) {
+          newOverIndex = i;
+          break;
+        }
+        newOverIndex = i;
+      }
+      setDragState((prev) => prev ? { ...prev, currentY: event.clientY, overIndex: newOverIndex } : null);
+      if (Math.abs(dy) > 4) {
+        suppressProjectClickAfterDragRef.current = true;
+      }
+    },
+    [dragState, sortedProjects],
+  );
+
+  const handleDragPointerUp = useCallback(
+    (_event: React.PointerEvent<HTMLButtonElement>) => {
+      if (!dragState) return;
+      if (suppressProjectClickAfterDragRef.current) {
+        commitDragReorder(dragState.dragIndex, dragState.overIndex);
+      }
+      setDragState(null);
+    },
+    [commitDragReorder, dragState],
+  );
+
+  const handleDragPointerCancel = useCallback(() => {
+    setDragState(null);
+  }, []);
+
+  // Compute drag display order
+  const displayProjects = useMemo(() => {
+    if (!dragState || dragState.dragIndex === dragState.overIndex) return sortedProjects;
+    const ordered = [...sortedProjects];
+    const moved = ordered[dragState.dragIndex];
+    if (!moved) return sortedProjects;
+    ordered.splice(dragState.dragIndex, 1);
+    ordered.splice(dragState.overIndex, 0, moved);
+    return ordered;
+  }, [dragState, sortedProjects]);
+
   const wordmark = (
     <div className="flex items-center gap-3 md:gap-2">
       <SidebarTrigger className="shrink-0 size-9 md:size-7 md:hidden" />
@@ -1226,12 +1387,39 @@ export default function Sidebar() {
               </button>
             )}
           </div>
-          {/* Source filter hidden — always show all threads */}
         </div>
 
-        <SidebarGroup className="px-3 md:px-2 py-2">
+        <SidebarGroup className="relative px-3 md:px-2 py-0">
+          <SidebarGroupLabel className="h-8 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground-secondary">
+            Projects
+          </SidebarGroupLabel>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <SidebarGroupAction
+                  render={
+                    <button
+                      type="button"
+                      aria-label="Add project"
+                    />
+                  }
+                  className="top-1.5 right-2 size-6 rounded-md text-muted-foreground/70 hover:bg-accent hover:text-foreground"
+                  onClick={() => {
+                    if (isElectron) {
+                      void handlePickFolder();
+                    } else {
+                      setShowFolderPicker(true);
+                    }
+                  }}
+                >
+                  <PlusIcon className="size-3.5" />
+                </SidebarGroupAction>
+              }
+            />
+            <TooltipPopup side="top">Add project</TooltipPopup>
+          </Tooltip>
           <SidebarMenu>
-            {sortedProjects.map((project) => {
+            {displayProjects.map((project, projectIndex) => {
               const searchFilteredThreads = getProjectThreadsForSearch(
                 threads,
                 project.id,
@@ -1247,6 +1435,7 @@ export default function Sidebar() {
                   ? projectThreads.slice(0, THREAD_PREVIEW_LIMIT)
                   : projectThreads;
                 const orderedProjectThreadIds = projectThreads.map((t) => t.id);
+              const isDragging = dragState !== null && dragState.dragIndex === sortedProjects.indexOf(project);
 
               return (
                 <Collapsible
@@ -1258,8 +1447,30 @@ export default function Sidebar() {
                     toggleProject(project.id);
                   }}
                 >
-                  <SidebarMenuItem>
+                  <SidebarMenuItem
+                    ref={(el: HTMLLIElement | null) => {
+                      if (el) {
+                        projectItemRefs.current.set(project.id, el);
+                      } else {
+                        projectItemRefs.current.delete(project.id);
+                      }
+                    }}
+                    className={isDragging ? "opacity-50" : ""}
+                  >
                     <div className="group/project-header relative">
+                      {!isMobile && sortedProjects.length > 1 && (
+                        <button
+                          type="button"
+                          aria-label={`Drag to reorder ${project.name}`}
+                          className="absolute left-0 top-1/2 z-10 -translate-y-1/2 -translate-x-1 flex size-5 items-center justify-center rounded-sm text-muted-foreground-faint opacity-0 transition-opacity group-hover/project-header:opacity-100 cursor-grab active:cursor-grabbing"
+                          onPointerDown={(e) => handleDragPointerDown(e, projectIndex)}
+                          onPointerMove={handleDragPointerMove}
+                          onPointerUp={handleDragPointerUp}
+                          onPointerCancel={handleDragPointerCancel}
+                        >
+                          <GripVerticalIcon className="size-3" />
+                        </button>
+                      )}
                       <CollapsibleTrigger
                         render={
                           <SidebarMenuButton
@@ -1540,9 +1751,9 @@ export default function Sidebar() {
       </SidebarContent>
 
       <SidebarSeparator />
-      <SidebarFooter className="gap-0 p-4 md:p-3">
+      <SidebarFooter className="gap-0 p-2 md:p-2">
         {showManualPathInput && !isElectron ? (
-          <>
+          <div className="px-2 pb-2">
             <input
               className="mb-2 w-full rounded-md border border-border bg-secondary px-3 md:px-2 py-3 md:py-1.5 font-mono text-sm md:text-xs text-foreground placeholder:text-muted-foreground-secondary focus:border-ring focus:outline-none"
               placeholder="/path/to/project"
@@ -1594,34 +1805,13 @@ export default function Sidebar() {
                 Cancel
               </button>
             </div>
-          </>
-        ) : (
-          <>
-            <button
-              type="button"
-              className="flex w-full cursor-pointer items-center justify-center gap-1 rounded-md border border-dashed border-border h-12 md:h-auto md:py-2 text-sm md:text-xs text-muted-foreground/70 transition-colors duration-150 hover:border-ring hover:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60"
-              onClick={() => {
-                if (isElectron) {
-                  void handlePickFolder();
-                } else {
-                  setShowFolderPicker(true);
-                }
-              }}
-              disabled={!threadsHydrated || isPickingFolder}
-            >
-              {isPickingFolder ? "Picking folder..." : "+ Add project"}
-            </button>
-            {!isElectron && (
-              <button
-                type="button"
-                className="mt-1 w-full text-center text-[10px] text-muted-foreground/50 transition-colors hover:text-muted-foreground"
-                onClick={() => setShowManualPathInput(true)}
-              >
-                or enter path manually
-              </button>
-            )}
-          </>
-        )}
+          </div>
+        ) : null}
+        <SidebarSettingsRow
+          isOnSettings={isOnSettings}
+          showManualPathFallback={!isElectron && !showManualPathInput}
+          onShowManualPath={() => setShowManualPathInput(true)}
+        />
       </SidebarFooter>
       <ImportWizard
         isOpen={importWizardState.isOpen}
