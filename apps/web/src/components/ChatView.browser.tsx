@@ -753,6 +753,54 @@ describe("ChatView timeline estimator parity (full app)", () => {
     },
   );
 
+  it("does not overlap adjacent virtual rows after scrolling to the top", async () => {
+    const targetMessageId = "msg-user-3" as MessageId;
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId,
+        targetText: "overlap regression target",
+      }),
+    });
+
+    try {
+      const scrollContainer = await waitForElement(
+        () => document.querySelector<HTMLDivElement>("div.overflow-y-auto.overscroll-y-contain"),
+        "Unable to find ChatView message scroll container.",
+      );
+
+      // Scroll to top and wait for measurements to settle.
+      scrollContainer.scrollTop = 0;
+      scrollContainer.dispatchEvent(new Event("scroll"));
+      await waitForLayout();
+      // Extra settle time for the scroll-idle remeasure (200ms debounce).
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 350);
+      });
+      await waitForLayout();
+
+      // Collect all rendered virtual rows and assert none overlap.
+      const virtualRows = Array.from(
+        scrollContainer.querySelectorAll<HTMLElement>("[data-index]"),
+      ).toSorted((a, b) => Number(a.dataset.index) - Number(b.dataset.index));
+
+      expect(virtualRows.length).toBeGreaterThanOrEqual(2);
+
+      for (let i = 1; i < virtualRows.length; i++) {
+        const prevRect = virtualRows[i - 1]!.getBoundingClientRect();
+        const currentRect = virtualRows[i]!.getBoundingClientRect();
+        const gap = currentRect.top - prevRect.bottom;
+        // Allow a tiny tolerance (1px) for sub-pixel rounding but no actual overlap.
+        expect(
+          gap,
+          `Row index ${virtualRows[i]!.dataset.index} overlaps previous row by ${-gap}px`,
+        ).toBeGreaterThanOrEqual(-1);
+      }
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
   it("opens the project cwd for draft threads without a worktree path", async () => {
     useComposerDraftStore.setState({
       draftThreadsByThreadId: {

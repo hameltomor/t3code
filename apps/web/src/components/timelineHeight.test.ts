@@ -28,7 +28,7 @@ describe("estimateTimelineMessageHeight", () => {
         text: "hello",
         attachments: [{ id: "1" }],
       }),
-    ).toBe(362);
+    ).toBe(366);
 
     expect(
       estimateTimelineMessageHeight({
@@ -36,7 +36,7 @@ describe("estimateTimelineMessageHeight", () => {
         text: "hello",
         attachments: [{ id: "1" }, { id: "2" }],
       }),
-    ).toBe(362);
+    ).toBe(366);
   });
 
   it("adds a second attachment row for three or four user attachments", () => {
@@ -46,7 +46,7 @@ describe("estimateTimelineMessageHeight", () => {
         text: "hello",
         attachments: [{ id: "1" }, { id: "2" }, { id: "3" }],
       }),
-    ).toBe(590);
+    ).toBe(594);
 
     expect(
       estimateTimelineMessageHeight({
@@ -54,16 +54,16 @@ describe("estimateTimelineMessageHeight", () => {
         text: "hello",
         attachments: [{ id: "1" }, { id: "2" }, { id: "3" }, { id: "4" }],
       }),
-    ).toBe(590);
+    ).toBe(594);
   });
 
   it("does not cap long user message estimates", () => {
     expect(
       estimateTimelineMessageHeight({
         role: "user",
-        text: "a".repeat(56 * 120),
+        text: "a".repeat(54 * 125),
       }),
-    ).toBe(2752);
+    ).toBe(3362);
   });
 
   it("counts explicit newlines for user message estimates", () => {
@@ -72,7 +72,7 @@ describe("estimateTimelineMessageHeight", () => {
         role: "user",
         text: "first\nsecond\nthird",
       }),
-    ).toBe(178);
+    ).toBe(190);
   });
 
   it("uses narrower width to increase user line wrapping", () => {
@@ -81,8 +81,8 @@ describe("estimateTimelineMessageHeight", () => {
       text: "a".repeat(52),
     };
 
-    expect(estimateTimelineMessageHeight(message, { timelineWidthPx: 320 })).toBe(156);
-    expect(estimateTimelineMessageHeight(message, { timelineWidthPx: 768 })).toBe(134);
+    expect(estimateTimelineMessageHeight(message, { timelineWidthPx: 320 })).toBe(190);
+    expect(estimateTimelineMessageHeight(message, { timelineWidthPx: 768 })).toBe(138);
   });
 
   it("does not clamp user wrapping too aggressively on very narrow layouts", () => {
@@ -91,8 +91,8 @@ describe("estimateTimelineMessageHeight", () => {
       text: "a".repeat(20),
     };
 
-    expect(estimateTimelineMessageHeight(message, { timelineWidthPx: 100 })).toBe(200);
-    expect(estimateTimelineMessageHeight(message, { timelineWidthPx: 320 })).toBe(134);
+    expect(estimateTimelineMessageHeight(message, { timelineWidthPx: 100 })).toBe(242);
+    expect(estimateTimelineMessageHeight(message, { timelineWidthPx: 320 })).toBe(138);
   });
 
   it("uses narrower width to increase assistant line wrapping", () => {

@@ -252,7 +252,7 @@ import {
 import { selectThreadTerminalState, useTerminalStateStore } from "../terminalStateStore";
 import { clamp } from "effect/Number";
 import { ComposerPromptEditor, type ComposerPromptEditorHandle } from "./ComposerPromptEditor";
-import { estimateTimelineMessageHeight } from "./timelineHeight";
+import { ROW_WRAPPER_PADDING_PX, estimateTimelineMessageHeight } from "./timelineHeight";
 
 function formatMessageMeta(createdAt: string, duration: string | null): string {
   if (!duration) return formatTimestamp(createdAt);
@@ -5501,8 +5501,7 @@ type TimelineRow =
 
 function estimateTimelineProposedPlanHeight(proposedPlan: TimelineProposedPlan): number {
   const estimatedLines = Math.max(1, Math.ceil(proposedPlan.planMarkdown.length / 72));
-  // +16 for pb-4 row wrapper padding
-  return 136 + Math.min(estimatedLines * 22, 880);
+  return 120 + ROW_WRAPPER_PADDING_PX + Math.min(estimatedLines * 22, 880);
 }
 
 const MessagesTimeline = memo(function MessagesTimeline({
@@ -5670,12 +5669,11 @@ const MessagesTimeline = memo(function MessagesTimeline({
     // Use stable row ids so virtual measurements do not leak across thread switches.
     getItemKey: (index: number) => rows[index]?.id ?? index,
     estimateSize: (index: number) => {
-      // All estimates include +16 for the pb-4 row wrapper padding.
       const row = rows[index];
-      if (!row) return 112;
-      if (row.kind === "work") return 128;
+      if (!row) return 96 + ROW_WRAPPER_PADDING_PX;
+      if (row.kind === "work") return 112 + ROW_WRAPPER_PADDING_PX;
       if (row.kind === "proposed-plan") return estimateTimelineProposedPlanHeight(row.proposedPlan);
-      if (row.kind === "working") return 56;
+      if (row.kind === "working") return 40 + ROW_WRAPPER_PADDING_PX;
       return estimateTimelineMessageHeight(row.message, { timelineWidthPx });
     },
     measureElement: measureVirtualElement,

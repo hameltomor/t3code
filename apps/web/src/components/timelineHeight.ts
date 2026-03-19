@@ -1,16 +1,34 @@
+/**
+ * Shared padding added by the `pb-4` wrapper in `renderRowContent` (ChatView).
+ * Every timeline row is wrapped in `<div className="pb-4">`, adding 16px of
+ * bottom-padding that must be included in height estimates.
+ */
+export const ROW_WRAPPER_PADDING_PX = 16;
+
 const ASSISTANT_CHARS_PER_LINE_FALLBACK = 72;
-const USER_CHARS_PER_LINE_FALLBACK = 56;
-const LINE_HEIGHT_PX = 22;
-// Base heights include the pb-4 (16px) row wrapper padding from renderRowContent.
-const ASSISTANT_BASE_HEIGHT_PX = 94;
-const USER_BASE_HEIGHT_PX = 112;
+const USER_CHARS_PER_LINE_FALLBACK = 54;
+
+// Assistant messages render as ChatMarkdown (proportional font, ~14px body text).
+const ASSISTANT_LINE_HEIGHT_PX = 22;
+// User messages render as monospace <pre> with `text-base leading-relaxed`
+// (16px × 1.625 = 26px). The `md:text-sm` class on the <pre> does NOT take
+// effect because the element is inside a width-constrained bubble; measured in
+// production at 26px across all viewport widths.
+const USER_LINE_HEIGHT_PX = 26;
+
+// Base heights include ROW_WRAPPER_PADDING_PX.
+const ASSISTANT_BASE_HEIGHT_PX = 78 + ROW_WRAPPER_PADDING_PX;
+const USER_BASE_HEIGHT_PX = 96 + ROW_WRAPPER_PADDING_PX;
+
 const ATTACHMENTS_PER_ROW = 2;
 // Attachment thumbnails render with `max-h-[220px]` plus ~8px row gap.
 const USER_ATTACHMENT_ROW_HEIGHT_PX = 228;
 const USER_BUBBLE_WIDTH_RATIO = 0.8;
-const USER_BUBBLE_HORIZONTAL_PADDING_PX = 32;
+// px-4 (16px each side = 32px) + border (1px each side = 2px).
+const USER_BUBBLE_HORIZONTAL_PADDING_PX = 34;
 const ASSISTANT_MESSAGE_HORIZONTAL_PADDING_PX = 8;
-const USER_MONO_AVG_CHAR_WIDTH_PX = 8.4;
+// Monospace character width at 16px font-size (measured via canvas in production).
+const USER_MONO_AVG_CHAR_WIDTH_PX = 9.6;
 const ASSISTANT_AVG_CHAR_WIDTH_PX = 7.2;
 const MIN_USER_CHARS_PER_LINE = 4;
 const MIN_ASSISTANT_CHARS_PER_LINE = 20;
@@ -71,7 +89,7 @@ export function estimateTimelineMessageHeight(
   if (message.role === "assistant") {
     const charsPerLine = estimateCharsPerLineForAssistant(layout.timelineWidthPx);
     const estimatedLines = estimateWrappedLineCount(message.text, charsPerLine);
-    return ASSISTANT_BASE_HEIGHT_PX + estimatedLines * LINE_HEIGHT_PX;
+    return ASSISTANT_BASE_HEIGHT_PX + estimatedLines * ASSISTANT_LINE_HEIGHT_PX;
   }
 
   if (message.role === "user") {
@@ -80,12 +98,12 @@ export function estimateTimelineMessageHeight(
     const attachmentCount = message.attachments?.length ?? 0;
     const attachmentRows = Math.ceil(attachmentCount / ATTACHMENTS_PER_ROW);
     const attachmentHeight = attachmentRows * USER_ATTACHMENT_ROW_HEIGHT_PX;
-    return USER_BASE_HEIGHT_PX + estimatedLines * LINE_HEIGHT_PX + attachmentHeight;
+    return USER_BASE_HEIGHT_PX + estimatedLines * USER_LINE_HEIGHT_PX + attachmentHeight;
   }
 
   // `system` messages are not rendered in the chat timeline, but keep a stable
   // explicit branch in case they are present in timeline data.
   const charsPerLine = estimateCharsPerLineForAssistant(layout.timelineWidthPx);
   const estimatedLines = estimateWrappedLineCount(message.text, charsPerLine);
-  return ASSISTANT_BASE_HEIGHT_PX + estimatedLines * LINE_HEIGHT_PX;
+  return ASSISTANT_BASE_HEIGHT_PX + estimatedLines * ASSISTANT_LINE_HEIGHT_PX;
 }
