@@ -10,6 +10,7 @@ import {
   getCustomModelsForProvider,
   patchCustomModelsForProvider,
   useAppSettings,
+  getAppModelOptions,
 } from "../appSettings";
 import { isElectron } from "../env";
 import { useTheme } from "../hooks/useTheme";
@@ -20,6 +21,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Switch } from "../components/ui/switch";
 import { cn } from "~/lib/utils";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "~/components/ui/select";
 import {
   getDeniedPermissionInstructions,
   getNotificationPermission,
@@ -618,6 +620,60 @@ function SettingsRouteView() {
                     size="xs"
                     variant="outline"
                     onClick={() => updateSettings({ defaultThreadEnvMode: defaults.defaultThreadEnvMode })}
+                  >
+                    Restore default
+                  </Button>
+                </div>
+              ) : null}
+            </section>
+
+            <section className="rounded-2xl border border-border bg-card p-5">
+              <div className="mb-4">
+                <h2 className="text-sm font-medium text-foreground">Git text generation</h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Codex model used to auto-generate commit messages, PR/MR content, and branch names.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <label className="block space-y-1">
+                  <span className="text-xs font-medium text-foreground">Model</span>
+                  <Select
+                    value={settings.gitTextGenerationModel || ""}
+                    onValueChange={(value) =>
+                      updateSettings({ gitTextGenerationModel: value ?? "" })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Server default (gpt-5.3-codex)" />
+                    </SelectTrigger>
+                    <SelectPopup>
+                      <SelectItem value="">
+                        Server default (gpt-5.3-codex)
+                      </SelectItem>
+                      {getAppModelOptions("codex", settings.customCodexModels).map((option) => (
+                        <SelectItem key={option.slug} value={option.slug}>
+                          {option.name}{option.isCustom ? " (custom)" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectPopup>
+                  </Select>
+                  <span className="text-xs text-muted-foreground">
+                    This setting uses the Codex CLI. Only Codex-compatible models are shown.
+                  </span>
+                </label>
+              </div>
+
+              {settings.gitTextGenerationModel !== defaults.gitTextGenerationModel ? (
+                <div className="mt-3 flex justify-end">
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={() =>
+                      updateSettings({
+                        gitTextGenerationModel: defaults.gitTextGenerationModel,
+                      })
+                    }
                   >
                     Restore default
                   </Button>

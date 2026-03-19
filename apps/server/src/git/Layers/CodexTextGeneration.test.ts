@@ -27,12 +27,19 @@ function makeFakeCodexBinary(dir: string) {
       [
         "#!/bin/sh",
         'output_path=""',
+        'seen_model=""',
         "while [ $# -gt 0 ]; do",
         '  if [ "$1" = "--image" ]; then',
         "    shift",
         '    if [ -n "$1" ]; then',
         '      seen_image="1"',
         "    fi",
+        "    continue",
+        "  fi",
+        '  if [ "$1" = "--model" ]; then',
+        "    shift",
+        '    seen_model="$1"',
+        "    shift",
         "    continue",
         "  fi",
         '  if [ "$1" = "--output-last-message" ]; then',
@@ -42,6 +49,10 @@ function makeFakeCodexBinary(dir: string) {
         "  shift",
         "done",
         'stdin_content="$(cat)"',
+        'if [ -n "$T3_FAKE_CODEX_MODEL_MUST_BE" ] && [ "$seen_model" != "$T3_FAKE_CODEX_MODEL_MUST_BE" ]; then',
+        '  printf "%s\\n" "expected model $T3_FAKE_CODEX_MODEL_MUST_BE but got $seen_model" >&2',
+        "  exit 5",
+        "fi",
         'if [ "$T3_FAKE_CODEX_REQUIRE_IMAGE" = "1" ] && [ "$seen_image" != "1" ]; then',
         '  printf "%s\\n" "missing --image input" >&2',
         "  exit 2",
@@ -81,6 +92,7 @@ function withFakeCodexEnv<A, E, R>(
     requireImage?: boolean;
     stdinMustContain?: string;
     stdinMustNotContain?: string;
+    modelMustBe?: string;
   },
   effect: Effect.Effect<A, E, R>,
 ) {
@@ -96,6 +108,7 @@ function withFakeCodexEnv<A, E, R>(
       const previousRequireImage = process.env.T3_FAKE_CODEX_REQUIRE_IMAGE;
       const previousStdinMustContain = process.env.T3_FAKE_CODEX_STDIN_MUST_CONTAIN;
       const previousStdinMustNotContain = process.env.T3_FAKE_CODEX_STDIN_MUST_NOT_CONTAIN;
+      const previousModelMustBe = process.env.T3_FAKE_CODEX_MODEL_MUST_BE;
 
       yield* Effect.sync(() => {
         process.env.PATH = `${binDir}:${previousPath ?? ""}`;
@@ -130,6 +143,12 @@ function withFakeCodexEnv<A, E, R>(
         } else {
           delete process.env.T3_FAKE_CODEX_STDIN_MUST_NOT_CONTAIN;
         }
+
+        if (input.modelMustBe !== undefined) {
+          process.env.T3_FAKE_CODEX_MODEL_MUST_BE = input.modelMustBe;
+        } else {
+          delete process.env.T3_FAKE_CODEX_MODEL_MUST_BE;
+        }
       });
 
       return {
@@ -140,6 +159,7 @@ function withFakeCodexEnv<A, E, R>(
         previousRequireImage,
         previousStdinMustContain,
         previousStdinMustNotContain,
+        previousModelMustBe,
       };
     }),
     () => effect,
@@ -182,6 +202,12 @@ function withFakeCodexEnv<A, E, R>(
         } else {
           process.env.T3_FAKE_CODEX_STDIN_MUST_NOT_CONTAIN = previous.previousStdinMustNotContain;
         }
+
+        if (previous.previousModelMustBe === undefined) {
+          delete process.env.T3_FAKE_CODEX_MODEL_MUST_BE;
+        } else {
+          process.env.T3_FAKE_CODEX_MODEL_MUST_BE = previous.previousModelMustBe;
+        }
       }),
   );
 }
@@ -213,6 +239,55 @@ it.layer(CodexTextGenerationTestLayer)("CodexTextGenerationLive", (it) => {
         expect(generated.subject.endsWith(".")).toBe(false);
         expect(generated.body).toBe("- added migration\n- updated tests");
         expect(generated.branch).toBeUndefined();
+      }),
+    ),
+  );
+
+  it.effect("uses model override when provided", () =>
+    withFakeCodexEnv(
+      {
+        output: JSON.stringify({
+          subject: "Update README",
+          body: "",
+        }),
+        modelMustBe: "gpt-5.4",
+      },
+      Effect.gen(function* () {
+        const textGeneration = yield* TextGeneration;
+
+        const generated = yield* textGeneration.generateCommitMessage({
+          cwd: process.cwd(),
+          branch: "main",
+          stagedSummary: "M README.md",
+          stagedPatch: "diff --git a/README.md b/README.md",
+          model: "gpt-5.4",
+        });
+
+        expect(generated.subject).toBe("Update README");
+      }),
+    ),
+  );
+
+  it.effect("uses default model when model override is not provided", () =>
+    withFakeCodexEnv(
+      {
+        output: JSON.stringify({
+          subject: "Update README",
+          body: "",
+        }),
+        modelMustBe: "gpt-5.3-codex",
+      },
+      Effect.gen(function* () {
+        const textGeneration = yield* TextGeneration;
+
+        const generated = yield* textGeneration.generateCommitMessage({
+          cwd: process.cwd(),
+          branch: "main",
+          stagedSummary: "M README.md",
+          stagedPatch: "diff --git a/README.md b/README.md",
+        });
+
+        expect(generated.subject).toBe("Update README");
       }),
     ),
   );

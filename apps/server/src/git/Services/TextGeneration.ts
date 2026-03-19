@@ -19,6 +19,8 @@ export interface CommitMessageGenerationInput {
   stagedPatch: string;
   /** When true, the model also returns a semantic branch name for the change. */
   includeBranch?: boolean;
+  /** Override the Codex model slug for this generation request. */
+  model?: string | undefined;
 }
 
 export interface CommitMessageGenerationResult {
@@ -35,6 +37,8 @@ export interface PrContentGenerationInput {
   commitSummary: string;
   diffSummary: string;
   diffPatch: string;
+  /** Override the Codex model slug for this generation request. */
+  model?: string | undefined;
 }
 
 export interface PrContentGenerationResult {
@@ -46,6 +50,8 @@ export interface BranchNameGenerationInput {
   cwd: string;
   message: string;
   attachments?: ReadonlyArray<ChatAttachment> | undefined;
+  /** Override the Codex model slug for this generation request. */
+  model?: string | undefined;
 }
 
 export interface BranchNameGenerationResult {

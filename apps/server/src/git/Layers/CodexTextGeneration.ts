@@ -17,7 +17,12 @@ import {
   TextGeneration,
 } from "../Services/TextGeneration.ts";
 
-const CODEX_MODEL = "gpt-5.3-codex";
+/**
+ * Default Codex model for git text generation (commit messages, PR content,
+ * branch names). Kept intentionally cheaper/faster than the main chat model.
+ * Users can override this via the "Git text generation model" setting.
+ */
+const DEFAULT_CODEX_TEXT_GENERATION_MODEL = "gpt-5.3-codex";
 const CODEX_REASONING_EFFORT = "low";
 const CODEX_TIMEOUT_MS = 180_000;
 
@@ -185,6 +190,7 @@ const makeCodexTextGeneration = Effect.gen(function* () {
     cwd,
     prompt,
     outputSchemaJson,
+    model,
     imagePaths = [],
     cleanupPaths = [],
   }: {
@@ -192,10 +198,13 @@ const makeCodexTextGeneration = Effect.gen(function* () {
     cwd: string;
     prompt: string;
     outputSchemaJson: S;
+    /** Codex model slug override. Falls back to DEFAULT_CODEX_TEXT_GENERATION_MODEL. */
+    model?: string | undefined;
     imagePaths?: ReadonlyArray<string>;
     cleanupPaths?: ReadonlyArray<string>;
   }): Effect.Effect<S["Type"], TextGenerationError, S["DecodingServices"]> =>
     Effect.gen(function* () {
+      const resolvedModel = model?.trim() || DEFAULT_CODEX_TEXT_GENERATION_MODEL;
       const schemaPath = yield* writeTempFile(
         operation,
         "codex-schema",
@@ -212,7 +221,7 @@ const makeCodexTextGeneration = Effect.gen(function* () {
             "-s",
             "read-only",
             "--model",
-            CODEX_MODEL,
+            resolvedModel,
             "--config",
             `model_reasoning_effort="${CODEX_REASONING_EFFORT}"`,
             "--output-schema",
@@ -353,6 +362,7 @@ const makeCodexTextGeneration = Effect.gen(function* () {
       cwd: input.cwd,
       prompt,
       outputSchemaJson,
+      model: input.model,
     }).pipe(
       Effect.map(
         (generated) =>
@@ -398,6 +408,7 @@ const makeCodexTextGeneration = Effect.gen(function* () {
         title: Schema.String,
         body: Schema.String,
       }),
+      model: input.model,
     }).pipe(
       Effect.map(
         (generated) =>
@@ -448,6 +459,7 @@ const makeCodexTextGeneration = Effect.gen(function* () {
         outputSchemaJson: Schema.Struct({
           branch: Schema.String,
         }),
+        model: input.model,
         imagePaths,
       });
 

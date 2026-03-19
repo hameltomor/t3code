@@ -51,6 +51,13 @@ const AppSettingsSchema = Schema.Struct({
   defaultThreadEnvMode: ThreadEnvModeSchema.pipe(
     Schema.withConstructorDefault((): Option.Option<ThreadEnvMode> => Option.some("local")),
   ),
+  /**
+   * Codex model slug used for AI-generated git text (commit messages,
+   * PR/MR content, branch names). Empty string means "use server default".
+   */
+  gitTextGenerationModel: Schema.String.check(Schema.isMaxLength(256)).pipe(
+    Schema.withConstructorDefault(() => Option.some("")),
+  ),
 });
 export type AppSettings = typeof AppSettingsSchema.Type;
 export type ProviderCustomModelsSettings = Pick<

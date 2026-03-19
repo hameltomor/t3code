@@ -56,6 +56,8 @@ export const GitRunStackedActionInput = Schema.Struct({
   filePaths: Schema.optional(
     Schema.Array(TrimmedNonEmptyStringSchema).check(Schema.isMinLength(1)),
   ),
+  /** Codex model slug to use for AI-generated git text (commit messages, PR content, branch names). */
+  textGenerationModel: Schema.optional(TrimmedNonEmptyStringSchema.check(Schema.isMaxLength(256))),
 });
 export type GitRunStackedActionInput = typeof GitRunStackedActionInput.Type;
 

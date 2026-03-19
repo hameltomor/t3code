@@ -43,6 +43,7 @@ import {
   gitStatusQueryOptions,
   invalidateGitQueries,
 } from "~/lib/gitReactQuery";
+import { getAppSettingsSnapshot } from "~/appSettings";
 import { preferredTerminalEditor, resolvePathLinkTarget } from "~/terminal-links";
 import { readNativeApi } from "~/nativeApi";
 
@@ -348,11 +349,13 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
         clearInterval(stageInterval);
       };
 
+      const { gitTextGenerationModel } = getAppSettingsSnapshot();
       const promise = runImmediateGitActionMutation.mutateAsync({
         action,
         ...(commitMessage ? { commitMessage } : {}),
         ...(featureBranch ? { featureBranch } : {}),
         ...(filePaths ? { filePaths } : {}),
+        ...(gitTextGenerationModel ? { textGenerationModel: gitTextGenerationModel } : {}),
       });
 
       try {
