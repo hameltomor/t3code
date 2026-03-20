@@ -21,6 +21,7 @@ import {
 } from "@google/genai";
 import {
   DEFAULT_MODEL_BY_PROVIDER,
+  type GeminiTransport,
   type ProviderApprovalDecision,
   type ProviderRuntimeEvent,
   type ProviderSendTurnInput,
@@ -47,6 +48,8 @@ import {
   type MaterializedFileAttachment,
   type MaterializedImageAttachment,
 } from "../attachmentMaterializer.ts";
+import { resolveGeminiAuth, type GeminiAuthResult } from "../gemini/GeminiAuthResolver.ts";
+import { buildCliArgs, mapCliEventToRuntimeEvents, parseCliEvent } from "../gemini/GeminiCliRuntime.ts";
 
 import { GEMINI_FUNCTION_DECLARATIONS, toolRequiresApproval } from "../gemini/GeminiToolDefinitions.ts";
 import {
@@ -113,7 +116,9 @@ interface PendingUserInput {
   readonly deferred: Deferred.Deferred<ProviderUserInputAnswers>;
 }
 
-interface GeminiSessionContext {
+/** SDK transport session context. */
+interface GeminiSdkSessionContext {
+  readonly transport: "sdk";
   session: MutableSession;
   readonly ai: GoogleGenAI;
   readonly model: string;
@@ -127,6 +132,22 @@ interface GeminiSessionContext {
   pendingApproval: PendingApproval | undefined;
   pendingUserInput: PendingUserInput | undefined;
 }
+
+/** CLI transport session context. */
+interface GeminiCliSessionContext {
+  readonly transport: "cli";
+  session: MutableSession;
+  readonly model: string;
+  readonly startedAt: string;
+  /** Accumulated assistant text per turn for thread readback. */
+  readonly cliTurns: Array<{ userMessage: string; assistantText: string }>;
+  /** Active CLI child process — killed on interrupt/stop. */
+  cliProcess: import("node:child_process").ChildProcess | undefined;
+  turnState: GeminiTurnState | undefined;
+  stopped: boolean;
+}
+
+type GeminiSessionContext = GeminiSdkSessionContext | GeminiCliSessionContext;
 
 export interface GeminiAdapterLiveOptions {
   readonly apiKey?: string;
@@ -147,16 +168,20 @@ function isAbortError(cause: unknown): boolean {
   return false;
 }
 
-function resolveApiKey(
-  layerOptions?: GeminiAdapterLiveOptions,
-  sessionApiKey?: string,
-): string | undefined {
-  return (
-    sessionApiKey ?? layerOptions?.apiKey ?? process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY
-  );
+/**
+ * Build a GoogleGenAI instance from the resolved auth result.
+ * Supports both API key and Google Auth (ADC) modes.
+ */
+function buildGoogleGenAI(auth: GeminiAuthResult & { mode: "apiKey" | "googleAuth" }): GoogleGenAI {
+  switch (auth.mode) {
+    case "apiKey":
+      return new GoogleGenAI({ apiKey: auth.apiKey });
+    case "googleAuth":
+      return new GoogleGenAI({ googleAuthOptions: auth.googleAuthOptions });
+  }
 }
 
-function buildResumeCursor(ctx: GeminiSessionContext) {
+function buildResumeCursor(ctx: GeminiSdkSessionContext) {
   return {
     threadId: ctx.session.threadId!,
     model: ctx.model,
@@ -301,7 +326,9 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
         // Reset session state
         ctx.session.status = "ready";
         ctx.session.activeTurnId = undefined;
-        ctx.session.resumeCursor = buildResumeCursor(ctx);
+        if (ctx.transport === "sdk") {
+          ctx.session.resumeCursor = buildResumeCursor(ctx);
+        }
         ctx.session.updatedAt = yield* nowIso;
       });
 
@@ -313,20 +340,28 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
         if (ctx.stopped) return;
         ctx.stopped = true;
 
-        // Abort any in-flight requests
-        for (const controller of ctx.abortControllers) {
-          controller.abort();
-        }
-        ctx.abortControllers.clear();
+        if (ctx.transport === "cli") {
+          // Kill CLI process if running
+          if (ctx.cliProcess) {
+            ctx.cliProcess.kill("SIGTERM");
+            ctx.cliProcess = undefined;
+          }
+        } else {
+          // Abort any in-flight requests
+          for (const controller of ctx.abortControllers) {
+            controller.abort();
+          }
+          ctx.abortControllers.clear();
 
-        // Reject pending approval/user-input
-        if (ctx.pendingApproval) {
-          yield* Deferred.succeed(ctx.pendingApproval.deferred, "cancel" as ProviderApprovalDecision);
-          ctx.pendingApproval = undefined;
-        }
-        if (ctx.pendingUserInput) {
-          yield* Deferred.succeed(ctx.pendingUserInput.deferred, {} as ProviderUserInputAnswers);
-          ctx.pendingUserInput = undefined;
+          // Reject pending approval/user-input
+          if (ctx.pendingApproval) {
+            yield* Deferred.succeed(ctx.pendingApproval.deferred, "cancel" as ProviderApprovalDecision);
+            ctx.pendingApproval = undefined;
+          }
+          if (ctx.pendingUserInput) {
+            yield* Deferred.succeed(ctx.pendingUserInput.deferred, {} as ProviderUserInputAnswers);
+            ctx.pendingUserInput = undefined;
+          }
         }
 
         // Complete active turn if any
@@ -356,7 +391,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
      * function call objects in a single response, and streaming for final text only.
      */
     const callGemini = (
-      ctx: GeminiSessionContext,
+      ctx: GeminiSdkSessionContext,
       contents: Content[],
       abortSignal: AbortSignal,
     ): Effect.Effect<GenerateContentResponse, ProviderAdapterRequestError> =>
@@ -391,7 +426,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
      * Execute one tool call: gate behind approval if needed, then run.
      */
     const executeToolCall = (
-      ctx: GeminiSessionContext,
+      ctx: GeminiSdkSessionContext,
       call: TranscriptFunctionCall,
       turnId: TurnId,
     ): Effect.Effect<TranscriptFunctionResult, ProviderAdapterRequestError> =>
@@ -534,7 +569,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
      * 5. When Gemini returns text without function calls, stream the final response
      */
     const runAgentLoop = (
-      ctx: GeminiSessionContext,
+      ctx: GeminiSdkSessionContext,
       userMessage: string,
       providerParts: Part[],
     ): Effect.Effect<void, ProviderAdapterRequestError> =>
@@ -682,64 +717,101 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
           });
         }
 
-        const sessionApiKey = input.providerOptions?.gemini?.apiKey;
-        const apiKey = resolveApiKey(options, sessionApiKey);
-        if (!apiKey) {
-          return yield* new ProviderAdapterProcessError({
-            provider: PROVIDER,
-            threadId,
-            detail:
-              "No Gemini API key found. Set GEMINI_API_KEY or GOOGLE_API_KEY environment variable.",
-          });
-        }
-
-        const resumeState = readResumeState(input.resumeCursor);
-        const model =
-          input.model ?? resumeState?.model ?? DEFAULT_MODEL_BY_PROVIDER.gemini;
-
-        const projectContext = input.cwd ? gatherProjectContext(input.cwd) : undefined;
-        const systemInstruction = buildSystemInstruction(input.cwd, projectContext);
-        const config: GenerateContentConfig = systemInstruction
-          ? { systemInstruction }
-          : {};
-
-        const ai = new GoogleGenAI({ apiKey });
-
-        const restoredTurns = resumeState?.turns ?? [];
+        const transport: GeminiTransport = input.providerOptions?.gemini?.transport ?? "sdk";
         const now = yield* nowIso;
 
-        const session: MutableSession = {
-          provider: PROVIDER,
-          status: "ready",
-          runtimeMode: input.runtimeMode,
-          cwd: input.cwd,
-          model,
-          threadId,
-          resumeCursor: {
-            threadId,
-            model,
-            turnCount: restoredTurns.length,
-            turns: restoredTurns.map(serializeTurn),
-          },
-          activeTurnId: undefined,
-          createdAt: now,
-          updatedAt: now,
-        };
+        let ctx: GeminiSessionContext;
 
-        const ctx: GeminiSessionContext = {
-          session,
-          ai,
-          model,
-          config,
-          projectContext,
-          startedAt: now,
-          turns: [...restoredTurns],
-          abortControllers: new Set(),
-          turnState: undefined,
-          stopped: false,
-          pendingApproval: undefined,
-          pendingUserInput: undefined,
-        };
+        if (transport === "cli") {
+          // ── CLI transport: Gemini CLI owns auth/subscription ──────
+          const model = input.model ?? DEFAULT_MODEL_BY_PROVIDER.gemini;
+          const session: MutableSession = {
+            provider: PROVIDER,
+            status: "ready",
+            runtimeMode: input.runtimeMode,
+            cwd: input.cwd,
+            model,
+            threadId,
+            resumeCursor: { threadId, model, turnCount: 0, turns: [] },
+            activeTurnId: undefined,
+            createdAt: now,
+            updatedAt: now,
+          };
+
+          ctx = {
+            transport: "cli",
+            session,
+            model,
+            startedAt: now,
+            cliTurns: [],
+            cliProcess: undefined,
+            turnState: undefined,
+            stopped: false,
+          };
+        } else {
+          // ── SDK transport: resolve auth ourselves ─────────────────
+          const sessionApiKey = input.providerOptions?.gemini?.apiKey;
+          const auth = resolveGeminiAuth({
+            sessionApiKey,
+            layerApiKey: options?.apiKey,
+          });
+          if (auth.mode === "none") {
+            return yield* new ProviderAdapterProcessError({
+              provider: PROVIDER,
+              threadId,
+              detail: auth.reason,
+            });
+          }
+
+          const resumeState = readResumeState(input.resumeCursor);
+          const model =
+            input.model ?? resumeState?.model ?? DEFAULT_MODEL_BY_PROVIDER.gemini;
+
+          const projectContext = input.cwd ? gatherProjectContext(input.cwd) : undefined;
+          const systemInstruction = buildSystemInstruction(input.cwd, projectContext);
+          const config: GenerateContentConfig = systemInstruction
+            ? { systemInstruction }
+            : {};
+
+          const ai = buildGoogleGenAI(auth);
+
+          const restoredTurns = resumeState?.turns ?? [];
+
+          const session: MutableSession = {
+            provider: PROVIDER,
+            status: "ready",
+            runtimeMode: input.runtimeMode,
+            cwd: input.cwd,
+            model,
+            threadId,
+            resumeCursor: {
+              threadId,
+              model,
+              turnCount: restoredTurns.length,
+              turns: restoredTurns.map(serializeTurn),
+            },
+            activeTurnId: undefined,
+            createdAt: now,
+            updatedAt: now,
+          };
+
+          ctx = {
+            transport: "sdk",
+            session,
+            ai,
+            model,
+            config,
+            projectContext,
+            startedAt: now,
+            turns: [...restoredTurns],
+            abortControllers: new Set(),
+            turnState: undefined,
+            stopped: false,
+            pendingApproval: undefined,
+            pendingUserInput: undefined,
+          };
+        }
+
         sessions.set(threadId, ctx);
 
         {
@@ -761,7 +833,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
             provider: PROVIDER,
             threadId,
             createdAt: stamp.createdAt,
-            payload: { config: { model } },
+            payload: { config: { model: ctx.model } },
           });
         }
         {
@@ -776,7 +848,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
           });
         }
 
-        return toProviderSession(session);
+        return toProviderSession(ctx.session);
       });
 
     const sendTurn: GeminiAdapterShape["sendTurn"] = (input) =>
@@ -833,82 +905,232 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
           });
         }
 
-        // Materialize image attachments when stateDir is available
-        const materializedImages =
-          options?.stateDir && input.attachments && input.attachments.length > 0
-            ? materializeImageAttachments({
-                stateDir: options.stateDir,
-                attachments: input.attachments,
-              })
-            : undefined;
-
-        const materializedFiles =
-          options?.stateDir && input.attachments && input.attachments.length > 0
-            ? yield* Effect.tryPromise({
-                try: () =>
-                  materializeFileAttachments({
-                    stateDir: options.stateDir!,
-                    attachments: input.attachments!,
-                  }),
-                catch: () =>
-                  new ProviderAdapterProcessError({
-                    provider: PROVIDER,
-                    threadId: input.threadId,
-                    detail: "Failed to materialize file attachments.",
-                  }),
-              })
-            : undefined;
-
-        const userMessage = buildUserMessage(input, materializedImages, materializedFiles);
-        const providerParts = buildProviderMessage(userMessage, {
-          cwd: ctx.session.cwd,
-          projectContext: ctx.projectContext,
-          ...(materializedImages ? { materializedImages } : {}),
-          ...(materializedFiles ? { materializedFiles } : {}),
-        });
         const threadId = input.threadId;
 
-        // Run agent loop in background (non-blocking)
-        Effect.runFork(
-          runAgentLoop(ctx, userMessage, providerParts).pipe(
-            Effect.catchCause((cause) =>
-              Effect.gen(function* () {
-                if (Cause.hasInterruptsOnly(cause) || ctx.stopped) return;
+        if (ctx.transport === "cli") {
+          // ── CLI transport: spawn gemini process ──────────────────
+          const userMessage = input.input ?? "";
+          const cliCtx = ctx;
 
-                const squashed = Cause.squash(cause);
+          const cliArgs = buildCliArgs({
+            prompt: userMessage,
+            cwd: ctx.session.cwd,
+            model: ctx.model,
+            runtimeMode: ctx.session.runtimeMode,
+          });
 
-                if (isAbortError(squashed)) {
-                  yield* completeTurn(ctx, "interrupted");
-                  return;
-                }
-
-                const msg = toMessage(squashed, "Gemini agent loop failed");
-
-                if (
-                  squashed &&
-                  typeof squashed === "object" &&
-                  "detail" in squashed &&
-                  (squashed as { detail: string }).detail === "aborted"
-                ) {
-                  yield* completeTurn(ctx, "interrupted");
-                  return;
-                }
-
-                const stamp = yield* emitter.makeEventStamp();
-                yield* emitter.emit({
-                  type: "runtime.error",
-                  eventId: stamp.eventId,
+          const runCliTurn = Effect.gen(function* () {
+            const childProcess = yield* Effect.tryPromise({
+              try: () => import("node:child_process"),
+              catch: () =>
+                new ProviderAdapterProcessError({
                   provider: PROVIDER,
                   threadId,
-                  createdAt: stamp.createdAt,
-                  turnId,
-                  payload: { message: msg, class: "provider_error" },
-                });
-                yield* completeTurn(ctx, "failed", msg);
-              }),
+                  detail: "Failed to import child_process module.",
+                }),
+            });
+
+            const child = childProcess.spawn("gemini", cliArgs, {
+              cwd: ctx.session.cwd ?? process.cwd(),
+              stdio: ["pipe", "pipe", "pipe"],
+              env: { ...process.env },
+            });
+            cliCtx.cliProcess = child;
+
+            let accumulatedText = "";
+
+            yield* Effect.tryPromise({
+              try: () =>
+                new Promise<void>((resolve, reject) => {
+                  let buffer = "";
+
+                  child.stdout?.on("data", (chunk: Buffer) => {
+                    buffer += chunk.toString();
+                    const lines = buffer.split("\n");
+                    buffer = lines.pop() ?? "";
+
+                    for (const line of lines) {
+                      const event = parseCliEvent(line);
+                      if (!event) continue;
+
+                      // Process events synchronously — map and emit
+                      Effect.runPromise(
+                        Effect.gen(function* () {
+                          const runtimeEvents = yield* mapCliEventToRuntimeEvents(event, {
+                            threadId,
+                            turnId,
+                          });
+                          for (const re of runtimeEvents) {
+                            yield* Queue.offer(runtimeEventQueue, re);
+                          }
+                        }),
+                      ).catch(() => {
+                        // Best-effort event emission
+                      });
+
+                      // Track assistant text for thread readback
+                      if (event.type === "message" && event.role === "assistant" && event.delta) {
+                        accumulatedText += event.content;
+                      }
+                    }
+                  });
+
+                  child.stderr?.on("data", () => {
+                    // Ignore stderr (Gemini CLI prints info/MCP messages there)
+                  });
+
+                  child.on("close", (code: number | null) => {
+                    // Process remaining buffer
+                    if (buffer.trim()) {
+                      const event = parseCliEvent(buffer);
+                      if (event) {
+                        Effect.runPromise(
+                          Effect.gen(function* () {
+                            const runtimeEvents = yield* mapCliEventToRuntimeEvents(event, {
+                              threadId,
+                              turnId,
+                            });
+                            for (const re of runtimeEvents) {
+                              yield* Queue.offer(runtimeEventQueue, re);
+                            }
+                          }),
+                        ).catch(() => {});
+                      }
+                    }
+
+                    if (code === 0 || code === null) {
+                      resolve();
+                    } else {
+                      reject(new Error(`Gemini CLI exited with code ${code}`));
+                    }
+                  });
+
+                  child.on("error", (err: Error) => {
+                    reject(err);
+                  });
+                }),
+              catch: (err) =>
+                new ProviderAdapterProcessError({
+                  provider: PROVIDER,
+                  threadId,
+                  detail: `Gemini CLI process failed: ${err instanceof Error ? err.message : String(err)}`,
+                }),
+            });
+
+            cliCtx.cliProcess = undefined;
+            cliCtx.cliTurns.push({ userMessage, assistantText: accumulatedText });
+
+            // Update turn state
+            if (ctx.turnState) {
+              ctx.turnState.accumulatedText = accumulatedText;
+              ctx.turnState.emittedTextDelta = true;
+            }
+
+            yield* completeTurn(ctx, "completed");
+          });
+
+          Effect.runFork(
+            runCliTurn.pipe(
+              Effect.catchCause((cause) =>
+                Effect.gen(function* () {
+                  if (Cause.hasInterruptsOnly(cause) || ctx.stopped) return;
+                  const squashed = Cause.squash(cause);
+                  const msg = toMessage(squashed, "Gemini CLI turn failed");
+                  const stamp = yield* emitter.makeEventStamp();
+                  yield* emitter.emit({
+                    type: "runtime.error",
+                    eventId: stamp.eventId,
+                    provider: PROVIDER,
+                    threadId,
+                    createdAt: stamp.createdAt,
+                    turnId,
+                    payload: { message: msg, class: "provider_error" },
+                  });
+                  yield* completeTurn(ctx, "failed", msg);
+                }),
+              ),
             ),
-          ),
-        );
+          );
+        } else {
+          // ── SDK transport: existing agent loop ──────────────────
+          const sdkCtx = ctx as GeminiSdkSessionContext;
+
+          // Materialize image attachments when stateDir is available
+          const materializedImages =
+            options?.stateDir && input.attachments && input.attachments.length > 0
+              ? materializeImageAttachments({
+                  stateDir: options.stateDir,
+                  attachments: input.attachments,
+                })
+              : undefined;
+
+          const materializedFiles =
+            options?.stateDir && input.attachments && input.attachments.length > 0
+              ? yield* Effect.tryPromise({
+                  try: () =>
+                    materializeFileAttachments({
+                      stateDir: options.stateDir!,
+                      attachments: input.attachments!,
+                    }),
+                  catch: () =>
+                    new ProviderAdapterProcessError({
+                      provider: PROVIDER,
+                      threadId: input.threadId,
+                      detail: "Failed to materialize file attachments.",
+                    }),
+                })
+              : undefined;
+
+          const userMessage = buildUserMessage(input, materializedImages, materializedFiles);
+          const providerParts = buildProviderMessage(userMessage, {
+            cwd: sdkCtx.session.cwd,
+            projectContext: sdkCtx.projectContext,
+            ...(materializedImages ? { materializedImages } : {}),
+            ...(materializedFiles ? { materializedFiles } : {}),
+          });
+
+          // Run agent loop in background (non-blocking)
+          Effect.runFork(
+            runAgentLoop(sdkCtx, userMessage, providerParts).pipe(
+              Effect.catchCause((cause) =>
+                Effect.gen(function* () {
+                  if (Cause.hasInterruptsOnly(cause) || ctx.stopped) return;
+
+                  const squashed = Cause.squash(cause);
+
+                  if (isAbortError(squashed)) {
+                    yield* completeTurn(ctx, "interrupted");
+                    return;
+                  }
+
+                  const msg = toMessage(squashed, "Gemini agent loop failed");
+
+                  if (
+                    squashed &&
+                    typeof squashed === "object" &&
+                    "detail" in squashed &&
+                    (squashed as { detail: string }).detail === "aborted"
+                  ) {
+                    yield* completeTurn(ctx, "interrupted");
+                    return;
+                  }
+
+                  const stamp = yield* emitter.makeEventStamp();
+                  yield* emitter.emit({
+                    type: "runtime.error",
+                    eventId: stamp.eventId,
+                    provider: PROVIDER,
+                    threadId,
+                    createdAt: stamp.createdAt,
+                    turnId,
+                    payload: { message: msg, class: "provider_error" },
+                  });
+                  yield* completeTurn(ctx, "failed", msg);
+                }),
+              ),
+            ),
+          );
+        }
 
         return {
           threadId: input.threadId,
@@ -920,26 +1142,48 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
     const interruptTurn: GeminiAdapterShape["interruptTurn"] = (threadId) =>
       Effect.gen(function* () {
         const ctx = yield* requireSession(threadId);
-        // Abort all in-flight API calls — the tool loop checks abortController.signal.aborted
-        for (const controller of ctx.abortControllers) {
-          controller.abort();
-        }
-        // Don't clear controllers here; the loop cleanup will handle that
 
-        // Resolve any pending approval/user-input as cancel so the loop unblocks and exits
-        if (ctx.pendingApproval) {
-          yield* Deferred.succeed(ctx.pendingApproval.deferred, "cancel" as ProviderApprovalDecision);
-          ctx.pendingApproval = undefined;
-        }
-        if (ctx.pendingUserInput) {
-          yield* Deferred.succeed(ctx.pendingUserInput.deferred, {} as ProviderUserInputAnswers);
-          ctx.pendingUserInput = undefined;
+        if (ctx.transport === "cli") {
+          // Kill the CLI process to interrupt the turn
+          if (ctx.cliProcess) {
+            ctx.cliProcess.kill("SIGTERM");
+            ctx.cliProcess = undefined;
+          }
+        } else {
+          // Abort all in-flight API calls — the tool loop checks abortController.signal.aborted
+          for (const controller of ctx.abortControllers) {
+            controller.abort();
+          }
+          // Don't clear controllers here; the loop cleanup will handle that
+
+          // Resolve any pending approval/user-input as cancel so the loop unblocks and exits
+          if (ctx.pendingApproval) {
+            yield* Deferred.succeed(ctx.pendingApproval.deferred, "cancel" as ProviderApprovalDecision);
+            ctx.pendingApproval = undefined;
+          }
+          if (ctx.pendingUserInput) {
+            yield* Deferred.succeed(ctx.pendingUserInput.deferred, {} as ProviderUserInputAnswers);
+            ctx.pendingUserInput = undefined;
+          }
         }
       });
 
     const readThread: GeminiAdapterShape["readThread"] = (threadId) =>
       Effect.gen(function* () {
         const ctx = yield* requireSession(threadId);
+
+        if (ctx.transport === "cli") {
+          return {
+            threadId,
+            turns: ctx.cliTurns.map((turn, i) => ({
+              id: TurnId.makeUnsafe(`cli-turn-${i}`),
+              items: [
+                { type: "assistant_message" as const, text: turn.assistantText },
+              ],
+            })),
+          };
+        }
+
         return {
           threadId,
           turns: ctx.turns.map((turn) => ({
@@ -960,6 +1204,19 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
     const rollbackThread: GeminiAdapterShape["rollbackThread"] = (threadId, numTurns) =>
       Effect.gen(function* () {
         const ctx = yield* requireSession(threadId);
+
+        if (ctx.transport === "cli") {
+          const removeCount = Math.min(numTurns, ctx.cliTurns.length);
+          ctx.cliTurns.splice(ctx.cliTurns.length - removeCount, removeCount);
+          return {
+            threadId,
+            turns: ctx.cliTurns.map((turn, i) => ({
+              id: TurnId.makeUnsafe(`cli-turn-${i}`),
+              items: [{ type: "assistant_message" as const, text: turn.assistantText }],
+            })),
+          };
+        }
+
         const removeCount = Math.min(numTurns, ctx.turns.length);
         ctx.turns.splice(ctx.turns.length - removeCount, removeCount);
         ctx.session.resumeCursor = buildResumeCursor(ctx);
@@ -980,6 +1237,13 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
     ) =>
       Effect.gen(function* () {
         const ctx = yield* requireSession(threadId);
+        if (ctx.transport === "cli") {
+          return yield* new ProviderAdapterRequestError({
+            provider: PROVIDER,
+            method: "respondToRequest",
+            detail: "Approval responses are not supported for CLI transport. The Gemini CLI manages its own approval flow.",
+          });
+        }
         if (!ctx.pendingApproval) {
           return yield* new ProviderAdapterRequestError({
             provider: PROVIDER,
@@ -1004,6 +1268,13 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
     ) =>
       Effect.gen(function* () {
         const ctx = yield* requireSession(threadId);
+        if (ctx.transport === "cli") {
+          return yield* new ProviderAdapterRequestError({
+            provider: PROVIDER,
+            method: "respondToUserInput",
+            detail: "User input responses are not supported for CLI transport. The Gemini CLI manages its own input flow.",
+          });
+        }
         if (!ctx.pendingUserInput) {
           return yield* new ProviderAdapterRequestError({
             provider: PROVIDER,

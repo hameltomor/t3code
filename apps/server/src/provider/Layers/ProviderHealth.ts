@@ -21,6 +21,7 @@ import {
   isCodexCliVersionSupported,
   parseCodexCliVersion,
 } from "../codexCliVersion";
+import { resolveGeminiAuth, describeAuthMode } from "../gemini/GeminiAuthResolver";
 import { ProviderHealth, type ProviderHealthShape } from "../Services/ProviderHealth";
 
 const DEFAULT_TIMEOUT_MS = 4_000;
@@ -477,28 +478,112 @@ export const checkClaudeCodeProviderStatus: Effect.Effect<
   } satisfies ServerProviderStatus;
 });
 
-export const checkGeminiProviderStatus: Effect.Effect<ServerProviderStatus> = Effect.sync(() => {
-  const checkedAt = new Date().toISOString();
-  const apiKey = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY;
+// ── Gemini CLI helpers ──────────────────────────────────────────────
 
-  if (!apiKey) {
+const runGeminiCommand = (args: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    const command = ChildProcess.make("gemini", [...args], {
+      shell: process.platform === "win32",
+    });
+
+    const child = yield* spawner.spawn(command);
+
+    const [stdout, stderr, exitCode] = yield* Effect.all(
+      [
+        collectStreamAsString(child.stdout),
+        collectStreamAsString(child.stderr),
+        child.exitCode.pipe(Effect.map(Number)),
+      ],
+      { concurrency: "unbounded" },
+    );
+
+    return { stdout, stderr, code: exitCode } satisfies CommandResult;
+  }).pipe(Effect.scoped);
+
+export function parseGeminiCliAuthStatus(versionResult: CommandResult): {
+  readonly cliAvailable: boolean;
+  readonly cliVersion?: string | undefined;
+} {
+  if (versionResult.code !== 0) {
+    return { cliAvailable: false };
+  }
+  const output = `${versionResult.stdout}\n${versionResult.stderr}`.trim();
+  // Gemini CLI outputs just the version number, e.g. "0.32.1"
+  const versionMatch = output.match(/(\d+\.\d+\.\d+)/);
+  return {
+    cliAvailable: true,
+    cliVersion: versionMatch?.[1],
+  };
+}
+
+export const checkGeminiProviderStatus: Effect.Effect<
+  ServerProviderStatus,
+  never,
+  ChildProcessSpawner.ChildProcessSpawner
+> = Effect.gen(function* () {
+  const checkedAt = new Date().toISOString();
+
+  // Check SDK auth sources first
+  const sdkAuth = resolveGeminiAuth();
+  const sdkReady = sdkAuth.mode !== "none";
+
+  // Check Gemini CLI availability
+  const cliProbe = yield* runGeminiCommand(["--version"]).pipe(
+    Effect.timeoutOption(DEFAULT_TIMEOUT_MS),
+    Effect.result,
+  );
+
+  let cliAvailable = false;
+  let cliVersion: string | undefined;
+
+  if (Result.isSuccess(cliProbe) && Option.isSome(cliProbe.success)) {
+    const parsed = parseGeminiCliAuthStatus(cliProbe.success.value);
+    cliAvailable = parsed.cliAvailable;
+    cliVersion = parsed.cliVersion;
+  }
+
+  // Determine overall status
+  if (sdkReady && cliAvailable) {
     return {
       provider: GEMINI_PROVIDER,
-      status: "error" as const,
-      available: false,
-      authStatus: "unauthenticated" as const,
+      status: "ready" as const,
+      available: true,
+      authStatus: "authenticated" as const,
       checkedAt,
-      message:
-        "No Gemini API key found. Set GEMINI_API_KEY or GOOGLE_API_KEY environment variable.",
+      message: `${describeAuthMode(sdkAuth)}. Gemini CLI ${cliVersion ?? ""} also available.`.trim(),
+    };
+  }
+
+  if (sdkReady) {
+    return {
+      provider: GEMINI_PROVIDER,
+      status: "ready" as const,
+      available: true,
+      authStatus: "authenticated" as const,
+      checkedAt,
+      message: describeAuthMode(sdkAuth),
+    };
+  }
+
+  if (cliAvailable) {
+    return {
+      provider: GEMINI_PROVIDER,
+      status: "ready" as const,
+      available: true,
+      authStatus: "authenticated" as const,
+      checkedAt,
+      message: `Gemini CLI ${cliVersion ?? ""} available (use transport: "cli"). No SDK API key configured.`.trim(),
     };
   }
 
   return {
     provider: GEMINI_PROVIDER,
-    status: "ready" as const,
-    available: true,
-    authStatus: "authenticated" as const,
+    status: "error" as const,
+    available: false,
+    authStatus: "unauthenticated" as const,
     checkedAt,
+    message: describeAuthMode(sdkAuth),
   };
 });
 
@@ -510,8 +595,26 @@ export const ProviderHealthLive = Layer.effect(
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
 
     const claudeCodeStatus = yield* checkClaudeCodeProviderStatus;
-    // Gemini check is synchronous (env-var only), resolve immediately.
-    const geminiStatus = yield* checkGeminiProviderStatus;
+
+    // Start with SDK-only Gemini check (synchronous) and initial placeholders
+    const sdkAuth = resolveGeminiAuth();
+    const initialGeminiStatus: ServerProviderStatus = sdkAuth.mode !== "none"
+      ? {
+          provider: GEMINI_PROVIDER,
+          status: "ready",
+          available: true,
+          authStatus: "authenticated",
+          checkedAt: new Date().toISOString(),
+          message: describeAuthMode(sdkAuth),
+        }
+      : {
+          provider: GEMINI_PROVIDER,
+          status: "warning",
+          available: false,
+          authStatus: "unknown",
+          checkedAt: new Date().toISOString(),
+          message: "Checking Gemini availability...",
+        };
 
     let cachedStatuses: ReadonlyArray<ServerProviderStatus> = [
       {
@@ -523,15 +626,15 @@ export const ProviderHealthLive = Layer.effect(
         message: "Checking Codex CLI availability...",
       },
       claudeCodeStatus,
-      geminiStatus,
+      initialGeminiStatus,
     ];
 
-    // Run Codex health check in the background so it doesn't block startup.
+    // Run Codex and Gemini CLI health checks in the background so they don't block startup.
     checkCodexProviderStatus.pipe(
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
       Effect.runPromise,
     ).then((codexStatus) => {
-      cachedStatuses = [codexStatus, claudeCodeStatus, geminiStatus];
+      cachedStatuses = [codexStatus, cachedStatuses[1]!, cachedStatuses[2]!];
     }).catch(() => {
       cachedStatuses = [
         {
@@ -542,9 +645,19 @@ export const ProviderHealthLive = Layer.effect(
           checkedAt: new Date().toISOString(),
           message: "Failed to check Codex CLI status.",
         },
-        claudeCodeStatus,
-        geminiStatus,
+        cachedStatuses[1]!,
+        cachedStatuses[2]!,
       ];
+    });
+
+    // Run Gemini CLI check in background (only enriches status if CLI is available)
+    checkGeminiProviderStatus.pipe(
+      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      Effect.runPromise,
+    ).then((geminiStatus) => {
+      cachedStatuses = [cachedStatuses[0]!, cachedStatuses[1]!, geminiStatus];
+    }).catch(() => {
+      // Keep initial SDK-based status if CLI check fails
     });
 
     return {

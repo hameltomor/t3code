@@ -58,8 +58,17 @@ const ClaudeCodeProviderStartOptions = Schema.Struct({
   maxThinkingTokens: Schema.optional(Schema.Int),
 });
 
+const GeminiTransport = Schema.Literals(["sdk", "cli"]);
+export type GeminiTransport = typeof GeminiTransport.Type;
+
 const GeminiProviderStartOptions = Schema.Struct({
   apiKey: Schema.optional(TrimmedNonEmptyStringSchema),
+  /**
+   * Transport mode for the Gemini provider.
+   * - `sdk`: Use @google/genai SDK directly (default). Best for API key / ADC auth.
+   * - `cli`: Use Gemini CLI as a native runtime. Best for Gemini CLI subscription auth.
+   */
+  transport: Schema.optional(GeminiTransport),
 });
 
 export const ProviderStartOptions = Schema.Struct({
