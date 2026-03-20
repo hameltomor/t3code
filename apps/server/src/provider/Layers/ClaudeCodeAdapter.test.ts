@@ -9,7 +9,7 @@ import type {
   SDKMessage,
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
-import { ApprovalRequestId, ThreadId } from "@xbetools/contracts";
+import { ApprovalRequestId, ThreadId, type ProviderRuntimeEvent } from "@xbetools/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import { Effect, Fiber, Random, Stream } from "effect";
 
@@ -340,7 +340,7 @@ describe("ClaudeCodeAdapterLive", () => {
     return Effect.gen(function* () {
       const adapter = yield* ClaudeCodeAdapter;
 
-      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 11).pipe(
+      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 10).pipe(
         Stream.runCollect,
         Effect.forkChild,
       );
@@ -435,7 +435,6 @@ describe("ClaudeCodeAdapterLive", () => {
           "content.delta",
           "item.started",
           "item.completed",
-          "item.updated",
           "item.completed",
           "turn.completed",
         ],
@@ -477,7 +476,7 @@ describe("ClaudeCodeAdapterLive", () => {
     return Effect.gen(function* () {
       const adapter = yield* ClaudeCodeAdapter;
 
-      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 9).pipe(
+      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 8).pipe(
         Stream.runCollect,
         Effect.forkChild,
       );
@@ -538,7 +537,6 @@ describe("ClaudeCodeAdapterLive", () => {
           "session.state.changed",
           "turn.started",
           "thread.started",
-          "item.updated",
           "content.delta",
           "item.completed",
           "turn.completed",
@@ -566,7 +564,7 @@ describe("ClaudeCodeAdapterLive", () => {
     return Effect.gen(function* () {
       const adapter = yield* ClaudeCodeAdapter;
 
-      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 9).pipe(
+      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 8).pipe(
         Stream.runCollect,
         Effect.forkChild,
       );
@@ -612,7 +610,6 @@ describe("ClaudeCodeAdapterLive", () => {
           "session.state.changed",
           "turn.started",
           "thread.started",
-          "item.updated",
           "content.delta",
           "item.completed",
           "turn.completed",
@@ -1009,6 +1006,333 @@ describe("ClaudeCodeAdapterLive", () => {
           },
         });
       }
+
+      const toolCompletions = runtimeEvents.filter(
+        (event) => event.type === "item.completed" && event.itemId === "tool-result-1",
+      );
+      assert.equal(toolCompletions.length, 1);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("returns a request error for stale Claude user-input responses", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeCodeAdapter;
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: "claudeCode",
+        runtimeMode: "approval-required",
+      });
+
+      const result = yield* adapter
+        .respondToUserInput(
+          THREAD_ID,
+          ApprovalRequestId.makeUnsafe("missing-user-input"),
+          { sandbox_mode: "workspace-write" },
+        )
+        .pipe(Effect.result);
+      assert.equal(result._tag, "Failure");
+      if (result._tag !== "Failure") {
+        return;
+      }
+      assert.equal(result.failure._tag, "ProviderAdapterRequestError");
+      if (result.failure._tag !== "ProviderAdapterRequestError") {
+        return;
+      }
+      assert.equal(result.failure.method, "item/tool/respondToUserInput");
+      assert.match(result.failure.detail, /Unknown pending user-input request/);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("treats user-aborted Claude results as interrupted without a runtime error", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeCodeAdapter;
+
+      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 6).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: "claudeCode",
+        runtimeMode: "full-access",
+      });
+
+      const turn = yield* adapter.sendTurn({
+        threadId: THREAD_ID,
+        input: "hello",
+        attachments: [],
+      });
+
+      harness.query.emit({
+        type: "result",
+        subtype: "error_during_execution",
+        is_error: false,
+        errors: ["Error: Request was aborted."],
+        stop_reason: "tool_use",
+        session_id: "sdk-session-abort",
+        uuid: "result-abort",
+      } as unknown as SDKMessage);
+
+      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+      assert.deepEqual(
+        runtimeEvents.map((event) => event.type),
+        [
+          "session.started",
+          "session.configured",
+          "session.state.changed",
+          "turn.started",
+          "thread.started",
+          "turn.completed",
+        ],
+      );
+
+      const turnCompleted = runtimeEvents[runtimeEvents.length - 1];
+      assert.equal(turnCompleted?.type, "turn.completed");
+      if (turnCompleted?.type === "turn.completed") {
+        assert.equal(String(turnCompleted.turnId), String(turn.turnId));
+        assert.equal(turnCompleted.payload.state, "interrupted");
+        assert.equal(turnCompleted.payload.errorMessage, "Error: Request was aborted.");
+        assert.equal(turnCompleted.payload.stopReason, "tool_use");
+      }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("closes the session when the Claude stream ends after a turn starts", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeCodeAdapter;
+      const runtimeEvents: Array<ProviderRuntimeEvent> = [];
+
+      const runtimeEventsFiber = Effect.runFork(
+        Stream.runForEach(adapter.streamEvents, (event) =>
+          Effect.sync(() => {
+            runtimeEvents.push(event);
+          }),
+        ),
+      );
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: "claudeCode",
+        runtimeMode: "full-access",
+      });
+
+      const turn = yield* adapter.sendTurn({
+        threadId: THREAD_ID,
+        input: "hello",
+        attachments: [],
+      });
+
+      harness.query.finish();
+
+      yield* Effect.yieldNow;
+      yield* Effect.yieldNow;
+      yield* Effect.yieldNow;
+      runtimeEventsFiber.interruptUnsafe();
+
+      assert.deepEqual(
+        runtimeEvents.map((event) => event.type),
+        [
+          "session.started",
+          "session.configured",
+          "session.state.changed",
+          "turn.started",
+          "turn.completed",
+          "session.exited",
+        ],
+      );
+
+      const turnCompleted = runtimeEvents[4];
+      assert.equal(turnCompleted?.type, "turn.completed");
+      if (turnCompleted?.type === "turn.completed") {
+        assert.equal(String(turnCompleted.turnId), String(turn.turnId));
+        assert.equal(turnCompleted.payload.state, "interrupted");
+        assert.equal(turnCompleted.payload.errorMessage, "Claude runtime stream ended.");
+      }
+
+      const sessionExited = runtimeEvents[5];
+      assert.equal(sessionExited?.type, "session.exited");
+      assert.equal(yield* adapter.hasSession(THREAD_ID), false);
+      assert.equal(harness.query.closeCalls, 1);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("creates a fresh assistant message when Claude reuses a text block index", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeCodeAdapter;
+
+      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 9).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: "claudeCode",
+        runtimeMode: "full-access",
+      });
+
+      yield* adapter.sendTurn({
+        threadId: THREAD_ID,
+        input: "hello",
+        attachments: [],
+      });
+
+      harness.query.emit({
+        type: "stream_event",
+        session_id: "sdk-session-reused-text-index",
+        uuid: "stream-reused-start-1",
+        parent_tool_use_id: null,
+        event: {
+          type: "content_block_start",
+          index: 0,
+          content_block: {
+            type: "text",
+            text: "",
+          },
+        },
+      } as unknown as SDKMessage);
+
+      harness.query.emit({
+        type: "stream_event",
+        session_id: "sdk-session-reused-text-index",
+        uuid: "stream-reused-delta-1",
+        parent_tool_use_id: null,
+        event: {
+          type: "content_block_delta",
+          index: 0,
+          delta: {
+            type: "text_delta",
+            text: "First",
+          },
+        },
+      } as unknown as SDKMessage);
+
+      harness.query.emit({
+        type: "stream_event",
+        session_id: "sdk-session-reused-text-index",
+        uuid: "stream-reused-stop-1",
+        parent_tool_use_id: null,
+        event: {
+          type: "content_block_stop",
+          index: 0,
+        },
+      } as unknown as SDKMessage);
+
+      harness.query.emit({
+        type: "stream_event",
+        session_id: "sdk-session-reused-text-index",
+        uuid: "stream-reused-start-2",
+        parent_tool_use_id: null,
+        event: {
+          type: "content_block_start",
+          index: 0,
+          content_block: {
+            type: "text",
+            text: "",
+          },
+        },
+      } as unknown as SDKMessage);
+
+      harness.query.emit({
+        type: "stream_event",
+        session_id: "sdk-session-reused-text-index",
+        uuid: "stream-reused-delta-2",
+        parent_tool_use_id: null,
+        event: {
+          type: "content_block_delta",
+          index: 0,
+          delta: {
+            type: "text_delta",
+            text: "Second",
+          },
+        },
+      } as unknown as SDKMessage);
+
+      harness.query.emit({
+        type: "stream_event",
+        session_id: "sdk-session-reused-text-index",
+        uuid: "stream-reused-stop-2",
+        parent_tool_use_id: null,
+        event: {
+          type: "content_block_stop",
+          index: 0,
+        },
+      } as unknown as SDKMessage);
+
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        errors: [],
+        session_id: "sdk-session-reused-text-index",
+        uuid: "result-reused-text-index",
+      } as unknown as SDKMessage);
+
+      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+      assert.deepEqual(
+        runtimeEvents.map((event) => event.type),
+        [
+          "session.started",
+          "session.configured",
+          "session.state.changed",
+          "turn.started",
+          "thread.started",
+          "content.delta",
+          "item.completed",
+          "content.delta",
+          "item.completed",
+        ],
+      );
+
+      const assistantDeltas = runtimeEvents.filter(
+        (event) => event.type === "content.delta" && event.payload.streamKind === "assistant_text",
+      );
+      assert.equal(assistantDeltas.length, 2);
+      if (assistantDeltas.length !== 2) {
+        return;
+      }
+      const [firstAssistantDelta, secondAssistantDelta] = assistantDeltas;
+      assert.equal(firstAssistantDelta?.type, "content.delta");
+      assert.equal(secondAssistantDelta?.type, "content.delta");
+      if (
+        firstAssistantDelta?.type !== "content.delta" ||
+        secondAssistantDelta?.type !== "content.delta"
+      ) {
+        return;
+      }
+      assert.equal(firstAssistantDelta.payload.delta, "First");
+      assert.equal(secondAssistantDelta.payload.delta, "Second");
+      assert.notEqual(firstAssistantDelta.itemId, secondAssistantDelta.itemId);
+
+      const assistantCompletions = runtimeEvents.filter(
+        (event) =>
+          event.type === "item.completed" && event.payload.itemType === "assistant_message",
+      );
+      assert.equal(assistantCompletions.length, 2);
+      assert.equal(String(assistantCompletions[0]?.itemId), String(firstAssistantDelta.itemId));
+      assert.equal(String(assistantCompletions[1]?.itemId), String(secondAssistantDelta.itemId));
+      assert.notEqual(
+        String(assistantCompletions[0]?.itemId),
+        String(assistantCompletions[1]?.itemId),
+      );
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),

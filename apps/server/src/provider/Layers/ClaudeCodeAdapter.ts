@@ -161,12 +161,20 @@ interface ClaudeResumeState {
 
 interface ClaudeTurnState {
   readonly turnId: TurnId;
-  readonly assistantItemId: string;
   readonly startedAt: string;
   readonly items: Array<unknown>;
-  readonly messageCompleted: boolean;
-  readonly emittedTextDelta: boolean;
-  readonly fallbackAssistantText: string;
+  readonly assistantTextBlocks: Map<number, AssistantTextBlockState>;
+  readonly assistantTextBlockOrder: Array<AssistantTextBlockState>;
+  nextSyntheticAssistantBlockIndex: number;
+}
+
+interface AssistantTextBlockState {
+  readonly itemId: string;
+  readonly blockIndex: number;
+  emittedTextDelta: boolean;
+  fallbackText: string;
+  streamClosed: boolean;
+  completionEmitted: boolean;
 }
 
 interface PendingApproval {
@@ -761,14 +769,14 @@ function providerThreadRef(
   return context.resumeSessionId ? { providerThreadId: context.resumeSessionId } : {};
 }
 
-function extractAssistantText(message: SDKMessage): string {
+function extractAssistantTextBlocks(message: SDKMessage): string[] {
   if (message.type !== "assistant") {
-    return "";
+    return [];
   }
 
   const content = (message.message as { content?: unknown } | undefined)?.content;
   if (!Array.isArray(content)) {
-    return "";
+    return [];
   }
 
   const fragments: string[] = [];
@@ -786,7 +794,15 @@ function extractAssistantText(message: SDKMessage): string {
     }
   }
 
-  return fragments.join("");
+  return fragments;
+}
+
+function extractContentBlockText(block: unknown): string {
+  if (!block || typeof block !== "object") {
+    return "";
+  }
+  const candidate = block as { text?: unknown };
+  return typeof candidate.text === "string" ? candidate.text : "";
 }
 
 function toSessionError(
@@ -1098,6 +1114,209 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
         });
       });
 
+    const ensureAssistantTextBlock = (
+      context: ClaudeSessionContext,
+      blockIndex: number,
+      options?: {
+        readonly fallbackText?: string;
+        readonly streamClosed?: boolean;
+      },
+    ): Effect.Effect<
+      | {
+          readonly blockIndex: number;
+          readonly block: AssistantTextBlockState;
+        }
+      | undefined
+    > =>
+      Effect.gen(function* () {
+        const turnState = context.turnState;
+        if (!turnState) {
+          return undefined;
+        }
+
+        const existing = turnState.assistantTextBlocks.get(blockIndex);
+        if (existing && !existing.completionEmitted) {
+          if (existing.fallbackText.length === 0 && options?.fallbackText) {
+            existing.fallbackText = options.fallbackText;
+          }
+          if (options?.streamClosed) {
+            existing.streamClosed = true;
+          }
+          return { blockIndex, block: existing };
+        }
+
+        const block: AssistantTextBlockState = {
+          itemId: yield* Random.nextUUIDv4,
+          blockIndex,
+          emittedTextDelta: false,
+          fallbackText: options?.fallbackText ?? "",
+          streamClosed: options?.streamClosed ?? false,
+          completionEmitted: false,
+        };
+        turnState.assistantTextBlocks.set(blockIndex, block);
+        turnState.assistantTextBlockOrder.push(block);
+        return { blockIndex, block };
+      });
+
+    const createSyntheticAssistantTextBlock = (
+      context: ClaudeSessionContext,
+      fallbackText: string,
+    ): Effect.Effect<
+      | {
+          readonly blockIndex: number;
+          readonly block: AssistantTextBlockState;
+        }
+      | undefined
+    > =>
+      Effect.gen(function* () {
+        const turnState = context.turnState;
+        if (!turnState) {
+          return undefined;
+        }
+
+        const blockIndex = turnState.nextSyntheticAssistantBlockIndex;
+        turnState.nextSyntheticAssistantBlockIndex -= 1;
+        return yield* ensureAssistantTextBlock(context, blockIndex, {
+          fallbackText,
+          streamClosed: true,
+        });
+      });
+
+    const completeAssistantTextBlock = (
+      context: ClaudeSessionContext,
+      block: AssistantTextBlockState,
+      options?: {
+        readonly force?: boolean;
+        readonly rawMethod?: string;
+        readonly rawPayload?: unknown;
+      },
+    ): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        const turnState = context.turnState;
+        if (!turnState || block.completionEmitted) {
+          return;
+        }
+
+        if (!options?.force && !block.streamClosed) {
+          return;
+        }
+
+        if (!block.emittedTextDelta && block.fallbackText.length > 0) {
+          const deltaStamp = yield* makeEventStamp();
+          yield* offerRuntimeEvent({
+            type: "content.delta",
+            eventId: deltaStamp.eventId,
+            provider: PROVIDER,
+            createdAt: deltaStamp.createdAt,
+            threadId: context.sessionKey,
+            turnId: turnState.turnId,
+            itemId: asRuntimeItemId(block.itemId),
+            payload: {
+              streamKind: "assistant_text",
+              delta: block.fallbackText,
+            },
+            providerRefs: {
+              ...providerThreadRef(context),
+              providerTurnId: String(turnState.turnId),
+            },
+            ...(options?.rawMethod || options?.rawPayload
+              ? {
+                  raw: {
+                    source: "claude.sdk.message" as const,
+                    ...(options.rawMethod ? { method: options.rawMethod } : {}),
+                    payload: options?.rawPayload,
+                  },
+                }
+              : {}),
+          });
+        }
+
+        block.completionEmitted = true;
+        if (turnState.assistantTextBlocks.get(block.blockIndex) === block) {
+          turnState.assistantTextBlocks.delete(block.blockIndex);
+        }
+
+        const stamp = yield* makeEventStamp();
+        yield* offerRuntimeEvent({
+          type: "item.completed",
+          eventId: stamp.eventId,
+          provider: PROVIDER,
+          createdAt: stamp.createdAt,
+          itemId: asRuntimeItemId(block.itemId),
+          threadId: context.sessionKey,
+          turnId: turnState.turnId,
+          payload: {
+            itemType: "assistant_message",
+            status: "completed",
+            title: "Assistant message",
+            ...(block.fallbackText.length > 0 ? { detail: block.fallbackText } : {}),
+          },
+          providerRefs: {
+            ...providerThreadRef(context),
+            providerTurnId: String(turnState.turnId),
+          },
+          ...(options?.rawMethod || options?.rawPayload
+            ? {
+                raw: {
+                  source: "claude.sdk.message" as const,
+                  ...(options.rawMethod ? { method: options.rawMethod } : {}),
+                  payload: options?.rawPayload,
+                },
+              }
+            : {}),
+        });
+      });
+
+    const backfillAssistantTextBlocksFromSnapshot = (
+      context: ClaudeSessionContext,
+      message: SDKMessage,
+    ): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        const turnState = context.turnState;
+        if (!turnState) {
+          return;
+        }
+
+        const snapshotTextBlocks = extractAssistantTextBlocks(message);
+        if (snapshotTextBlocks.length === 0) {
+          return;
+        }
+
+        const orderedBlocks = turnState.assistantTextBlockOrder.map((block) => ({
+          blockIndex: block.blockIndex,
+          block,
+        }));
+
+        for (const [position, text] of snapshotTextBlocks.entries()) {
+          const existingEntry = orderedBlocks[position];
+          const entry =
+            existingEntry ??
+            (yield* createSyntheticAssistantTextBlock(context, text).pipe(
+              Effect.map((created) => {
+                if (!created) {
+                  return undefined;
+                }
+                orderedBlocks.push(created);
+                return created;
+              }),
+            ));
+          if (!entry) {
+            continue;
+          }
+
+          if (entry.block.fallbackText.length === 0) {
+            entry.block.fallbackText = text;
+          }
+
+          if (entry.block.streamClosed && !entry.block.completionEmitted) {
+            yield* completeAssistantTextBlock(context, entry.block, {
+              rawMethod: "claude/assistant",
+              rawPayload: message,
+            });
+          }
+        }
+      });
+
     const completeTurn = (
       context: ClaudeSessionContext,
       status: ProviderRuntimeTurnStatus,
@@ -1129,48 +1348,46 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
           return;
         }
 
-        if (!turnState.messageCompleted) {
-          if (!turnState.emittedTextDelta && turnState.fallbackAssistantText.length > 0) {
-            const deltaStamp = yield* makeEventStamp();
-            yield* offerRuntimeEvent({
-              type: "content.delta",
-              eventId: deltaStamp.eventId,
-              provider: PROVIDER,
-              createdAt: deltaStamp.createdAt,
-              threadId: context.sessionKey,
-              turnId: turnState.turnId,
-              itemId: asRuntimeItemId(turnState.assistantItemId),
-              payload: {
-                streamKind: "assistant_text",
-                delta: turnState.fallbackAssistantText,
-              },
-              providerRefs: {
-                ...providerThreadRef(context),
-                providerTurnId: String(turnState.turnId),
-                providerItemId: ProviderItemId.makeUnsafe(turnState.assistantItemId),
-              },
-            });
-          }
-
-          const stamp = yield* makeEventStamp();
+        for (const [index, tool] of context.inFlightTools.entries()) {
+          const toolStamp = yield* makeEventStamp();
           yield* offerRuntimeEvent({
             type: "item.completed",
-            eventId: stamp.eventId,
+            eventId: toolStamp.eventId,
             provider: PROVIDER,
-            createdAt: stamp.createdAt,
-            itemId: asRuntimeItemId(turnState.assistantItemId),
+            createdAt: toolStamp.createdAt,
             threadId: context.sessionKey,
             turnId: turnState.turnId,
+            itemId: asRuntimeItemId(tool.itemId),
             payload: {
-              itemType: "assistant_message",
-              status: "completed",
-              title: "Assistant message",
+              itemType: tool.itemType,
+              status: status === "completed" ? "completed" : "failed",
+              title: tool.title,
+              ...(tool.detail ? { detail: tool.detail } : {}),
+              data: {
+                toolName: tool.toolName,
+                input: tool.input,
+              },
             },
             providerRefs: {
               ...providerThreadRef(context),
-              providerTurnId: turnState.turnId,
-              providerItemId: ProviderItemId.makeUnsafe(turnState.assistantItemId),
+              providerTurnId: String(turnState.turnId),
+              providerItemId: ProviderItemId.makeUnsafe(tool.itemId),
             },
+            raw: {
+              source: "claude.sdk.message",
+              method: "claude/result",
+              payload: result ?? { status },
+            },
+          });
+          context.inFlightTools.delete(index);
+        }
+        context.inFlightTools.clear();
+
+        for (const block of turnState.assistantTextBlockOrder) {
+          yield* completeAssistantTextBlock(context, block, {
+            force: true,
+            rawMethod: "claude/result",
+            rawPayload: result ?? { status },
           });
         }
 
@@ -1203,8 +1420,6 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
           },
         });
 
-        context.inFlightTools.clear();
-
         const updatedAt = yield* nowIso;
         context.turnState = undefined;
         context.session = {
@@ -1229,7 +1444,43 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
         const { event } = message;
 
         if (event.type === "content_block_delta") {
-          // Accumulate tool input JSON fragments from streaming deltas.
+          if (
+            event.delta.type === "text_delta" &&
+            event.delta.text.length > 0 &&
+            context.turnState
+          ) {
+            const assistantBlockEntry = yield* ensureAssistantTextBlock(context, event.index);
+            if (assistantBlockEntry?.block) {
+              assistantBlockEntry.block.emittedTextDelta = true;
+            }
+            const stamp = yield* makeEventStamp();
+            yield* offerRuntimeEvent({
+              type: "content.delta",
+              eventId: stamp.eventId,
+              provider: PROVIDER,
+              createdAt: stamp.createdAt,
+              threadId: context.sessionKey,
+              turnId: context.turnState.turnId,
+              ...(assistantBlockEntry?.block
+                ? { itemId: asRuntimeItemId(assistantBlockEntry.block.itemId) }
+                : {}),
+              payload: {
+                streamKind: streamKindFromDeltaType(event.delta.type),
+                delta: event.delta.text,
+              },
+              providerRefs: {
+                ...providerThreadRef(context),
+                providerTurnId: String(context.turnState.turnId),
+              },
+              raw: {
+                source: "claude.sdk.message",
+                method: "claude/stream_event/content_block_delta",
+                payload: message,
+              },
+            });
+            return;
+          }
+
           if (
             event.delta.type === "input_json_delta" &&
             typeof (event.delta as { partial_json?: string }).partial_json === "string"
@@ -1245,48 +1496,17 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
               }
             }
           }
-
-          if (
-            event.delta.type === "text_delta" &&
-            event.delta.text.length > 0 &&
-            context.turnState
-          ) {
-            if (!context.turnState.emittedTextDelta) {
-              context.turnState = {
-                ...context.turnState,
-                emittedTextDelta: true,
-              };
-            }
-            const stamp = yield* makeEventStamp();
-            yield* offerRuntimeEvent({
-              type: "content.delta",
-              eventId: stamp.eventId,
-              provider: PROVIDER,
-              createdAt: stamp.createdAt,
-              threadId: context.sessionKey,
-              turnId: context.turnState.turnId,
-              itemId: asRuntimeItemId(context.turnState.assistantItemId),
-              payload: {
-                streamKind: streamKindFromDeltaType(event.delta.type),
-                delta: event.delta.text,
-              },
-              providerRefs: {
-                ...providerThreadRef(context),
-                providerTurnId: context.turnState.turnId,
-                providerItemId: ProviderItemId.makeUnsafe(context.turnState.assistantItemId),
-              },
-              raw: {
-                source: "claude.sdk.message",
-                method: "claude/stream_event/content_block_delta",
-                payload: message,
-              },
-            });
-          }
           return;
         }
 
         if (event.type === "content_block_start") {
           const { index, content_block: block } = event;
+          if (block.type === "text") {
+            yield* ensureAssistantTextBlock(context, index, {
+              fallbackText: extractContentBlockText(block),
+            });
+            return;
+          }
           if (
             block.type !== "tool_use" &&
             block.type !== "server_tool_use" &&
@@ -1320,7 +1540,7 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
             type: "item.started",
             eventId: stamp.eventId,
             provider: PROVIDER,
-              createdAt: stamp.createdAt,
+            createdAt: stamp.createdAt,
             threadId: context.sessionKey,
             ...(context.turnState ? { turnId: asCanonicalTurnId(context.turnState.turnId) } : {}),
             itemId: asRuntimeItemId(tool.itemId),
@@ -1350,50 +1570,25 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
 
         if (event.type === "content_block_stop") {
           const { index } = event;
+          const assistantBlock = context.turnState?.assistantTextBlocks.get(index);
+          if (assistantBlock) {
+            assistantBlock.streamClosed = true;
+            yield* completeAssistantTextBlock(context, assistantBlock, {
+              rawMethod: "claude/stream_event/content_block_stop",
+              rawPayload: message,
+            });
+            return;
+          }
+
           const tool = context.inFlightTools.get(index);
           if (!tool) {
             return;
           }
 
-          // Rebuild tool input from accumulated JSON delta fragments.
           const resolvedInput = parseAccumulatedToolInput(tool.inputJsonParts);
-          const effectiveInput =
-            Object.keys(resolvedInput).length > 0 ? resolvedInput : tool.input;
-          const resolvedDetail =
-            Object.keys(effectiveInput).length > 0
-              ? summarizeToolRequest(tool.toolName, effectiveInput)
-              : tool.detail;
-
-          const stamp = yield* makeEventStamp();
-          yield* offerRuntimeEvent({
-            type: "item.completed",
-            eventId: stamp.eventId,
-            provider: PROVIDER,
-              createdAt: stamp.createdAt,
-            threadId: context.sessionKey,
-            ...(context.turnState ? { turnId: asCanonicalTurnId(context.turnState.turnId) } : {}),
-            itemId: asRuntimeItemId(tool.itemId),
-            payload: {
-              itemType: tool.itemType,
-              status: "completed",
-              title: tool.title,
-              ...(resolvedDetail ? { detail: resolvedDetail } : {}),
-              data: {
-                toolName: tool.toolName,
-                input: effectiveInput,
-              },
-            },
-            providerRefs: {
-              ...providerThreadRef(context),
-              ...(context.turnState ? { providerTurnId: String(context.turnState.turnId) } : {}),
-              providerItemId: ProviderItemId.makeUnsafe(tool.itemId),
-            },
-            raw: {
-              source: "claude.sdk.message",
-              method: "claude/stream_event/content_block_stop",
-              payload: message,
-            },
-          });
+          if (Object.keys(resolvedInput).length > 0) {
+            tool.input = resolvedInput;
+          }
         }
       });
 
@@ -1525,43 +1720,7 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
 
         if (context.turnState) {
           context.turnState.items.push(message.message);
-          const fallbackAssistantText = extractAssistantText(message);
-          if (
-            fallbackAssistantText.length > 0 &&
-            fallbackAssistantText !== context.turnState.fallbackAssistantText
-          ) {
-            context.turnState = {
-              ...context.turnState,
-              fallbackAssistantText,
-            };
-          }
-
-          const stamp = yield* makeEventStamp();
-          yield* offerRuntimeEvent({
-            type: "item.updated",
-            eventId: stamp.eventId,
-            provider: PROVIDER,
-            createdAt: stamp.createdAt,
-            threadId: context.sessionKey,
-            turnId: context.turnState.turnId,
-            itemId: asRuntimeItemId(context.turnState.assistantItemId),
-            payload: {
-              itemType: "assistant_message",
-              status: "inProgress",
-              title: "Assistant message",
-              data: message.message,
-            },
-            providerRefs: {
-              ...providerThreadRef(context),
-              providerTurnId: context.turnState.turnId,
-              providerItemId: ProviderItemId.makeUnsafe(context.turnState.assistantItemId),
-            },
-            raw: {
-              source: "claude.sdk.message",
-              method: "claude/assistant",
-              payload: message,
-            },
-          });
+          yield* backfillAssistantTextBlocksFromSnapshot(context, message);
         }
 
         context.lastAssistantUuid = message.uuid;
@@ -2632,12 +2791,11 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
         const turnId = TurnId.makeUnsafe(yield* Random.nextUUIDv4);
         const turnState: ClaudeTurnState = {
           turnId,
-          assistantItemId: yield* Random.nextUUIDv4,
           startedAt: yield* nowIso,
           items: [],
-          messageCompleted: false,
-          emittedTextDelta: false,
-          fallbackAssistantText: "",
+          assistantTextBlocks: new Map(),
+          assistantTextBlockOrder: [],
+          nextSyntheticAssistantBlockIndex: -1,
         };
 
         const updatedAt = yield* nowIso;
