@@ -282,10 +282,18 @@ function promptQueueToAsyncIterable(
 
               return { done: false, value: item.message };
             }
-          } catch {
-            // Effect.runPromiseExit rejected during runtime/scope teardown.
-            // End the stream cleanly so the SDK's detached consumer does not
-            // produce an unhandled rejection.
+          } catch (error) {
+            // Effect.runPromiseExit can reject during runtime/scope teardown in
+            // effect-smol. End the stream cleanly so the SDK's detached
+            // consumer does not produce an unhandled rejection. Log anything
+            // that does not look like a normal interruption so we do not hide
+            // real prompt-stream bugs.
+            if (isClaudeInterruptedMessage(error instanceof Error ? error.message : String(error)) === false) {
+              console.warn(
+                "[ClaudeCodeAdapter] Prompt stream iterator closed after unexpected rejection",
+                error,
+              );
+            }
             done = true;
             return DONE;
           }
