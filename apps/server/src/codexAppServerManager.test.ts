@@ -748,6 +748,66 @@ describe("respondToUserInput", () => {
   });
 });
 
+describe("turn completion sync hook", () => {
+  it("triggers Token Battle sync when a Codex turn completes", () => {
+    const manager = new CodexAppServerManager();
+    const context = {
+      session: {
+        provider: "codex",
+        status: "running",
+        threadId: asThreadId("thread_1"),
+        runtimeMode: "full-access",
+        model: "gpt-5.3-codex",
+        activeTurnId: "turn_1",
+        createdAt: "2026-02-10T00:00:00.000Z",
+        updatedAt: "2026-02-10T00:00:00.000Z",
+      },
+      account: {
+        type: "unknown" as const,
+        planType: null,
+        sparkEnabled: true,
+      },
+      child: {} as never,
+      output: {} as never,
+      pending: new Map(),
+      pendingApprovals: new Map(),
+      pendingUserInputs: new Map(),
+      nextRequestId: 1,
+      stopping: false,
+      homePath: "/tmp/custom-codex-home",
+    };
+
+    const triggerCodexTokenBattleSync = vi
+      .spyOn(
+        manager as unknown as {
+          triggerCodexTokenBattleSync: (ctx: typeof context) => void;
+        },
+        "triggerCodexTokenBattleSync",
+      )
+      .mockImplementation(() => {});
+
+    (
+      manager as unknown as {
+        handleServerNotification: (
+          ctx: typeof context,
+          notification: { method: string; params?: unknown },
+        ) => void;
+      }
+    ).handleServerNotification(context, {
+      method: "turn/completed",
+      params: {
+        turn: {
+          status: "completed",
+        },
+      },
+    });
+
+    expect(context.session.status).toBe("ready");
+    expect(context.session.activeTurnId).toBeUndefined();
+    expect(triggerCodexTokenBattleSync).toHaveBeenCalledWith(context);
+  });
+});
+
 describe.skipIf(!process.env.CODEX_BINARY_PATH)("startSession live Codex resume", () => {
   it(
     "keeps prior thread history when resuming with a changed runtime mode",

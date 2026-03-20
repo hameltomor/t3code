@@ -1,6 +1,8 @@
 import { type ChildProcessWithoutNullStreams, spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
+import { existsSync } from "node:fs";
+import path from "node:path";
 import readline from "node:readline";
 
 import {
@@ -67,6 +69,7 @@ interface CodexSessionContext {
   account: CodexAccountSnapshot;
   child: ChildProcessWithoutNullStreams;
   output: readline.Interface;
+  homePath?: string;
   pending: Map<PendingRequestKey, PendingRequest>;
   pendingApprovals: Map<ApprovalRequestId, PendingApprovalRequest>;
   pendingUserInputs: Map<ApprovalRequestId, PendingUserInputRequest>;
@@ -164,6 +167,7 @@ const RECOVERABLE_THREAD_RESUME_ERROR_SNIPPETS = [
 const CODEX_DEFAULT_MODEL = "gpt-5.3-codex";
 const CODEX_SPARK_MODEL = "gpt-5.3-codex-spark";
 const CODEX_SPARK_DISABLED_PLAN_TYPES = new Set<CodexPlanType>(["free", "go", "plus"]);
+const TOKEN_BATTLE_NOTIFY_SCRIPT_NAME = "token-battle-notify.sh";
 
 function asObject(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== "object") {
@@ -568,6 +572,7 @@ export class CodexAppServerManager extends EventEmitter<CodexAppServerManagerEve
         },
         child,
         output,
+        ...(codexHomePath ? { homePath: codexHomePath } : {}),
         pending: new Map(),
         pendingApprovals: new Map(),
         pendingUserInputs: new Map(),
@@ -1168,6 +1173,7 @@ export class CodexAppServerManager extends EventEmitter<CodexAppServerManagerEve
         activeTurnId: undefined,
         lastError: errorMessage ?? context.session.lastError,
       });
+      this.triggerCodexTokenBattleSync(context);
       return;
     }
 
@@ -1331,6 +1337,33 @@ export class CodexAppServerManager extends EventEmitter<CodexAppServerManagerEve
 
   private emitEvent(event: ProviderEvent): void {
     this.emit("event", event);
+  }
+
+  private triggerCodexTokenBattleSync(context: CodexSessionContext): void {
+    const homeDir = process.env.HOME ?? process.env.USERPROFILE;
+    if (!homeDir) {
+      return;
+    }
+
+    const notifyScriptPath = path.join(homeDir, ".codex", TOKEN_BATTLE_NOTIFY_SCRIPT_NAME);
+    if (!existsSync(notifyScriptPath)) {
+      return;
+    }
+
+    const child = spawn(notifyScriptPath, [], {
+      env: {
+        ...process.env,
+        ...(context.homePath ? { CODEX_HOME: context.homePath } : {}),
+      },
+      stdio: "ignore",
+      detached: false,
+      shell: process.platform === "win32",
+    });
+
+    child.on("error", () => {
+      // Best-effort auxiliary sync; provider lifecycle should not fail on hook errors.
+    });
+    child.unref();
   }
 
   private assertSupportedCodexCliVersion(input: {
