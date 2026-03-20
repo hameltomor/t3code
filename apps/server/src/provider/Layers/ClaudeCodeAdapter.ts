@@ -246,6 +246,10 @@ function toMessage(cause: unknown, fallback: string): string {
   }
   return fallback;
 }
+function toError(cause: unknown, fallback: string): Error {
+  return cause instanceof Error ? cause : new Error(toMessage(cause, fallback));
+}
+
 
 /**
  * Extract extended error details from the Claude Agent SDK error.
@@ -396,6 +400,13 @@ function classifyToolItemType(toolName: string): CanonicalItemType {
     return "command_execution";
   }
   if (
+    normalized.includes("task") ||
+    normalized.includes("subagent") ||
+    normalized.includes("agent")
+  ) {
+    return "collab_agent_tool_call";
+  }
+  if (
     normalized.includes("edit") ||
     normalized.includes("write") ||
     normalized.includes("file") ||
@@ -409,17 +420,37 @@ function classifyToolItemType(toolName: string): CanonicalItemType {
   if (normalized.includes("mcp")) {
     return "mcp_tool_call";
   }
+  if (normalized.includes("websearch") || normalized.includes("web search")) {
+    return "web_search";
+  }
+  if (normalized.includes("image")) {
+    return "image_view";
+  }
   return "dynamic_tool_call";
 }
 
-function classifyRequestType(toolName: string): CanonicalRequestType {
+function isReadOnlyToolName(toolName: string): boolean {
   const normalized = toolName.toLowerCase();
-  if (normalized === "read" || normalized.includes("read file") || normalized.includes("view")) {
+  return (
+    normalized === "read" ||
+    normalized.includes("read file") ||
+    normalized.includes("view") ||
+    normalized.includes("grep") ||
+    normalized.includes("glob") ||
+    normalized.includes("search")
+  );
+}
+
+function classifyRequestType(toolName: string): CanonicalRequestType {
+  if (isReadOnlyToolName(toolName)) {
     return "file_read_approval";
   }
-  return classifyToolItemType(toolName) === "command_execution"
+  const itemType = classifyToolItemType(toolName);
+  return itemType === "command_execution"
     ? "command_execution_approval"
-    : "file_change_approval";
+    : itemType === "file_change"
+      ? "file_change_approval"
+      : "dynamic_tool_call";
 }
 
 function summarizeToolRequest(toolName: string, input: Record<string, unknown>): string {
@@ -444,6 +475,12 @@ function titleForTool(itemType: CanonicalItemType): string {
       return "File change";
     case "mcp_tool_call":
       return "MCP tool call";
+    case "collab_agent_tool_call":
+      return "Subagent task";
+    case "web_search":
+      return "Web search";
+    case "image_view":
+      return "Image view";
     case "dynamic_tool_call":
       return "Tool call";
     default:
@@ -460,6 +497,136 @@ function parseAccumulatedToolInput(parts: string[]): Record<string, unknown> {
   }
 }
 
+function normalizeClaudeStreamMessages(cause: Cause.Cause<Error>): ReadonlyArray<string> {
+  const errors = Cause.prettyErrors(cause)
+    .map((error) => error.message.trim())
+    .filter((message) => message.length > 0);
+  if (errors.length > 0) {
+    return errors;
+  }
+
+  const squashed = toMessage(Cause.squash(cause), "").trim();
+  return squashed.length > 0 ? [squashed] : [];
+}
+
+function isClaudeInterruptedMessage(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("all fibers interrupted without error") ||
+    normalized.includes("request was aborted") ||
+    normalized.includes("interrupted by user")
+  );
+}
+
+function isClaudeInterruptedCause(cause: Cause.Cause<Error>): boolean {
+  return (
+    Cause.hasInterruptsOnly(cause) ||
+    normalizeClaudeStreamMessages(cause).some(isClaudeInterruptedMessage)
+  );
+}
+
+function messageFromClaudeStreamCause(cause: Cause.Cause<Error>, fallback: string): string {
+  return normalizeClaudeStreamMessages(cause)[0] ?? fallback;
+}
+
+function interruptionMessageFromClaudeCause(cause: Cause.Cause<Error>): string {
+  const message = messageFromClaudeStreamCause(cause, "Claude runtime interrupted.");
+  return isClaudeInterruptedMessage(message) ? "Claude runtime interrupted." : message;
+}
+
+function buildPromptText(input: ProviderSendTurnInput): string {
+  const requestedEffort = resolveReasoningEffortForProvider(
+    "claudeCode",
+    input.modelOptions?.claudeCode?.effort ?? null,
+    input.model,
+  );
+  const supportedEffortOptions = getReasoningEffortOptions("claudeCode", input.model);
+  const promptEffort =
+    requestedEffort === "ultrathink" && supportedEffortOptions.includes(requestedEffort)
+      ? "ultrathink"
+      : null;
+  return applyClaudePromptEffortPrefix(input.input?.trim() ?? "", promptEffort);
+}
+
+function extractTextContent(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => extractTextContent(entry)).join("");
+  }
+  if (!value || typeof value !== "object") {
+    return "";
+  }
+
+  const record = value as {
+    text?: unknown;
+    content?: unknown;
+  };
+  if (typeof record.text === "string") {
+    return record.text;
+  }
+  return extractTextContent(record.content);
+}
+
+function toolResultStreamKind(
+  itemType: CanonicalItemType,
+): "command_output" | "file_change_output" | undefined {
+  switch (itemType) {
+    case "command_execution":
+      return "command_output";
+    case "file_change":
+      return "file_change_output";
+    default:
+      return undefined;
+  }
+}
+
+function toolResultBlocksFromUserMessage(message: SDKMessage): Array<{
+  readonly toolUseId: string;
+  readonly block: Record<string, unknown>;
+  readonly text: string;
+  readonly isError: boolean;
+}> {
+  if (message.type !== "user") {
+    return [];
+  }
+
+  const content = (message.message as { content?: unknown } | undefined)?.content;
+  if (!Array.isArray(content)) {
+    return [];
+  }
+
+  const blocks: Array<{
+    readonly toolUseId: string;
+    readonly block: Record<string, unknown>;
+    readonly text: string;
+    readonly isError: boolean;
+  }> = [];
+
+  for (const entry of content) {
+    if (!entry || typeof entry !== "object") {
+      continue;
+    }
+    const block = entry as Record<string, unknown>;
+    if (block.type !== "tool_result") {
+      continue;
+    }
+    const toolUseId = typeof block.tool_use_id === "string" ? block.tool_use_id : undefined;
+    if (!toolUseId) {
+      continue;
+    }
+    blocks.push({
+      toolUseId,
+      block,
+      text: extractTextContent(block.content),
+      isError: block.is_error === true,
+    });
+  }
+
+  return blocks;
+}
+
 /** MIME types that Claude supports natively as document content blocks. */
 const CLAUDE_NATIVE_DOCUMENT_MIMES = new Set(["application/pdf"]);
 
@@ -470,7 +637,7 @@ function buildUserMessage(
 ): SDKUserMessage {
   const content: Array<Record<string, unknown>> = [];
 
-  const text = input.input?.trim() ?? "";
+  const text = buildPromptText(input);
   if (text.length > 0) {
     content.push({ type: "text", text });
   }
@@ -549,15 +716,35 @@ function buildUserMessage(
   } as SDKUserMessage;
 }
 
+function resultErrorsText(result: SDKResultMessage): string {
+  return "errors" in result && Array.isArray(result.errors)
+    ? result.errors.join(" ").toLowerCase()
+    : "";
+}
+
+function isInterruptedResult(result: SDKResultMessage): boolean {
+  const errors = resultErrorsText(result);
+  if (errors.includes("interrupt")) {
+    return true;
+  }
+
+  return (
+    result.subtype === "error_during_execution" &&
+    result.is_error === false &&
+    (errors.includes("request was aborted") ||
+      errors.includes("interrupted by user") ||
+      errors.includes("aborted"))
+  );
+}
+
 function turnStatusFromResult(result: SDKResultMessage): ProviderRuntimeTurnStatus {
   if (result.subtype === "success") {
     return "completed";
   }
-
-  const errors = result.errors.join(" ").toLowerCase();
-  if (errors.includes("interrupt")) {
+  if (isInterruptedResult(result)) {
     return "interrupted";
   }
+  const errors = resultErrorsText(result);
   if (errors.includes("cancel")) {
     return "cancelled";
   }
@@ -1016,6 +1203,8 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
           },
         });
 
+        context.inFlightTools.clear();
+
         const updatedAt = yield* nowIso;
         context.turnState = undefined;
         context.session = {
@@ -1050,6 +1239,10 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
               tool.inputJsonParts.push(
                 (event.delta as { partial_json: string }).partial_json,
               );
+              const parsedInput = parseAccumulatedToolInput(tool.inputJsonParts);
+              if (Object.keys(parsedInput).length > 0) {
+                tool.input = parsedInput;
+              }
             }
           }
 
@@ -1117,6 +1310,7 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
             toolName,
             title: titleForTool(itemType),
             detail,
+            input: toolInput,
             inputJsonParts: [],
           };
           context.inFlightTools.set(index, tool);
@@ -1160,13 +1354,14 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
           if (!tool) {
             return;
           }
-          context.inFlightTools.delete(index);
 
           // Rebuild tool input from accumulated JSON delta fragments.
           const resolvedInput = parseAccumulatedToolInput(tool.inputJsonParts);
+          const effectiveInput =
+            Object.keys(resolvedInput).length > 0 ? resolvedInput : tool.input;
           const resolvedDetail =
-            Object.keys(resolvedInput).length > 0
-              ? summarizeToolRequest(tool.toolName, resolvedInput)
+            Object.keys(effectiveInput).length > 0
+              ? summarizeToolRequest(tool.toolName, effectiveInput)
               : tool.detail;
 
           const stamp = yield* makeEventStamp();
@@ -1185,7 +1380,7 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
               ...(resolvedDetail ? { detail: resolvedDetail } : {}),
               data: {
                 toolName: tool.toolName,
-                input: resolvedInput,
+                input: effectiveInput,
               },
             },
             providerRefs: {
@@ -1199,6 +1394,123 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
               payload: message,
             },
           });
+        }
+      });
+
+    const handleUserMessage = (
+      context: ClaudeSessionContext,
+      message: SDKMessage,
+    ): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        if (message.type !== "user") {
+          return;
+        }
+
+        if (context.turnState) {
+          context.turnState.items.push(message.message);
+        }
+
+        for (const toolResult of toolResultBlocksFromUserMessage(message)) {
+          const toolEntry = Array.from(context.inFlightTools.entries()).find(
+            ([, tool]) => tool.itemId === toolResult.toolUseId,
+          );
+          if (!toolEntry) {
+            continue;
+          }
+
+          const [index, tool] = toolEntry;
+          const itemStatus = toolResult.isError ? "failed" : "completed";
+          const toolData = {
+            toolName: tool.toolName,
+            input: tool.input,
+            result: toolResult.block,
+          };
+
+          const updatedStamp = yield* makeEventStamp();
+          yield* offerRuntimeEvent({
+            type: "item.updated",
+            eventId: updatedStamp.eventId,
+            provider: PROVIDER,
+            createdAt: updatedStamp.createdAt,
+            threadId: context.sessionKey,
+            ...(context.turnState ? { turnId: asCanonicalTurnId(context.turnState.turnId) } : {}),
+            itemId: asRuntimeItemId(tool.itemId),
+            payload: {
+              itemType: tool.itemType,
+              status: toolResult.isError ? "failed" : "inProgress",
+              title: tool.title,
+              ...(tool.detail ? { detail: tool.detail } : {}),
+              data: toolData,
+            },
+            providerRefs: {
+              ...providerThreadRef(context),
+              ...(context.turnState ? { providerTurnId: String(context.turnState.turnId) } : {}),
+              providerItemId: ProviderItemId.makeUnsafe(tool.itemId),
+            },
+            raw: {
+              source: "claude.sdk.message",
+              method: "claude/user",
+              payload: message,
+            },
+          });
+
+          const streamKind = toolResultStreamKind(tool.itemType);
+          if (streamKind && toolResult.text.length > 0 && context.turnState) {
+            const deltaStamp = yield* makeEventStamp();
+            yield* offerRuntimeEvent({
+              type: "content.delta",
+              eventId: deltaStamp.eventId,
+              provider: PROVIDER,
+              createdAt: deltaStamp.createdAt,
+              threadId: context.sessionKey,
+              turnId: context.turnState.turnId,
+              itemId: asRuntimeItemId(tool.itemId),
+              payload: {
+                streamKind,
+                delta: toolResult.text,
+              },
+              providerRefs: {
+                ...providerThreadRef(context),
+                providerTurnId: String(context.turnState.turnId),
+                providerItemId: ProviderItemId.makeUnsafe(tool.itemId),
+              },
+              raw: {
+                source: "claude.sdk.message",
+                method: "claude/user",
+                payload: message,
+              },
+            });
+          }
+
+          const completedStamp = yield* makeEventStamp();
+          yield* offerRuntimeEvent({
+            type: "item.completed",
+            eventId: completedStamp.eventId,
+            provider: PROVIDER,
+            createdAt: completedStamp.createdAt,
+            threadId: context.sessionKey,
+            ...(context.turnState ? { turnId: asCanonicalTurnId(context.turnState.turnId) } : {}),
+            itemId: asRuntimeItemId(tool.itemId),
+            payload: {
+              itemType: tool.itemType,
+              status: itemStatus,
+              title: tool.title,
+              ...(tool.detail ? { detail: tool.detail } : {}),
+              data: toolData,
+            },
+            providerRefs: {
+              ...providerThreadRef(context),
+              ...(context.turnState ? { providerTurnId: String(context.turnState.turnId) } : {}),
+              providerItemId: ProviderItemId.makeUnsafe(tool.itemId),
+            },
+            raw: {
+              source: "claude.sdk.message",
+              method: "claude/user",
+              payload: message,
+            },
+          });
+
+          context.inFlightTools.delete(index);
         }
       });
 
@@ -1453,6 +1765,12 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
                 description: message.description,
                 ...(message.usage ? { usage: message.usage } : {}),
                 ...(message.last_tool_name ? { lastToolName: message.last_tool_name } : {}),
+                ...(() => {
+                  const summary = (message as { summary?: unknown }).summary;
+                  return typeof summary === "string" && summary.trim().length > 0
+                    ? { summary }
+                    : {};
+                })(),
               },
             });
             return;
@@ -1590,6 +1908,7 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
             yield* handleStreamEvent(context, message);
             return;
           case "user":
+            yield* handleUserMessage(context, message);
             return;
           case "assistant":
             yield* handleAssistantMessage(context, message);
@@ -1616,30 +1935,50 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
         }
       });
 
-    const runSdkStream = (context: ClaudeSessionContext): Effect.Effect<void> =>
-      Stream.fromAsyncIterable(context.query, (cause) => cause).pipe(
+    const runSdkStream = (context: ClaudeSessionContext): Effect.Effect<void, Error> =>
+      Stream.fromAsyncIterable(context.query, (cause) =>
+        toError(cause, "Claude runtime stream failed."),
+      ).pipe(
         Stream.takeWhile(() => !context.stopped),
         Stream.runForEach((message) => handleSdkMessage(context, message)),
-        Effect.catchCause((cause) =>
-          Effect.gen(function* () {
-            if (Cause.hasInterruptsOnly(cause) || context.stopped) {
-              return;
-            }
-            const squashed = Cause.squash(cause);
-            const baseMessage = toMessage(squashed, "Claude runtime stream failed.");
-            const detail = extractProcessErrorDetail(squashed);
-            const message = detail ? `${baseMessage} (${detail})` : baseMessage;
-            console.error(
-              `[ClaudeCodeAdapter] Stream error for thread ${context.sessionKey}:`,
-              baseMessage,
-              detail ?? "(no extended detail)",
-              squashed,
-            );
-            yield* emitRuntimeError(context, message, cause);
-            yield* completeTurn(context, "failed", message);
-          }),
-        ),
       );
+
+    const handleStreamExit = (
+      context: ClaudeSessionContext,
+      exit: Exit.Exit<void, Error>,
+    ): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        if (context.stopped) {
+          return;
+        }
+
+        if (Exit.isFailure(exit)) {
+          if (isClaudeInterruptedCause(exit.cause)) {
+            if (context.turnState) {
+              yield* completeTurn(
+                context,
+                "interrupted",
+                interruptionMessageFromClaudeCause(exit.cause),
+              );
+            }
+          } else {
+            const baseMessage = messageFromClaudeStreamCause(
+              exit.cause,
+              "Claude runtime stream failed.",
+            );
+            const detail = extractProcessErrorDetail(Cause.squash(exit.cause));
+            const message = detail ? `${baseMessage} (${detail})` : baseMessage;
+            yield* emitRuntimeError(context, message, Cause.pretty(exit.cause));
+            yield* completeTurn(context, "failed", message);
+          }
+        } else if (context.turnState) {
+          yield* completeTurn(context, "interrupted", "Claude runtime stream ended.");
+        }
+
+        yield* stopSessionInternal(context, {
+          emitExitEvent: true,
+        });
+      });
 
     const stopSessionInternal = (
       context: ClaudeSessionContext,
@@ -1657,7 +1996,7 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
             type: "request.resolved",
             eventId: stamp.eventId,
             provider: PROVIDER,
-              createdAt: stamp.createdAt,
+            createdAt: stamp.createdAt,
             threadId: context.sessionKey,
             ...(context.turnState ? { turnId: asCanonicalTurnId(context.turnState.turnId) } : {}),
             requestId: asRuntimeRequestId(requestId),
@@ -1674,13 +2013,55 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
         }
         context.pendingApprovals.clear();
 
+        for (const [requestId, pending] of context.pendingUserInputs) {
+          yield* Deferred.succeed(pending.answers, {} as ProviderUserInputAnswers);
+          const stamp = yield* makeEventStamp();
+          yield* offerRuntimeEvent({
+            type: "user-input.resolved",
+            eventId: stamp.eventId,
+            provider: PROVIDER,
+            createdAt: stamp.createdAt,
+            threadId: context.sessionKey,
+            ...(context.turnState ? { turnId: asCanonicalTurnId(context.turnState.turnId) } : {}),
+            requestId: asRuntimeRequestId(requestId),
+            payload: {
+              answers: {},
+            },
+            providerRefs: {
+              ...providerThreadRef(context),
+              ...(context.turnState ? { providerTurnId: String(context.turnState.turnId) } : {}),
+            },
+          });
+        }
+        context.pendingUserInputs.clear();
+
         if (context.turnState) {
           yield* completeTurn(context, "interrupted", "Session stopped.");
         }
 
         yield* Queue.shutdown(context.promptQueue);
 
-        context.query.close();
+        context.streamFiber = undefined;
+
+        const closeExit = yield* Effect.exit(
+          Effect.try({
+            try: () => context.query.close(),
+            catch: (cause) =>
+              new ProviderAdapterProcessError({
+                provider: PROVIDER,
+                threadId: context.sessionKey,
+                detail: "Failed to close Claude runtime query.",
+                cause,
+              }),
+          }),
+        );
+        if (Exit.isFailure(closeExit)) {
+          yield* emitRuntimeError(
+            context,
+            "Failed to close Claude runtime query.",
+            Cause.squash(closeExit.cause),
+          );
+        }
 
         const updatedAt = yield* nowIso;
         context.session = {
@@ -1696,7 +2077,7 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
             type: "session.exited",
             eventId: stamp.eventId,
             provider: PROVIDER,
-              createdAt: stamp.createdAt,
+            createdAt: stamp.createdAt,
             threadId: context.sessionKey,
             payload: {
               reason: "Session stopped",
@@ -1755,6 +2136,7 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
         );
 
         const pendingApprovals = new Map<ApprovalRequestId, PendingApproval>();
+        const pendingUserInputs = new Map<ApprovalRequestId, PendingUserInput>();
         const inFlightTools = new Map<number, ToolInFlight>();
 
         const contextRef = yield* Ref.make<ClaudeSessionContext | undefined>(undefined);
@@ -1767,6 +2149,150 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
                 return {
                   behavior: "deny",
                   message: "Claude session context is unavailable.",
+                } satisfies PermissionResult;
+              }
+
+              if (toolName.toLowerCase() === "askuserquestion") {
+                const requestId = ApprovalRequestId.makeUnsafe(yield* Random.nextUUIDv4);
+                const rawQuestions = Array.isArray(toolInput.questions) ? toolInput.questions : [];
+                const questions = rawQuestions
+                  .map((question, index) => {
+                    if (!question || typeof question !== "object") {
+                      return undefined;
+                    }
+                    const record = question as Record<string, unknown>;
+                    const header =
+                      typeof record.header === "string" && record.header.trim().length > 0
+                        ? record.header.trim()
+                        : `Question ${index + 1}`;
+                    const prompt =
+                      typeof record.question === "string" && record.question.trim().length > 0
+                        ? record.question.trim()
+                        : undefined;
+                    if (!prompt) {
+                      return undefined;
+                    }
+                    const options = Array.isArray(record.options)
+                      ? record.options
+                          .map((option) => {
+                            if (!option || typeof option !== "object") {
+                              return undefined;
+                            }
+                            const optionRecord = option as Record<string, unknown>;
+                            const label =
+                              typeof optionRecord.label === "string" &&
+                              optionRecord.label.trim().length > 0
+                                ? optionRecord.label.trim()
+                                : undefined;
+                            if (!label) {
+                              return undefined;
+                            }
+                            return {
+                              label,
+                              description:
+                                typeof optionRecord.description === "string"
+                                  ? optionRecord.description
+                                  : "",
+                            };
+                          })
+                          .filter((option): option is { label: string; description: string } => option !== undefined)
+                      : [];
+                    return {
+                      id: header,
+                      header,
+                      question: prompt,
+                      options,
+                    };
+                  })
+                  .filter(
+                    (
+                      question,
+                    ): question is {
+                      id: string;
+                      header: string;
+                      question: string;
+                      options: Array<{ label: string; description: string }>;
+                    } => question !== undefined,
+                  );
+
+                const answersDeferred = yield* Deferred.make<ProviderUserInputAnswers>();
+                pendingUserInputs.set(requestId, {
+                  answers: answersDeferred,
+                });
+
+                const requestedStamp = yield* makeEventStamp();
+                yield* offerRuntimeEvent({
+                  type: "user-input.requested",
+                  eventId: requestedStamp.eventId,
+                  provider: PROVIDER,
+                  createdAt: requestedStamp.createdAt,
+                  threadId: context.sessionKey,
+                  ...(context.turnState ? { turnId: asCanonicalTurnId(context.turnState.turnId) } : {}),
+                  requestId: asRuntimeRequestId(requestId),
+                  payload: {
+                    questions,
+                  },
+                  providerRefs: {
+                    ...providerThreadRef(context),
+                    ...(context.turnState ? { providerTurnId: String(context.turnState.turnId) } : {}),
+                    ...(callbackOptions.toolUseID
+                      ? { providerItemId: ProviderItemId.makeUnsafe(callbackOptions.toolUseID) }
+                      : {}),
+                  },
+                  raw: {
+                    source: "claude.sdk.permission",
+                    method: "canUseTool/AskUserQuestion",
+                    payload: {
+                      toolName,
+                      input: toolInput,
+                    },
+                  },
+                });
+
+                const onAbort = () => {
+                  if (!pendingUserInputs.has(requestId)) {
+                    return;
+                  }
+                  pendingUserInputs.delete(requestId);
+                  Effect.runFork(Deferred.succeed(answersDeferred, {} as ProviderUserInputAnswers));
+                };
+                callbackOptions.signal.addEventListener("abort", onAbort, { once: true });
+
+                const answers = yield* Deferred.await(answersDeferred);
+                pendingUserInputs.delete(requestId);
+
+                const resolvedStamp = yield* makeEventStamp();
+                yield* offerRuntimeEvent({
+                  type: "user-input.resolved",
+                  eventId: resolvedStamp.eventId,
+                  provider: PROVIDER,
+                  createdAt: resolvedStamp.createdAt,
+                  threadId: context.sessionKey,
+                  ...(context.turnState ? { turnId: asCanonicalTurnId(context.turnState.turnId) } : {}),
+                  requestId: asRuntimeRequestId(requestId),
+                  payload: {
+                    answers,
+                  },
+                  providerRefs: {
+                    ...providerThreadRef(context),
+                    ...(context.turnState ? { providerTurnId: String(context.turnState.turnId) } : {}),
+                    ...(callbackOptions.toolUseID
+                      ? { providerItemId: ProviderItemId.makeUnsafe(callbackOptions.toolUseID) }
+                      : {}),
+                  },
+                  raw: {
+                    source: "claude.sdk.permission",
+                    method: "canUseTool/AskUserQuestion/resolved",
+                    payload: { answers },
+                  },
+                });
+
+                return {
+                  behavior: "allow",
+                  updatedInput: {
+                    ...toolInput,
+                    answers,
+                  },
                 } satisfies PermissionResult;
               }
 
@@ -1893,9 +2419,31 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
           );
 
         const providerOptions = input.providerOptions?.claudeCode;
+        const requestedEffort = resolveReasoningEffortForProvider(
+          "claudeCode",
+          input.modelOptions?.claudeCode?.effort ?? null,
+          input.model,
+        );
+        const supportedEffortOptions = getReasoningEffortOptions("claudeCode", input.model);
+        const effort =
+          requestedEffort && supportedEffortOptions.includes(requestedEffort)
+            ? requestedEffort
+            : null;
+        const fastMode =
+          input.modelOptions?.claudeCode?.fastMode === true && supportsClaudeFastMode(input.model);
+        const thinking =
+          typeof input.modelOptions?.claudeCode?.thinking === "boolean" &&
+          supportsClaudeThinkingToggle(input.model)
+            ? input.modelOptions.claudeCode.thinking
+            : undefined;
+        const effectiveEffort = getEffectiveClaudeCodeEffort(effort);
         const permissionMode =
           toPermissionMode(providerOptions?.permissionMode) ??
           (input.runtimeMode === "full-access" ? "bypassPermissions" : undefined);
+        const settings = {
+          ...(typeof thinking === "boolean" ? { alwaysThinkingEnabled: thinking } : {}),
+          ...(fastMode ? { fastMode: true } : {}),
+        };
 
         const queryOptions: ClaudeQueryOptions = {
           ...(input.cwd ? { cwd: input.cwd } : {}),
@@ -1903,6 +2451,7 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
           ...(providerOptions?.binaryPath
             ? { pathToClaudeCodeExecutable: providerOptions.binaryPath }
             : {}),
+          ...(effectiveEffort ? { effort: effectiveEffort } : {}),
           ...(permissionMode ? { permissionMode } : {}),
           ...(permissionMode === "bypassPermissions"
             ? { allowDangerouslySkipPermissions: true }
@@ -1910,6 +2459,7 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
           ...(providerOptions?.maxThinkingTokens !== undefined
             ? { maxThinkingTokens: providerOptions.maxThinkingTokens }
             : {}),
+          ...(Object.keys(settings).length > 0 ? { settings } : {}),
           ...(resumeState?.resume ? { resume: resumeState.resume } : {}),
           ...(resumeState?.resumeSessionAt ? { resumeSessionAt: resumeState.resumeSessionAt } : {}),
           includePartialMessages: true,
@@ -1973,9 +2523,12 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
           session,
           promptQueue,
           query: queryRuntime,
+          streamFiber: undefined,
           startedAt,
+          basePermissionMode: permissionMode,
           resumeSessionId: resumeState?.resume,
           pendingApprovals,
+          pendingUserInputs,
           turns: [],
           inFlightTools,
           turnState: undefined,
@@ -2008,10 +2561,13 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
             config: {
               ...(input.model ? { model: input.model } : {}),
               ...(input.cwd ? { cwd: input.cwd } : {}),
+              ...(effectiveEffort ? { effort: effectiveEffort } : {}),
               ...(permissionMode ? { permissionMode } : {}),
               ...(providerOptions?.maxThinkingTokens !== undefined
                 ? { maxThinkingTokens: providerOptions.maxThinkingTokens }
                 : {}),
+              ...(fastMode ? { fastMode: true } : {}),
+              ...(typeof thinking === "boolean" ? { thinking } : {}),
             },
           },
           providerRefs: {},
@@ -2030,19 +2586,9 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
           providerRefs: {},
         });
 
-        Effect.runFork(
-          runSdkStream(context).pipe(
-            Effect.catchCause((cause) => {
-              if (Cause.hasInterruptsOnly(cause) || context.stopped) {
-                return Effect.void;
-              }
-              return Effect.sync(() => {
-                console.error(
-                  `[ClaudeCodeAdapter] Unhandled SDK stream fiber failure for thread ${context.sessionKey}:`,
-                  cause,
-                );
-              });
-            }),
+        context.streamFiber = Effect.runFork(
+          Effect.exit(runSdkStream(context)).pipe(
+            Effect.flatMap((exit) => handleStreamExit(context, exit)),
           ),
         );
 
@@ -2067,6 +2613,19 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
           yield* Effect.tryPromise({
             try: () => context.query.setModel(input.model),
             catch: (cause) => toRequestError(input.threadId, "turn/setModel", cause),
+          });
+        }
+
+        if (input.interactionMode === "plan") {
+          yield* Effect.tryPromise({
+            try: () => context.query.setPermissionMode("plan"),
+            catch: (cause) => toRequestError(input.threadId, "turn/setPermissionMode", cause),
+          });
+        } else if (input.interactionMode === "default") {
+          yield* Effect.tryPromise({
+            try: () =>
+              context.query.setPermissionMode(context.basePermissionMode ?? "bypassPermissions"),
+            catch: (cause) => toRequestError(input.threadId, "turn/setPermissionMode", cause),
           });
         }
 
@@ -2192,15 +2751,22 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
     const respondToUserInput: ClaudeCodeAdapterShape["respondToUserInput"] = (
       threadId,
       requestId,
-      _answers,
+      answers,
     ) =>
-      Effect.fail(
-        new ProviderAdapterRequestError({
-          provider: PROVIDER,
-          method: "item/tool/requestUserInput",
-          detail: `Claude Code does not yet support structured user-input responses for thread '${threadId}' and request '${requestId}'.`,
-        }),
-      );
+      Effect.gen(function* () {
+        const context = yield* requireSession(threadId);
+        const pending = context.pendingUserInputs.get(requestId);
+        if (!pending) {
+          return yield* new ProviderAdapterRequestError({
+            provider: PROVIDER,
+            method: "item/tool/respondToUserInput",
+            detail: `Unknown pending user-input request: ${requestId}`,
+          });
+        }
+
+        context.pendingUserInputs.delete(requestId);
+        yield* Deferred.succeed(pending.answers, answers);
+      });
 
     const stopSession: ClaudeCodeAdapterShape["stopSession"] = (threadId) =>
       Effect.gen(function* () {

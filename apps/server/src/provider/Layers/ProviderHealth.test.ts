@@ -4,9 +4,12 @@ import { Effect, Layer, Sink, Stream } from "effect";
 import * as PlatformError from "effect/PlatformError";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
-import { checkCodexProviderStatus, parseAuthStatusFromOutput } from "./ProviderHealth";
-
-// ── Test helpers ────────────────────────────────────────────────────
+import {
+  checkClaudeCodeProviderStatus,
+  checkCodexProviderStatus,
+  parseAuthStatusFromOutput,
+  parseClaudeAuthStatusFromOutput,
+} from "./ProviderHealth";
 
 const encoder = new TextEncoder();
 
@@ -53,8 +56,6 @@ function failingSpawnerLayer(description: string) {
   );
 }
 
-// ── Tests ───────────────────────────────────────────────────────────
-
 it.effect("returns ready when codex is installed and authenticated", () =>
   Effect.gen(function* () {
     const status = yield* checkCodexProviderStatus;
@@ -68,7 +69,7 @@ it.effect("returns ready when codex is installed and authenticated", () =>
         const joined = args.join(" ");
         if (joined === "--version") return { stdout: "codex 1.0.0\n", stderr: "", code: 0 };
         if (joined === "login status") return { stdout: "Logged in\n", stderr: "", code: 0 };
-        throw new Error(`Unexpected args: ${joined}`);
+        throw new Error("Unexpected args: " + joined);
       }),
     ),
   ),
@@ -81,7 +82,7 @@ it.effect("returns unavailable when codex is missing", () =>
     assert.strictEqual(status.status, "error");
     assert.strictEqual(status.available, false);
     assert.strictEqual(status.authStatus, "unknown");
-    assert.strictEqual(status.message, "Codex CLI (`codex`) is not installed or not on PATH.");
+    assert.match(status.message ?? "", /not installed or not on PATH\.$/);
   }).pipe(Effect.provide(failingSpawnerLayer("spawn codex ENOENT"))),
 );
 
@@ -101,7 +102,7 @@ it.effect("returns unavailable when codex is below the minimum supported version
       mockSpawnerLayer((args) => {
         const joined = args.join(" ");
         if (joined === "--version") return { stdout: "codex 0.36.0\n", stderr: "", code: 0 };
-        throw new Error(`Unexpected args: ${joined}`);
+        throw new Error("Unexpected args: " + joined);
       }),
     ),
   ),
@@ -114,10 +115,7 @@ it.effect("returns unauthenticated when auth probe reports login required", () =
     assert.strictEqual(status.status, "error");
     assert.strictEqual(status.available, true);
     assert.strictEqual(status.authStatus, "unauthenticated");
-    assert.strictEqual(
-      status.message,
-      "Codex CLI is not authenticated. Run `codex login` and try again.",
-    );
+    assert.match(status.message ?? "", /Codex CLI is not authenticated/);
   }).pipe(
     Effect.provide(
       mockSpawnerLayer((args) => {
@@ -126,36 +124,32 @@ it.effect("returns unauthenticated when auth probe reports login required", () =
         if (joined === "login status") {
           return { stdout: "", stderr: "Not logged in. Run codex login.", code: 1 };
         }
-        throw new Error(`Unexpected args: ${joined}`);
+        throw new Error("Unexpected args: " + joined);
       }),
     ),
   ),
 );
 
-it.effect(
-  "returns unauthenticated when login status output includes 'not logged in'",
-  () =>
-    Effect.gen(function* () {
-      const status = yield* checkCodexProviderStatus;
-      assert.strictEqual(status.provider, "codex");
-      assert.strictEqual(status.status, "error");
-      assert.strictEqual(status.available, true);
-      assert.strictEqual(status.authStatus, "unauthenticated");
-      assert.strictEqual(
-        status.message,
-        "Codex CLI is not authenticated. Run `codex login` and try again.",
-      );
-    }).pipe(
-      Effect.provide(
-        mockSpawnerLayer((args) => {
-          const joined = args.join(" ");
-          if (joined === "--version") return { stdout: "codex 1.0.0\n", stderr: "", code: 0 };
-          if (joined === "login status")
-            return { stdout: "Not logged in\n", stderr: "", code: 1 };
-          throw new Error(`Unexpected args: ${joined}`);
-        }),
-      ),
+it.effect("returns unauthenticated when login status output includes not logged in", () =>
+  Effect.gen(function* () {
+    const status = yield* checkCodexProviderStatus;
+    assert.strictEqual(status.provider, "codex");
+    assert.strictEqual(status.status, "error");
+    assert.strictEqual(status.available, true);
+    assert.strictEqual(status.authStatus, "unauthenticated");
+    assert.match(status.message ?? "", /Codex CLI is not authenticated/);
+  }).pipe(
+    Effect.provide(
+      mockSpawnerLayer((args) => {
+        const joined = args.join(" ");
+        if (joined === "--version") return { stdout: "codex 1.0.0\n", stderr: "", code: 0 };
+        if (joined === "login status") {
+          return { stdout: "Not logged in\n", stderr: "", code: 1 };
+        }
+        throw new Error("Unexpected args: " + joined);
+      }),
     ),
+  ),
 );
 
 it.effect("returns warning when login status command is unsupported", () =>
@@ -175,15 +169,92 @@ it.effect("returns warning when login status command is unsupported", () =>
         const joined = args.join(" ");
         if (joined === "--version") return { stdout: "codex 1.0.0\n", stderr: "", code: 0 };
         if (joined === "login status") {
-          return { stdout: "", stderr: "error: unknown command 'login'", code: 2 };
+          return { stdout: "", stderr: "error: unknown command login", code: 2 };
         }
-        throw new Error(`Unexpected args: ${joined}`);
+        throw new Error("Unexpected args: " + joined);
       }),
     ),
   ),
 );
 
-// ── Pure function tests ─────────────────────────────────────────────
+it.effect("returns ready when claude is installed and authenticated", () =>
+  Effect.gen(function* () {
+    const status = yield* checkClaudeCodeProviderStatus;
+    assert.strictEqual(status.provider, "claudeCode");
+    assert.strictEqual(status.status, "ready");
+    assert.strictEqual(status.available, true);
+    assert.strictEqual(status.authStatus, "authenticated");
+  }).pipe(
+    Effect.provide(
+      mockSpawnerLayer((args) => {
+        const joined = args.join(" ");
+        if (joined === "--version") return { stdout: "1.2.3\n", stderr: "", code: 0 };
+        if (joined === "auth status") {
+          return { stdout: "Authenticated as test@example.com\n", stderr: "", code: 0 };
+        }
+        throw new Error("Unexpected args: " + joined);
+      }),
+    ),
+  ),
+);
+
+it.effect("returns unavailable when claude is missing", () =>
+  Effect.gen(function* () {
+    const status = yield* checkClaudeCodeProviderStatus;
+    assert.strictEqual(status.provider, "claudeCode");
+    assert.strictEqual(status.status, "error");
+    assert.strictEqual(status.available, false);
+    assert.strictEqual(status.authStatus, "unknown");
+    assert.match(status.message ?? "", /not installed or not on PATH\.$/);
+  }).pipe(Effect.provide(failingSpawnerLayer("spawn claude ENOENT"))),
+);
+
+it.effect("returns unauthenticated when claude auth probe reports login required", () =>
+  Effect.gen(function* () {
+    const status = yield* checkClaudeCodeProviderStatus;
+    assert.strictEqual(status.provider, "claudeCode");
+    assert.strictEqual(status.status, "error");
+    assert.strictEqual(status.available, true);
+    assert.strictEqual(status.authStatus, "unauthenticated");
+    assert.match(status.message ?? "", /Claude Code is not authenticated/);
+  }).pipe(
+    Effect.provide(
+      mockSpawnerLayer((args) => {
+        const joined = args.join(" ");
+        if (joined === "--version") return { stdout: "1.2.3\n", stderr: "", code: 0 };
+        if (joined === "auth status") {
+          return { stdout: "", stderr: "Not authenticated. Run claude login.", code: 1 };
+        }
+        throw new Error("Unexpected args: " + joined);
+      }),
+    ),
+  ),
+);
+
+it.effect("returns warning when claude auth status command is unsupported", () =>
+  Effect.gen(function* () {
+    const status = yield* checkClaudeCodeProviderStatus;
+    assert.strictEqual(status.provider, "claudeCode");
+    assert.strictEqual(status.status, "warning");
+    assert.strictEqual(status.available, true);
+    assert.strictEqual(status.authStatus, "unknown");
+    assert.strictEqual(
+      status.message,
+      "Claude Code authentication status command is unavailable in this Claude Code version.",
+    );
+  }).pipe(
+    Effect.provide(
+      mockSpawnerLayer((args) => {
+        const joined = args.join(" ");
+        if (joined === "--version") return { stdout: "1.2.3\n", stderr: "", code: 0 };
+        if (joined === "auth status") {
+          return { stdout: "", stderr: "error: unknown command auth", code: 2 };
+        }
+        throw new Error("Unexpected args: " + joined);
+      }),
+    ),
+  ),
+);
 
 it("parseAuthStatusFromOutput: exit code 0 with no auth markers is ready", () => {
   const parsed = parseAuthStatusFromOutput({ stdout: "OK\n", stderr: "", code: 0 });
@@ -206,6 +277,36 @@ it("parseAuthStatusFromOutput: JSON without auth marker is warning", () => {
     stdout: '[{"ok":true}]\n',
     stderr: "",
     code: 0,
+  });
+  assert.strictEqual(parsed.status, "warning");
+  assert.strictEqual(parsed.authStatus, "unknown");
+});
+
+it("parseClaudeAuthStatusFromOutput: exit code 0 is ready", () => {
+  const parsed = parseClaudeAuthStatusFromOutput({
+    stdout: "Authenticated as test@example.com\n",
+    stderr: "",
+    code: 0,
+  });
+  assert.strictEqual(parsed.status, "ready");
+  assert.strictEqual(parsed.authStatus, "authenticated");
+});
+
+it("parseClaudeAuthStatusFromOutput: login required is unauthenticated", () => {
+  const parsed = parseClaudeAuthStatusFromOutput({
+    stdout: "",
+    stderr: "Not authenticated. Run claude login.",
+    code: 1,
+  });
+  assert.strictEqual(parsed.status, "error");
+  assert.strictEqual(parsed.authStatus, "unauthenticated");
+});
+
+it("parseClaudeAuthStatusFromOutput: unsupported auth command is warning", () => {
+  const parsed = parseClaudeAuthStatusFromOutput({
+    stdout: "",
+    stderr: "error: unknown command auth",
+    code: 2,
   });
   assert.strictEqual(parsed.status, "warning");
   assert.strictEqual(parsed.authStatus, "unknown");

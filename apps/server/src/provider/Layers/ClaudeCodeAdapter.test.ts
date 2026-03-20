@@ -785,6 +785,236 @@ describe("ClaudeCodeAdapterLive", () => {
     );
   });
 
+  it.effect("bridges structured user-input through AskUserQuestion callbacks", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeCodeAdapter;
+
+      const _session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: "claudeCode",
+        runtimeMode: "approval-required",
+      });
+
+      yield* Stream.take(adapter.streamEvents, 3).pipe(Stream.runDrain);
+
+      const createInput = harness.getLastCreateQueryInput();
+      const canUseTool = createInput?.options.canUseTool;
+      assert.equal(typeof canUseTool, "function");
+      if (!canUseTool) {
+        return;
+      }
+
+      const userInputPromise = canUseTool(
+        "AskUserQuestion",
+        {
+          questions: [
+            {
+              header: "sandbox_mode",
+              question: "Which mode should be used?",
+              options: [
+                {
+                  label: "workspace-write",
+                  description: "Allow writing inside the workspace.",
+                },
+              ],
+            },
+          ],
+        },
+        {
+          signal: new AbortController().signal,
+          toolUseID: "tool-user-input-1",
+        },
+      );
+
+      const requested = yield* Stream.runHead(adapter.streamEvents);
+      assert.equal(requested._tag, "Some");
+      if (requested._tag !== "Some") {
+        return;
+      }
+      assert.equal(requested.value.type, "user-input.requested");
+      if (requested.value.type !== "user-input.requested") {
+        return;
+      }
+      assert.equal(requested.value.requestId !== undefined, true);
+      assert.equal(requested.value.payload.questions[0]?.id, "sandbox_mode");
+
+      yield* adapter.respondToUserInput(
+        THREAD_ID,
+        ApprovalRequestId.makeUnsafe(String(requested.value.requestId)),
+        {
+          sandbox_mode: "workspace-write",
+        },
+      );
+
+      const resolved = yield* Stream.runHead(adapter.streamEvents);
+      assert.equal(resolved._tag, "Some");
+      if (resolved._tag !== "Some") {
+        return;
+      }
+      assert.equal(resolved.value.type, "user-input.resolved");
+      if (resolved.value.type !== "user-input.resolved") {
+        return;
+      }
+      assert.deepEqual(resolved.value.payload.answers, {
+        sandbox_mode: "workspace-write",
+      });
+
+      const permissionResult = yield* Effect.promise(() => userInputPromise);
+      assert.equal(permissionResult.behavior, "allow");
+      if (permissionResult.behavior !== "allow") {
+        return;
+      }
+      assert.deepEqual(permissionResult.updatedInput, {
+        questions: [
+          {
+            header: "sandbox_mode",
+            question: "Which mode should be used?",
+            options: [
+              {
+                label: "workspace-write",
+                description: "Allow writing inside the workspace.",
+              },
+            ],
+          },
+        ],
+        answers: {
+          sandbox_mode: "workspace-write",
+        },
+      });
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("projects Claude tool-result user messages into runtime output events", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeCodeAdapter;
+
+      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 12).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      const _session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: "claudeCode",
+        runtimeMode: "full-access",
+      });
+
+      const turn = yield* adapter.sendTurn({
+        threadId: THREAD_ID,
+        input: "hello",
+        attachments: [],
+      });
+
+      harness.query.emit({
+        type: "stream_event",
+        session_id: "sdk-session-tool-result",
+        uuid: "stream-tool-result-start",
+        parent_tool_use_id: null,
+        event: {
+          type: "content_block_start",
+          index: 0,
+          content_block: {
+            type: "tool_use",
+            id: "tool-result-1",
+            name: "Bash",
+            input: {
+              command: "pwd",
+            },
+          },
+        },
+      } as unknown as SDKMessage);
+
+      harness.query.emit({
+        type: "stream_event",
+        session_id: "sdk-session-tool-result",
+        uuid: "stream-tool-result-stop",
+        parent_tool_use_id: null,
+        event: {
+          type: "content_block_stop",
+          index: 0,
+        },
+      } as unknown as SDKMessage);
+
+      harness.query.emit({
+        type: "user",
+        session_id: "sdk-session-tool-result",
+        uuid: "user-tool-result",
+        parent_tool_use_id: null,
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "tool-result-1",
+              content: [{ type: "text", text: "/tmp/project\n" }],
+              is_error: false,
+            },
+          ],
+        },
+      } as unknown as SDKMessage);
+
+      harness.query.emit({
+        type: "assistant",
+        session_id: "sdk-session-tool-result",
+        uuid: "assistant-tool-result",
+        parent_tool_use_id: null,
+        message: {
+          id: "assistant-message-tool-result",
+          content: [{ type: "text", text: "done" }],
+        },
+      } as unknown as SDKMessage);
+
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        errors: [],
+        session_id: "sdk-session-tool-result",
+        uuid: "result-tool-result",
+      } as unknown as SDKMessage);
+
+      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+      const outputDelta = runtimeEvents.find(
+        (event) =>
+          event.type === "content.delta" &&
+          event.itemId === "tool-result-1" &&
+          event.payload.streamKind === "command_output",
+      );
+      assert.equal(outputDelta?.type, "content.delta");
+      if (outputDelta?.type === "content.delta") {
+        assert.equal(outputDelta.payload.delta, "/tmp/project\n");
+        assert.equal(String(outputDelta.turnId), String(turn.turnId));
+      }
+
+      const toolUpdated = runtimeEvents.find(
+        (event) => event.type === "item.updated" && event.itemId === "tool-result-1",
+      );
+      assert.equal(toolUpdated?.type, "item.updated");
+      if (toolUpdated?.type === "item.updated") {
+        assert.deepEqual(toolUpdated.payload.data, {
+          toolName: "Bash",
+          input: {
+            command: "pwd",
+          },
+          result: {
+            type: "tool_result",
+            tool_use_id: "tool-result-1",
+            content: [{ type: "text", text: "/tmp/project\n" }],
+            is_error: false,
+          },
+        });
+      }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("passes parsed resume cursor values to Claude query options", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
