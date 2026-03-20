@@ -13,9 +13,21 @@ const STATUS_CONFIG: Record<
 > = {
   connected: { dot: "bg-emerald-500", label: "Connected", bg: "border-emerald-500/20" },
   disconnected: { dot: "bg-muted-foreground/40", label: "Disconnected", bg: "border-border" },
-  error: { dot: "bg-yellow-500", label: "Error", bg: "border-yellow-500/20" },
+  warning: { dot: "bg-yellow-500", label: "Needs attention", bg: "border-yellow-500/20" },
+  error: { dot: "bg-red-500", label: "Error", bg: "border-red-500/20" },
   unconfigured: { dot: "bg-muted-foreground/20", label: "Not configured", bg: "border-border" },
 };
+
+function authLabel(status: DashboardProviderStatus["authStatus"]): string {
+  switch (status) {
+    case "authenticated":
+      return "Authenticated";
+    case "unauthenticated":
+      return "Not authenticated";
+    case "unknown":
+      return "Unknown";
+  }
+}
 
 function ProviderStatusCard({ data }: { data: DashboardProviderStatus }) {
   const label = PROVIDER_LABELS[data.provider] ?? data.provider;
@@ -33,9 +45,17 @@ function ProviderStatusCard({ data }: { data: DashboardProviderStatus }) {
 
       <div className="space-y-1.5 text-xs text-muted-foreground">
         <div className="flex items-center justify-between">
-          <span>API Key</span>
-          <span className={data.hasApiKey ? "text-emerald-500" : "text-muted-foreground/50"}>
-            {data.hasApiKey ? "Configured" : "Missing"}
+          <span>Authentication</span>
+          <span
+            className={
+              data.authStatus === "authenticated"
+                ? "text-emerald-500"
+                : data.authStatus === "unauthenticated"
+                  ? "text-destructive"
+                  : "text-muted-foreground/50"
+            }
+          >
+            {authLabel(data.authStatus)}
           </span>
         </div>
         <div className="flex items-center justify-between">
@@ -63,7 +83,7 @@ export function ProviderStatusSection({
       <div className="mb-4">
         <h2 className="text-sm font-medium text-foreground">Provider Status</h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          Connection status and configuration for each AI provider.
+          Runtime connectivity plus provider authentication readiness.
         </p>
       </div>
 

@@ -19,7 +19,7 @@
     "start": "node dist/index.mjs",
     "prepare": "effect-language-service patch",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "NODE_OPTIONS=--disable-warning=ExperimentalWarning vitest run --config vitest.config.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.62",

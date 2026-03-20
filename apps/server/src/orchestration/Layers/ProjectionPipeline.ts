@@ -45,6 +45,10 @@ import { ProjectionTurnRepositoryLive } from "../../persistence/Layers/Projectio
 import { ProjectionThreadRepositoryLive } from "../../persistence/Layers/ProjectionThreads.ts";
 import { ServerConfig } from "../../config.ts";
 import {
+  deriveDashboardUsageRecord,
+  parseTokenUsageJson,
+} from "../../dashboard/dashboardDomain.ts";
+import {
   OrchestrationProjectionPipeline,
   type OrchestrationProjectionPipelineShape,
 } from "../Services/ProjectionPipeline.ts";
@@ -1212,15 +1216,24 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
     Effect.gen(function* () {
       if (event.type !== "thread.context-status-set") return;
       const { contextStatus } = event.payload;
-      if (!contextStatus.tokenUsage) return;
+      const previousStatus = yield* projectionThreadContextStatusRepository.getByThreadId({
+        threadId: event.payload.threadId,
+      });
+      const usage = deriveDashboardUsageRecord({
+        contextStatus,
+        previousTokenUsage: Option.match(previousStatus, {
+          onNone: () => null,
+          onSome: (status) => parseTokenUsageJson(status.tokenUsageJson),
+        }),
+      });
+      if (!usage || usage.totalTokens <= 0) return;
 
       const provider = contextStatus.provider;
       const model = contextStatus.model ?? "unknown";
       const date = event.occurredAt.slice(0, 10); // YYYY-MM-DD
-      const usage = contextStatus.tokenUsage;
 
       yield* projectionUsageAggregateRepository.upsert({
-        id: `${provider}:${model}:${date}`,
+        id: event.eventId,
         provider,
         model,
         date,
@@ -1276,12 +1289,12 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
       apply: applyNotificationsProjection,
     },
     {
-      name: ORCHESTRATION_PROJECTOR_NAMES.threadContextStatus,
-      apply: applyThreadContextStatusProjection,
-    },
-    {
       name: ORCHESTRATION_PROJECTOR_NAMES.usageAggregate,
       apply: applyUsageAggregateProjection,
+    },
+    {
+      name: ORCHESTRATION_PROJECTOR_NAMES.threadContextStatus,
+      apply: applyThreadContextStatusProjection,
     },
   ];
 

@@ -85,6 +85,12 @@ import { expandHomePath } from "./os-jank.ts";
 import { HistoryImportServiceService } from "./historyImport/Services/HistoryImportService.ts";
 import { ThreadExternalLinkRepository } from "./persistence/Services/ThreadExternalLinks.ts";
 import { ProjectionUsageAggregateRepository } from "./persistence/Services/ProjectionUsageAggregate.ts";
+import { DashboardRateLimitState } from "./dashboard/Services/DashboardRateLimitState.ts";
+import { DashboardCloudSummaryService } from "./dashboard/Services/DashboardCloudSummary.ts";
+import {
+  buildDashboardProviderStatuses,
+  dashboardDateRange,
+} from "./dashboard/dashboardDomain.ts";
 
 /**
  * ServerShape - Service API for server lifecycle control.
@@ -243,7 +249,9 @@ export type ServerRuntimeServices =
   | WebPushService
   | HistoryImportServiceService
   | ThreadExternalLinkRepository
-  | ProjectionUsageAggregateRepository;
+  | ProjectionUsageAggregateRepository
+  | DashboardRateLimitState
+  | DashboardCloudSummaryService;
 
 export class ServerLifecycleError extends Schema.TaggedErrorClass<ServerLifecycleError>()(
   "ServerLifecycleError",
@@ -671,6 +679,8 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
   const historyImportService = yield* HistoryImportServiceService;
   const externalLinkRepo = yield* ThreadExternalLinkRepository;
   const usageAggregateRepo = yield* ProjectionUsageAggregateRepository;
+  const dashboardRateLimitState = yield* DashboardRateLimitState;
+  const dashboardCloudSummary = yield* DashboardCloudSummaryService;
 
   const subscriptionsScope = yield* Scope.make("sequential");
   yield* Effect.addFinalizer(() => Scope.close(subscriptionsScope, Exit.void));
@@ -830,27 +840,6 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
       ),
     ]),
   );
-
-  const dashboardDateRange = (period: DashboardUsagePeriod): { dateFrom: string; dateTo: string } => {
-    const now = new Date();
-    const dateTo = now.toISOString().slice(0, 10);
-    switch (period) {
-      case "today":
-        return { dateFrom: dateTo, dateTo };
-      case "7d": {
-        const from = new Date(now);
-        from.setDate(from.getDate() - 6);
-        return { dateFrom: from.toISOString().slice(0, 10), dateTo };
-      }
-      case "30d": {
-        const from = new Date(now);
-        from.setDate(from.getDate() - 29);
-        return { dateFrom: from.toISOString().slice(0, 10), dateTo };
-      }
-      case "all":
-        return { dateFrom: "2000-01-01", dateTo };
-    }
-  };
 
   const routeRequest = Effect.fnUntraced(function* (request: WebSocketRequest) {
     switch (request.body._tag) {
@@ -1233,28 +1222,28 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
             totalTokens: r.totalTokens,
             turnCount: r.turnCount,
           })),
+          source: "local_runtime",
           period: { from: dateFrom, to: dateTo },
         };
       }
 
+      case DASHBOARD_WS_METHODS.getCloudSummary: {
+        return yield* dashboardCloudSummary.getSummary(request.body.period);
+      }
+
       case DASHBOARD_WS_METHODS.getRateLimits: {
-        // Rate limits are ephemeral — not yet tracked. Return empty.
-        return [];
+        return yield* dashboardRateLimitState.getRateLimits;
       }
 
       case DASHBOARD_WS_METHODS.getProviderStatus: {
-        const statuses = yield* providerHealth.getStatuses;
-        return statuses.map((s) => ({
-          provider: s.provider,
-          status: s.status === "ready"
-            ? "connected" as const
-            : s.status === "error"
-              ? "error" as const
-              : "disconnected" as const,
-          hasApiKey: s.authStatus === "authenticated",
-          activeSessionCount: 0,
-          lastError: s.message ?? null,
-        }));
+        const [healthStatuses, sessions] = yield* Effect.all([
+          providerHealth.getStatuses,
+          providerService.listSessions(),
+        ]);
+        return buildDashboardProviderStatuses({
+          healthStatuses,
+          sessions,
+        });
       }
 
       default: {

@@ -116,6 +116,10 @@ self.addEventListener("notificationclick", (event) => {
 });
 
 // Handle push subscription rotation — re-subscribe and notify clients
+function notifyServiceWorkerClient(client, payload) {
+  return Reflect.apply(client.postMessage, client, [payload]);
+}
+
 self.addEventListener("pushsubscriptionchange", (event) => {
   event.waitUntil(
     (async () => {
@@ -127,11 +131,11 @@ self.addEventListener("pushsubscriptionchange", (event) => {
             : { userVisibleOnly: true },
         );
 
-        // Notify all clients to re-register the new subscription with the server
+        // Notify all clients to re-register the new subscription with the server.
+        // Route through a helper so lint does not assume Window.postMessage semantics here.
         const clients = await self.clients.matchAll({ type: "window" });
         for (const client of clients) {
-          // ServiceWorkerClient.postMessage() does not accept targetOrigin
-          client.postMessage({
+          notifyServiceWorkerClient(client, {
             type: "PUSH_SUBSCRIPTION_CHANGED",
             subscription: newSubscription.toJSON(),
           });

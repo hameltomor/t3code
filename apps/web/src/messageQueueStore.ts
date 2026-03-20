@@ -149,13 +149,11 @@ export const useMessageQueueStore = create<MessageQueueStore>((set, get) => ({
   updateQueuedMessage: (threadId, messageId, newText) =>
     set((state) => {
       const threadQueue = getThreadQueue(state.queue, threadId);
-      let changed = false;
-      const updated = threadQueue.map((m) => {
-        if (m.id !== messageId) return m;
-        changed = true;
-        return { ...m, text: newText };
-      });
-      if (!changed) return state;
+      const messageIndex = threadQueue.findIndex((message) => message.id === messageId);
+      if (messageIndex === -1) return state;
+
+      const updated = [...threadQueue];
+      updated[messageIndex] = { ...updated[messageIndex]!, text: newText };
       const newQueue = new Map(state.queue);
       newQueue.set(threadId, updated);
       persistQueue(newQueue);

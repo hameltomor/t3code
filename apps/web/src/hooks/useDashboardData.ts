@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type {
   DashboardUsagePeriod,
+  DashboardCloudSummary,
   DashboardUsageSummary,
   DashboardRateLimit,
   DashboardProviderStatus,
@@ -9,6 +10,7 @@ import { readNativeApi } from "~/nativeApi";
 
 export interface DashboardData {
   usage: DashboardUsageSummary | null;
+  cloud: DashboardCloudSummary | null;
   rateLimits: DashboardRateLimit[];
   providerStatus: DashboardProviderStatus[];
   loading: boolean;
@@ -18,6 +20,7 @@ export interface DashboardData {
 
 export function useDashboardData(period: DashboardUsagePeriod): DashboardData {
   const [usage, setUsage] = useState<DashboardUsageSummary | null>(null);
+  const [cloud, setCloud] = useState<DashboardCloudSummary | null>(null);
   const [rateLimits, setRateLimits] = useState<DashboardRateLimit[]>([]);
   const [providerStatus, setProviderStatus] = useState<DashboardProviderStatus[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,12 +34,14 @@ export function useDashboardData(period: DashboardUsagePeriod): DashboardData {
     setError(null);
 
     try {
-      const [usageResult, rateLimitsResult, providerStatusResult] = await Promise.all([
+      const [usageResult, cloudResult, rateLimitsResult, providerStatusResult] = await Promise.all([
         api.dashboard.getUsageSummary({ period }),
+        api.dashboard.getCloudSummary({ period }),
         api.dashboard.getRateLimits(),
         api.dashboard.getProviderStatus(),
       ]);
       setUsage(usageResult);
+      setCloud(cloudResult);
       setRateLimits(rateLimitsResult);
       setProviderStatus(providerStatusResult);
     } catch (err) {
@@ -56,5 +61,5 @@ export function useDashboardData(period: DashboardUsagePeriod): DashboardData {
     return () => clearInterval(interval);
   }, [fetchData]);
 
-  return { usage, rateLimits, providerStatus, loading, error, refresh: fetchData };
+  return { usage, cloud, rateLimits, providerStatus, loading, error, refresh: fetchData };
 }

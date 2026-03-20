@@ -34,14 +34,7 @@ const makeProjectionUsageAggregateRepository = Effect.gen(function* () {
           ${row.cachedInputTokens}, ${row.reasoningTokens}, ${row.updatedAt}
         )
         ON CONFLICT (id)
-        DO UPDATE SET
-          turn_count = projection_usage_aggregate.turn_count + excluded.turn_count,
-          input_tokens = projection_usage_aggregate.input_tokens + excluded.input_tokens,
-          output_tokens = projection_usage_aggregate.output_tokens + excluded.output_tokens,
-          total_tokens = projection_usage_aggregate.total_tokens + excluded.total_tokens,
-          cached_input_tokens = projection_usage_aggregate.cached_input_tokens + excluded.cached_input_tokens,
-          reasoning_tokens = projection_usage_aggregate.reasoning_tokens + excluded.reasoning_tokens,
-          updated_at = excluded.updated_at
+        DO NOTHING
       `,
   });
 

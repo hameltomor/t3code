@@ -94,7 +94,9 @@ describe("ProviderCommandReactor", () => {
         typeof input === "object" &&
         input !== null &&
         "provider" in input &&
-        input.provider === "codex"
+        (input.provider === "codex" ||
+          input.provider === "claudeCode" ||
+          input.provider === "gemini")
           ? input.provider
           : "codex";
       const resumeCursor =
@@ -186,7 +188,7 @@ describe("ProviderCommandReactor", () => {
       listSessions: () => Effect.succeed(runtimeSessions),
       getCapabilities: (provider) =>
         Effect.succeed({
-          sessionModelSwitch: provider === "codex" ? "in-session" : "in-session",
+          sessionModelSwitch: provider === "claudeCode" ? "restart-session" : "in-session",
         }),
       rollbackConversation: () => unsupported(),
       streamEvents: Stream.fromPubSub(runtimeEventPubSub),
@@ -344,6 +346,145 @@ describe("ProviderCommandReactor", () => {
         codex: {
           reasoningEffort: "high",
           fastMode: true,
+        },
+      },
+    });
+  });
+
+  it("restarts claude sessions when claude model options change", async () => {
+    const harness = await createHarness();
+    const now = new Date().toISOString();
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.makeUnsafe("cmd-turn-start-claude-options-1"),
+        threadId: ThreadId.makeUnsafe("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-claude-options-1"),
+          role: "user",
+          text: "first claude turn",
+          attachments: [],
+        },
+        provider: "claudeCode",
+        model: "claude-opus-4-6",
+        modelOptions: {
+          claudeCode: {
+            effort: "max",
+            fastMode: true,
+          },
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.startSession.mock.calls.length === 1);
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.makeUnsafe("cmd-turn-start-claude-options-2"),
+        threadId: ThreadId.makeUnsafe("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-claude-options-2"),
+          role: "user",
+          text: "second claude turn",
+          attachments: [],
+        },
+        provider: "claudeCode",
+        model: "claude-opus-4-6",
+        modelOptions: {
+          claudeCode: {
+            effort: "high",
+          },
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.startSession.mock.calls.length === 2);
+    await waitFor(() => harness.sendTurn.mock.calls.length === 2);
+    expect(harness.startSession.mock.calls[1]?.[1]).toMatchObject({
+      provider: "claudeCode",
+      model: "claude-opus-4-6",
+      resumeCursor: { opaque: "cursor-1" },
+      modelOptions: {
+        claudeCode: {
+          effort: "high",
+        },
+      },
+    });
+  });
+
+  it("reuses cached claude options when runtime mode restarts the session", async () => {
+    const harness = await createHarness();
+    const now = new Date().toISOString();
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.makeUnsafe("cmd-turn-start-claude-runtime-options-1"),
+        threadId: ThreadId.makeUnsafe("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-claude-runtime-options-1"),
+          role: "user",
+          text: "claude runtime mode seed",
+          attachments: [],
+        },
+        provider: "claudeCode",
+        model: "claude-opus-4-6",
+        modelOptions: {
+          claudeCode: {
+            effort: "max",
+            fastMode: true,
+          },
+        },
+        providerOptions: {
+          claudeCode: {
+            permissionMode: "acceptEdits",
+            maxThinkingTokens: 8192,
+          },
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.startSession.mock.calls.length === 1);
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.runtime-mode.set",
+        commandId: CommandId.makeUnsafe("cmd-runtime-mode-set-claude-options"),
+        threadId: ThreadId.makeUnsafe("thread-1"),
+        runtimeMode: "full-access",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.startSession.mock.calls.length === 2);
+    expect(harness.startSession.mock.calls[1]?.[1]).toMatchObject({
+      provider: "claudeCode",
+      model: "claude-opus-4-6",
+      runtimeMode: "full-access",
+      resumeCursor: { opaque: "cursor-1" },
+      modelOptions: {
+        claudeCode: {
+          effort: "max",
+          fastMode: true,
+        },
+      },
+      providerOptions: {
+        claudeCode: {
+          permissionMode: "acceptEdits",
+          maxThinkingTokens: 8192,
         },
       },
     });

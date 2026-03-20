@@ -31,6 +31,7 @@ import {
   inferProviderForModel,
   normalizeModelSlug,
   resolveModelSlugForProvider,
+  resolveReasoningEffortForProvider,
 } from "@xbetools/shared/model";
 import {
   memo,
@@ -913,21 +914,31 @@ export default function ChatView({ threadId }: ChatViewProps) {
       draftModel,
     ) as ModelSlug;
   }, [baseThreadModel, composerDraft.model, customModelsForSelectedProvider, selectedProvider]);
-  const reasoningOptions = getReasoningEffortOptions(selectedProvider);
-  const supportsReasoningEffort = reasoningOptions.length > 0;
-  const selectedEffort = composerDraft.effort ?? getDefaultReasoningEffort(selectedProvider);
+  const codexReasoningOptions = getReasoningEffortOptions("codex");
+  const selectedCodexEffort = useMemo(() => {
+    if (selectedProvider !== "codex") {
+      return null;
+    }
+    return (
+      resolveReasoningEffortForProvider("codex", composerDraft.effort) ??
+      getDefaultReasoningEffort("codex")
+    );
+  }, [composerDraft.effort, selectedProvider]);
   const selectedCodexFastModeEnabled =
     selectedProvider === "codex" ? composerDraft.codexFastMode : false;
   const selectedModelOptionsForDispatch = useMemo(() => {
     if (selectedProvider !== "codex") {
       return undefined;
     }
-    const codexOptions = {
-      ...(supportsReasoningEffort && selectedEffort ? { reasoningEffort: selectedEffort } : {}),
-      ...(selectedCodexFastModeEnabled ? { fastMode: true } : {}),
-    };
+    const codexOptions: { reasoningEffort?: CodexReasoningEffort; fastMode?: true } = {};
+    if (selectedCodexEffort) {
+      codexOptions.reasoningEffort = selectedCodexEffort;
+    }
+    if (selectedCodexFastModeEnabled) {
+      codexOptions.fastMode = true;
+    }
     return Object.keys(codexOptions).length > 0 ? { codex: codexOptions } : undefined;
-  }, [selectedCodexFastModeEnabled, selectedEffort, selectedProvider, supportsReasoningEffort]);
+  }, [selectedCodexEffort, selectedCodexFastModeEnabled, selectedProvider]);
   const selectedModelForPicker = selectedModel;
   const modelOptionsByProvider = useMemo(
     () => getCustomModelOptionsByProvider(settings),
@@ -4310,15 +4321,15 @@ export default function ChatView({ threadId }: ChatViewProps) {
                     onProviderModelChange={onProviderModelSelect}
                   />
 
-                  {selectedProvider === "codex" && selectedEffort != null ? (
+                  {selectedProvider === "codex" && selectedCodexEffort != null ? (
                     <>
                       {!composerCompact && (
                         <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
                       )}
                       <CodexTraitsPicker
-                        effort={selectedEffort}
+                        effort={selectedCodexEffort}
                         fastModeEnabled={selectedCodexFastModeEnabled}
-                        options={reasoningOptions}
+                        options={codexReasoningOptions}
                         onEffortChange={onEffortSelect}
                         onFastModeChange={onCodexFastModeChange}
                       />

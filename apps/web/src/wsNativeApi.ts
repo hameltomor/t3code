@@ -245,6 +245,7 @@ export function createWsNativeApi(): NativeApi {
     },
     dashboard: {
       getUsageSummary: (input) => transport.request(DASHBOARD_WS_METHODS.getUsageSummary, input),
+      getCloudSummary: (input) => transport.request(DASHBOARD_WS_METHODS.getCloudSummary, input),
       getRateLimits: () => transport.request(DASHBOARD_WS_METHODS.getRateLimits),
       getProviderStatus: () => transport.request(DASHBOARD_WS_METHODS.getProviderStatus),
     },

@@ -7,13 +7,14 @@ import { cn } from "~/lib/utils";
 import { SidebarInset, SidebarTrigger, useSidebar } from "~/components/ui/sidebar";
 import { UsageSummarySection } from "~/components/dashboard/UsageSummarySection";
 import { RateLimitsSection } from "~/components/dashboard/RateLimitsSection";
+import { CloudAccountsSection } from "~/components/dashboard/CloudAccountsSection";
 import { ProviderStatusSection } from "~/components/dashboard/ProviderStatusSection";
 import { useDashboardData } from "~/hooks/useDashboardData";
 
 function DashboardRouteView() {
   const { open: sidebarOpen } = useSidebar();
   const [period, setPeriod] = useState<DashboardUsagePeriod>("7d");
-  const { usage, rateLimits, providerStatus, loading, error } = useDashboardData(period);
+  const { usage, cloud, rateLimits, providerStatus, loading, error } = useDashboardData(period);
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground isolate">
@@ -48,6 +49,8 @@ function DashboardRouteView() {
               period={period}
               onPeriodChange={setPeriod}
             />
+
+            <CloudAccountsSection cloud={cloud} />
 
             <RateLimitsSection rateLimits={rateLimits} />
 

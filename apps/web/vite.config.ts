@@ -65,5 +65,13 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    // The app intentionally ships a large syntax-highlighting surface. Keep the
+    // warning budget above the known steady-state bundle while we split this further.
+    chunkSizeWarningLimit: 3000,
+    rolldownOptions: {
+      checks: {
+        pluginTimings: false,
+      },
+    },
   },
 });

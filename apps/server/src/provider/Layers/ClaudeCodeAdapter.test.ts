@@ -345,7 +345,7 @@ describe("ClaudeCodeAdapterLive", () => {
         Effect.forkChild,
       );
 
-      const session = yield* adapter.startSession({
+      const _session = yield* adapter.startSession({
         threadId: THREAD_ID,
         provider: "claudeCode",
         model: "claude-sonnet-4-5",
@@ -482,7 +482,7 @@ describe("ClaudeCodeAdapterLive", () => {
         Effect.forkChild,
       );
 
-      const session = yield* adapter.startSession({
+      const _session = yield* adapter.startSession({
         threadId: THREAD_ID,
         provider: "claudeCode",
         runtimeMode: "full-access",
@@ -571,7 +571,7 @@ describe("ClaudeCodeAdapterLive", () => {
         Effect.forkChild,
       );
 
-      const session = yield* adapter.startSession({
+      const _session = yield* adapter.startSession({
         threadId: THREAD_ID,
         provider: "claudeCode",
         runtimeMode: "full-access",
@@ -713,7 +713,7 @@ describe("ClaudeCodeAdapterLive", () => {
     return Effect.gen(function* () {
       const adapter = yield* ClaudeCodeAdapter;
 
-      const session = yield* adapter.startSession({
+      const _session = yield* adapter.startSession({
         threadId: THREAD_ID,
         provider: "claudeCode",
         runtimeMode: "approval-required",
@@ -848,7 +848,7 @@ describe("ClaudeCodeAdapterLive", () => {
     return Effect.gen(function* () {
       const adapter = yield* ClaudeCodeAdapter;
 
-      const session = yield* adapter.startSession({
+      const _session = yield* adapter.startSession({
         threadId: THREAD_ID,
         provider: "claudeCode",
         runtimeMode: "full-access",
@@ -927,7 +927,7 @@ describe("ClaudeCodeAdapterLive", () => {
     return Effect.gen(function* () {
       const adapter = yield* ClaudeCodeAdapter;
 
-      const session = yield* adapter.startSession({
+      const _session = yield* adapter.startSession({
         threadId: THREAD_ID,
         provider: "claudeCode",
         runtimeMode: "full-access",
@@ -968,7 +968,7 @@ describe("ClaudeCodeAdapterLive", () => {
     return Effect.gen(function* () {
       const adapter = yield* ClaudeCodeAdapter;
 
-      const session = yield* adapter.startSession({
+      const _session = yield* adapter.startSession({
         threadId: THREAD_ID,
         provider: "claudeCode",
         runtimeMode: "full-access",

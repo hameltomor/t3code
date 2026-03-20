@@ -7,7 +7,7 @@
 
 import type { ThreadId } from "@xbetools/contracts";
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
 import {
   DEFAULT_THREAD_TERMINAL_HEIGHT,
   DEFAULT_THREAD_TERMINAL_ID,
@@ -26,6 +26,16 @@ interface ThreadTerminalState {
 }
 
 const TERMINAL_STATE_STORAGE_KEY = "xbecode:terminal-state:v1";
+
+const noopStorage: StateStorage = {
+  getItem: () => null,
+  setItem: () => {},
+  removeItem: () => {},
+};
+
+const terminalStateStorage = createJSONStorage(() =>
+  typeof localStorage === "undefined" ? noopStorage : localStorage,
+);
 
 function normalizeTerminalIds(terminalIds: string[]): string[] {
   const ids = [...new Set(terminalIds.map((id) => id.trim()).filter((id) => id.length > 0))].slice(
@@ -523,7 +533,7 @@ export const useTerminalStateStore = create<TerminalStateStoreState>()(
     {
       name: TERMINAL_STATE_STORAGE_KEY,
       version: 1,
-      storage: createJSONStorage(() => localStorage),
+      storage: terminalStateStorage,
       partialize: (state) => ({
         terminalStateByThreadId: state.terminalStateByThreadId,
       }),

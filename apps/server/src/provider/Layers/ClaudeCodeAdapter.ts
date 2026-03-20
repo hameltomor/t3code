@@ -35,13 +35,14 @@ import {
   type ProviderRuntimeTurnStatus,
   type ProviderSendTurnInput,
   type ProviderSession,
+  type ProviderUserInputAnswers,
   RuntimeItemId,
   RuntimeRequestId,
   RuntimeTaskId,
   ThreadId,
   TurnId,
 } from "@xbetools/contracts";
-import { Cause, DateTime, Deferred, Effect, Layer, Queue, Random, Ref, Stream } from "effect";
+import { Cause, DateTime, Deferred, Effect, Exit, Fiber, Layer, Queue, Random, Ref, Stream } from "effect";
 
 import {
   ProviderAdapterProcessError,
@@ -60,6 +61,14 @@ import {
   type MaterializedImageAttachment,
 } from "../attachmentMaterializer.ts";
 import { normalizeClaudeUsage } from "../normalization/tokenUsageNormalization.ts";
+import {
+  applyClaudePromptEffortPrefix,
+  getEffectiveClaudeCodeEffort,
+  getReasoningEffortOptions,
+  resolveReasoningEffortForProvider,
+  supportsClaudeFastMode,
+  supportsClaudeThinkingToggle,
+} from "@xbetools/shared/model";
 
 const PROVIDER = "claudeCode" as const;
 const CLAUDE_SETTING_SOURCES = ["user", "project", "local"] as const;
@@ -167,12 +176,17 @@ interface PendingApproval {
   readonly decision: Deferred.Deferred<ProviderApprovalDecision>;
 }
 
+interface PendingUserInput {
+  readonly answers: Deferred.Deferred<ProviderUserInputAnswers>;
+}
+
 interface ToolInFlight {
   readonly itemId: string;
   readonly itemType: CanonicalItemType;
   readonly toolName: string;
   readonly title: string;
   readonly detail?: string;
+  input: Record<string, unknown>;
   /** Accumulated JSON fragments from `input_json_delta` events. */
   inputJsonParts: string[];
 }
@@ -183,9 +197,12 @@ interface ClaudeSessionContext {
   session: ProviderSession;
   readonly promptQueue: Queue.Queue<PromptQueueItem>;
   readonly query: ClaudeQueryRuntime;
+  streamFiber: Fiber.Fiber<void, never> | undefined;
   readonly startedAt: string;
+  readonly basePermissionMode: PermissionMode | undefined;
   resumeSessionId: string | undefined;
   readonly pendingApprovals: Map<ApprovalRequestId, PendingApproval>;
+  readonly pendingUserInputs: Map<ApprovalRequestId, PendingUserInput>;
   readonly turns: Array<{
     id: TurnId;
     items: Array<unknown>;

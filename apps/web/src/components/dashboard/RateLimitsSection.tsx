@@ -103,7 +103,13 @@ function ProviderRateLimitCard({ data }: { data: DashboardRateLimit }) {
         </div>
       ) : (
         <div className="flex items-center justify-center py-3 text-xs text-muted-foreground/60">
-          No rate limit data available
+          No live rate limit counters exposed by this provider yet
+        </div>
+      )}
+
+      {data.retryAfterMs !== null && (
+        <div className="text-[10px] text-muted-foreground/60">
+          Retry window resets in {Math.ceil(data.retryAfterMs / 1_000)}s
         </div>
       )}
     </div>
@@ -120,7 +126,7 @@ export function RateLimitsSection({
       <div className="mb-4">
         <h2 className="text-sm font-medium text-foreground">Rate Limits</h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          Current rate limit status for each provider.
+          Live provider rate-limit state when exposed by the underlying runtime.
         </p>
       </div>
 
@@ -134,7 +140,7 @@ export function RateLimitsSection({
         </div>
       ) : (
         <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
-          Rate limit data will appear during active sessions.
+          No providers are reporting rate-limit state yet.
         </div>
       )}
     </section>

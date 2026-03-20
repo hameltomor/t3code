@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import { FetchHttpClient } from "effect/unstable/http";
 import { Effect, Exit, Layer, PlatformError, PubSub, Scope, Stream } from "effect";
 import { describe, expect, it, afterEach, vi } from "vitest";
 import { createServer } from "./wsServer";
@@ -479,6 +480,7 @@ describe("WebSocket Server", () => {
       Layer.provideMerge(openLayer),
       Layer.provideMerge(serverConfigLayer),
       Layer.provideMerge(AnalyticsService.layerTest),
+      Layer.provideMerge(FetchHttpClient.layer),
       Layer.provideMerge(NodeServices.layer),
     );
     const runtimeServices = await Effect.runPromise(

@@ -16,6 +16,7 @@ import {
 } from "../../provider/normalization/contextStatusComputation.ts";
 import { Cache, Cause, Duration, Effect, Layer, Option, Queue, Ref, Stream } from "effect";
 
+import { DashboardRateLimitState } from "../../dashboard/Services/DashboardRateLimitState.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
 import { isGitRepository } from "../../git/isRepo.ts";
@@ -508,6 +509,7 @@ function runtimeEventToActivities(
 const make = Effect.gen(function* () {
   const orchestrationEngine = yield* OrchestrationEngineService;
   const providerService = yield* ProviderService;
+  const dashboardRateLimitState = yield* DashboardRateLimitState;
 
   // Context status dispatch throttle state: tracks last dispatch time and totalTokens per thread
   const lastContextStatusDispatch = new Map<string, { at: number; totalTokens: number }>();
@@ -841,6 +843,14 @@ const make = Effect.gen(function* () {
 
   const processRuntimeEvent = (event: ProviderRuntimeEvent) =>
     Effect.gen(function* () {
+      if (event.type === "account.rate-limits.updated") {
+        yield* dashboardRateLimitState.recordRateLimitUpdate(
+          event.provider,
+          event.payload.rateLimits,
+          event.createdAt,
+        );
+      }
+
       const readModel = yield* orchestrationEngine.getReadModel();
       const thread = readModel.threads.find((entry) => entry.id === event.threadId);
       if (!thread) return;

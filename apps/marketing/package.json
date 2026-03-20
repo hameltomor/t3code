@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
+    "build": "node scripts/build-clean.mjs",
     "preview": "astro preview",
     "typecheck": "astro check"
   },

@@ -122,6 +122,7 @@ export const WS_METHODS = {
 
   // Dashboard methods
   dashboardGetUsageSummary: DASHBOARD_WS_METHODS.getUsageSummary,
+  dashboardGetCloudSummary: DASHBOARD_WS_METHODS.getCloudSummary,
   dashboardGetRateLimits: DASHBOARD_WS_METHODS.getRateLimits,
   dashboardGetProviderStatus: DASHBOARD_WS_METHODS.getProviderStatus,
 } as const;
@@ -220,6 +221,7 @@ const WebSocketRequestBody = Schema.Union([
 
   // Dashboard methods
   tagRequestBody(WS_METHODS.dashboardGetUsageSummary, DashboardGetUsageSummaryInput),
+  tagRequestBody(WS_METHODS.dashboardGetCloudSummary, DashboardGetUsageSummaryInput),
   tagRequestBody(WS_METHODS.dashboardGetRateLimits, Schema.Struct({})),
   tagRequestBody(WS_METHODS.dashboardGetProviderStatus, Schema.Struct({})),
 ]);

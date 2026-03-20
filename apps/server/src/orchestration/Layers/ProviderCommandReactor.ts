@@ -74,6 +74,40 @@ const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
 const WORKTREE_BRANCH_PREFIX = "xbecode";
 const TEMP_WORKTREE_BRANCH_PATTERN = new RegExp(`^${WORKTREE_BRANCH_PREFIX}\\/[0-9a-f]{8}$`);
 
+function structuralEqual(left: unknown, right: unknown): boolean {
+  if (left === right) {
+    return true;
+  }
+  if (Array.isArray(left) && Array.isArray(right)) {
+    return (
+      left.length === right.length && left.every((value, index) => structuralEqual(value, right[index]))
+    );
+  }
+  if (
+    left !== null &&
+    right !== null &&
+    typeof left === "object" &&
+    typeof right === "object"
+  ) {
+    const leftRecord = left as Record<string, unknown>;
+    const rightRecord = right as Record<string, unknown>;
+    const leftKeys = Object.keys(leftRecord).toSorted();
+    const rightKeys = Object.keys(rightRecord).toSorted();
+    return (
+      structuralEqual(leftKeys, rightKeys) &&
+      leftKeys.every((key) => structuralEqual(leftRecord[key], rightRecord[key]))
+    );
+  }
+  return false;
+}
+
+function sameModelOptions(
+  left: ProviderModelOptions | undefined,
+  right: ProviderModelOptions | undefined,
+): boolean {
+  return structuralEqual(left ?? undefined, right ?? undefined);
+}
+
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim().length > 0) {
     return error.message;
@@ -154,6 +188,9 @@ const make = Effect.gen(function* () {
       ),
     );
 
+  const threadProviderOptions = new Map<string, ProviderSessionStartInput["providerOptions"]>();
+  const threadModelOptions = new Map<string, ProviderModelOptions>();
+
   const appendProviderFailureActivity = (input: {
     readonly threadId: ThreadId;
     readonly kind:
@@ -230,6 +267,10 @@ const make = Effect.gen(function* () {
         : undefined;
     const preferredProvider: ProviderKind | undefined = options?.provider ?? currentProvider;
     const desiredModel = options?.model ?? thread.model;
+    const previousProviderOptions = threadProviderOptions.get(threadId);
+    const previousModelOptions = threadModelOptions.get(threadId);
+    const desiredProviderOptions = options?.providerOptions ?? previousProviderOptions;
+    const desiredModelOptions = options?.modelOptions ?? previousModelOptions;
     const effectiveCwd = resolveThreadProviderCwd({
       thread,
       projects: readModel.projects,
@@ -243,6 +284,7 @@ const make = Effect.gen(function* () {
     const startProviderSession = (input?: {
       readonly resumeCursor?: unknown;
       readonly provider?: ProviderKind;
+      readonly model?: string;
     }) =>
       providerService.startSession(threadId, {
         threadId,
@@ -250,9 +292,9 @@ const make = Effect.gen(function* () {
           ? { provider: input?.provider ?? preferredProvider }
           : {}),
         ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
-        ...(desiredModel ? { model: desiredModel } : {}),
-        ...(options?.modelOptions !== undefined ? { modelOptions: options.modelOptions } : {}),
-        ...(options?.providerOptions !== undefined ? { providerOptions: options.providerOptions } : {}),
+        ...(input?.model ?? desiredModel ? { model: input?.model ?? desiredModel } : {}),
+        ...(desiredModelOptions !== undefined ? { modelOptions: desiredModelOptions } : {}),
+        ...(desiredProviderOptions !== undefined ? { providerOptions: desiredProviderOptions } : {}),
         ...(input?.resumeCursor !== undefined ? { resumeCursor: input.resumeCursor } : {}),
         runtimeMode: desiredRuntimeMode,
       });
@@ -287,8 +329,17 @@ const make = Effect.gen(function* () {
         options?.model !== undefined && options.model !== activeSession?.model;
       const shouldRestartForModelChange =
         modelChanged && sessionModelSwitch === "restart-session";
+      const shouldRestartForModelOptionsChange =
+        currentProvider === "claudeCode" &&
+        options?.modelOptions !== undefined &&
+        !sameModelOptions(previousModelOptions, desiredModelOptions);
 
-      if (!runtimeModeChanged && !providerChanged && !shouldRestartForModelChange) {
+      if (
+        !runtimeModeChanged &&
+        !providerChanged &&
+        !shouldRestartForModelChange &&
+        !shouldRestartForModelOptionsChange
+      ) {
         return existingSessionThreadId;
       }
 
@@ -307,11 +358,15 @@ const make = Effect.gen(function* () {
         providerChanged,
         modelChanged,
         shouldRestartForModelChange,
+        shouldRestartForModelOptionsChange,
         hasResumeCursor: resumeCursor !== undefined,
       });
       const restartedSession = yield* startProviderSession({
         ...(resumeCursor !== undefined ? { resumeCursor } : {}),
         ...(options?.provider !== undefined ? { provider: options.provider } : {}),
+        ...(options?.model !== undefined
+          ? { model: options.model }
+          : (activeSession?.model !== undefined ? { model: activeSession.model } : {})),
       });
       yield* Effect.logInfo("provider command reactor restarted provider session", {
         threadId,
@@ -333,7 +388,7 @@ const make = Effect.gen(function* () {
         .getByThreadId({ threadId: thread.id as string })
         .pipe(
           Effect.map(Option.getOrUndefined),
-          Effect.catch(() => Effect.succeed(undefined)),
+          Effect.catch(() => Effect.void),
         );
 
       if (externalLink && externalLink.linkMode === "native-resume") {
@@ -419,6 +474,13 @@ const make = Effect.gen(function* () {
       ...(input.modelOptions !== undefined ? { modelOptions: input.modelOptions } : {}),
       ...(input.interactionMode !== undefined ? { interactionMode: input.interactionMode } : {}),
     });
+
+    if (input.providerOptions !== undefined) {
+      threadProviderOptions.set(input.threadId, input.providerOptions);
+    }
+    if (input.modelOptions !== undefined) {
+      threadModelOptions.set(input.threadId, input.modelOptions);
+    }
   });
 
   const maybeGenerateAndRenameWorktreeBranchForFirstTurn = Effect.fnUntraced(function* (input: {
@@ -725,6 +787,8 @@ const make = Effect.gen(function* () {
     if (thread.session && thread.session.status !== "stopped") {
       yield* providerService.stopSession({ threadId: thread.id });
     }
+    threadProviderOptions.delete(thread.id);
+    threadModelOptions.delete(thread.id);
 
     yield* setThreadSession({
       threadId: thread.id,
@@ -749,7 +813,12 @@ const make = Effect.gen(function* () {
           if (!thread?.session || thread.session.status === "stopped") {
             return;
           }
-          yield* ensureSessionForThread(event.payload.threadId, event.occurredAt);
+          const providerOptions = threadProviderOptions.get(event.payload.threadId);
+          const modelOptions = threadModelOptions.get(event.payload.threadId);
+          yield* ensureSessionForThread(event.payload.threadId, event.occurredAt, {
+            ...(providerOptions !== undefined ? { providerOptions } : {}),
+            ...(modelOptions !== undefined ? { modelOptions } : {}),
+          });
           return;
         }
         case "thread.turn-start-requested":

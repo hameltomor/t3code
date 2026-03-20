@@ -8,6 +8,7 @@ import {
   getModelOptions,
   getReasoningEffortOptions,
   inferProviderForModel,
+  normalizeClaudeModelOptions,
   normalizeModelSlug,
   resolveModelSlug,
 } from "./model";
@@ -83,6 +84,49 @@ describe("inferProviderForModel", () => {
 describe("getReasoningEffortOptions", () => {
   it("returns codex reasoning options for codex", () => {
     expect(getReasoningEffortOptions("codex")).toEqual(["xhigh", "high", "medium", "low"]);
+  });
+
+  it("returns claude reasoning options based on model capabilities", () => {
+    expect(getReasoningEffortOptions("claudeCode", "claude-opus-4-6")).toEqual([
+      "low",
+      "medium",
+      "high",
+      "max",
+      "ultrathink",
+    ]);
+    expect(getReasoningEffortOptions("claudeCode", "claude-sonnet-4-6")).toEqual([
+      "low",
+      "medium",
+      "high",
+      "ultrathink",
+    ]);
+    expect(getReasoningEffortOptions("claudeCode", "claude-haiku-4-5")).toEqual([]);
+  });
+});
+
+describe("normalizeClaudeModelOptions", () => {
+  it("preserves supported Claude effort and fast mode values", () => {
+    expect(
+      normalizeClaudeModelOptions("claude-opus-4-6", {
+        effort: "max",
+        fastMode: true,
+      }),
+    ).toEqual({
+      effort: "max",
+      fastMode: true,
+    });
+  });
+
+  it("drops unsupported Claude effort values for the selected model", () => {
+    expect(
+      normalizeClaudeModelOptions("claude-haiku-4-5", {
+        effort: "high",
+        thinking: false,
+        fastMode: true,
+      }),
+    ).toEqual({
+      thinking: false,
+    });
   });
 });
 

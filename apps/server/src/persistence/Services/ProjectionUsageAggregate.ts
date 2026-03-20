@@ -1,8 +1,8 @@
 /**
  * ProjectionUsageAggregateRepository - Repository interface for aggregated usage tracking.
  *
- * Owns persistence operations for projected token usage aggregated
- * by provider, model, and date.
+ * Owns persistence operations for projected usage ledger rows and
+ * aggregate queries by provider, model, and date.
  *
  * @module ProjectionUsageAggregateRepository
  */
@@ -13,6 +13,7 @@ import type { Effect } from "effect";
 import type { ProjectionRepositoryError } from "../Errors.ts";
 
 export const ProjectionUsageAggregate = Schema.Struct({
+  // Idempotency key for one projected usage record (usually the source event id).
   id: Schema.String,
   provider: Schema.String,
   model: Schema.String,

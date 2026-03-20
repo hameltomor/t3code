@@ -1,17 +1,25 @@
 import {
+  CLAUDE_CODE_EFFORT_OPTIONS,
   CODEX_REASONING_EFFORT_OPTIONS,
   DEFAULT_MODEL_BY_PROVIDER,
+  DEFAULT_REASONING_EFFORT_BY_PROVIDER,
   MODEL_OPTIONS_BY_PROVIDER,
   MODEL_SLUG_ALIASES_BY_PROVIDER,
+  type ClaudeCodeEffort,
+  type ClaudeCodeModelOptions,
+  type CodexModelOptions,
   type CodexReasoningEffort,
   type ModelSlug,
   type ProviderKind,
+  type ProviderReasoningEffort,
 } from "@xbetools/contracts";
 
-type CatalogProvider = keyof typeof MODEL_OPTIONS_BY_PROVIDER;
 const PROVIDERS: ProviderKind[] = ["codex", "claudeCode", "gemini"];
+const CLAUDE_OPUS_4_6_MODEL = "claude-opus-4-6";
+const CLAUDE_SONNET_4_6_MODEL = "claude-sonnet-4-6";
+const CLAUDE_HAIKU_4_5_MODEL = "claude-haiku-4-5";
 
-const MODEL_SLUG_SET_BY_PROVIDER: Record<CatalogProvider, ReadonlySet<ModelSlug>> = {
+const MODEL_SLUG_SET_BY_PROVIDER: Record<ProviderKind, ReadonlySet<ModelSlug>> = {
   codex: new Set(MODEL_OPTIONS_BY_PROVIDER.codex.map((option) => option.slug)),
   claudeCode: new Set(MODEL_OPTIONS_BY_PROVIDER.claudeCode.map((option) => option.slug)),
   gemini: new Set(MODEL_OPTIONS_BY_PROVIDER.gemini.map((option) => option.slug)),
@@ -23,6 +31,31 @@ export function getModelOptions(provider: ProviderKind = "codex") {
 
 export function getDefaultModel(provider: ProviderKind = "codex"): ModelSlug {
   return DEFAULT_MODEL_BY_PROVIDER[provider];
+}
+
+export function supportsClaudeFastMode(model: string | null | undefined): boolean {
+  return normalizeModelSlug(model, "claudeCode") === CLAUDE_OPUS_4_6_MODEL;
+}
+
+export function supportsClaudeAdaptiveReasoning(model: string | null | undefined): boolean {
+  const normalized = normalizeModelSlug(model, "claudeCode");
+  return normalized === CLAUDE_OPUS_4_6_MODEL || normalized === CLAUDE_SONNET_4_6_MODEL;
+}
+
+export function supportsClaudeMaxEffort(model: string | null | undefined): boolean {
+  return normalizeModelSlug(model, "claudeCode") === CLAUDE_OPUS_4_6_MODEL;
+}
+
+export function supportsClaudeUltrathinkKeyword(model: string | null | undefined): boolean {
+  return supportsClaudeAdaptiveReasoning(model);
+}
+
+export function supportsClaudeThinkingToggle(model: string | null | undefined): boolean {
+  return normalizeModelSlug(model, "claudeCode") === CLAUDE_HAIKU_4_5_MODEL;
+}
+
+export function isClaudeUltrathinkPrompt(text: string | null | undefined): boolean {
+  return typeof text === "string" && /\bultrathink\b/i.test(text);
 }
 
 export function normalizeModelSlug(
@@ -39,7 +72,9 @@ export function normalizeModelSlug(
   }
 
   const aliases = MODEL_SLUG_ALIASES_BY_PROVIDER[provider] as Record<string, ModelSlug>;
-  const aliased = aliases[trimmed];
+  const aliased = Object.prototype.hasOwnProperty.call(aliases, trimmed)
+    ? aliases[trimmed]
+    : undefined;
   return typeof aliased === "string" ? aliased : (trimmed as ModelSlug);
 }
 
@@ -74,21 +109,150 @@ export function inferProviderForModel(
     }
   }
 
-  return null;
+  return typeof model === "string" && model.trim().startsWith("claude-") ? "claudeCode" : null;
 }
 
+export function getReasoningEffortOptions(provider: "codex"): ReadonlyArray<CodexReasoningEffort>;
+export function getReasoningEffortOptions(
+  provider: "claudeCode",
+  model?: string | null | undefined,
+): ReadonlyArray<ClaudeCodeEffort>;
+export function getReasoningEffortOptions(
+  provider?: ProviderKind,
+  model?: string | null | undefined,
+): ReadonlyArray<ProviderReasoningEffort>;
 export function getReasoningEffortOptions(
   provider: ProviderKind = "codex",
-): ReadonlyArray<CodexReasoningEffort> {
-  return provider === "codex" ? CODEX_REASONING_EFFORT_OPTIONS : [];
+  model?: string | null | undefined,
+): ReadonlyArray<ProviderReasoningEffort> {
+  if (provider === "claudeCode") {
+    if (supportsClaudeMaxEffort(model)) {
+      return ["low", "medium", "high", "max", "ultrathink"];
+    }
+    if (supportsClaudeAdaptiveReasoning(model)) {
+      return ["low", "medium", "high", "ultrathink"];
+    }
+    return [];
+  }
+  if (provider === "gemini") {
+    return [];
+  }
+  return CODEX_REASONING_EFFORT_OPTIONS;
 }
 
 export function getDefaultReasoningEffort(provider: "codex"): CodexReasoningEffort;
-export function getDefaultReasoningEffort(provider: ProviderKind): CodexReasoningEffort | null;
+export function getDefaultReasoningEffort(provider: "claudeCode"): ClaudeCodeEffort;
+export function getDefaultReasoningEffort(provider: "gemini"): null;
+export function getDefaultReasoningEffort(
+  provider: ProviderKind,
+): ProviderReasoningEffort | null;
 export function getDefaultReasoningEffort(
   provider: ProviderKind = "codex",
-): CodexReasoningEffort | null {
-  return provider === "codex" ? "high" : null;
+): ProviderReasoningEffort | null {
+  return DEFAULT_REASONING_EFFORT_BY_PROVIDER[provider];
+}
+
+export function resolveReasoningEffortForProvider(
+  provider: "codex",
+  effort: string | null | undefined,
+): CodexReasoningEffort | null;
+export function resolveReasoningEffortForProvider(
+  provider: "claudeCode",
+  effort: string | null | undefined,
+  model?: string | null | undefined,
+): ClaudeCodeEffort | null;
+export function resolveReasoningEffortForProvider(
+  provider: "gemini",
+  effort: string | null | undefined,
+): null;
+export function resolveReasoningEffortForProvider(
+  provider: ProviderKind,
+  effort: string | null | undefined,
+  model?: string | null | undefined,
+): ProviderReasoningEffort | null;
+export function resolveReasoningEffortForProvider(
+  provider: ProviderKind,
+  effort: string | null | undefined,
+  model?: string | null | undefined,
+): ProviderReasoningEffort | null {
+  if (typeof effort !== "string") {
+    return null;
+  }
+
+  const trimmed = effort.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const options = getReasoningEffortOptions(provider, model) as ReadonlyArray<string>;
+  return options.includes(trimmed) ? (trimmed as ProviderReasoningEffort) : null;
+}
+
+export function getEffectiveClaudeCodeEffort(
+  effort: ClaudeCodeEffort | null | undefined,
+): Exclude<ClaudeCodeEffort, "ultrathink"> | null {
+  if (!effort) {
+    return null;
+  }
+  return effort === "ultrathink" ? null : effort;
+}
+
+export function normalizeCodexModelOptions(
+  modelOptions: CodexModelOptions | null | undefined,
+): CodexModelOptions | undefined {
+  const defaultReasoningEffort = getDefaultReasoningEffort("codex");
+  const reasoningEffort =
+    resolveReasoningEffortForProvider("codex", modelOptions?.reasoningEffort) ??
+    defaultReasoningEffort;
+  const fastModeEnabled = modelOptions?.fastMode === true;
+  const nextOptions: CodexModelOptions = {
+    ...(reasoningEffort !== defaultReasoningEffort ? { reasoningEffort } : {}),
+    ...(fastModeEnabled ? { fastMode: true } : {}),
+  };
+  return Object.keys(nextOptions).length > 0 ? nextOptions : undefined;
+}
+
+export function normalizeClaudeModelOptions(
+  model: string | null | undefined,
+  modelOptions: ClaudeCodeModelOptions | null | undefined,
+): ClaudeCodeModelOptions | undefined {
+  const reasoningOptions = getReasoningEffortOptions("claudeCode", model);
+  const defaultReasoningEffort = getDefaultReasoningEffort("claudeCode");
+  const resolvedEffort = resolveReasoningEffortForProvider("claudeCode", modelOptions?.effort, model);
+  const effort =
+    resolvedEffort &&
+    resolvedEffort !== "ultrathink" &&
+    reasoningOptions.includes(resolvedEffort) &&
+    resolvedEffort !== defaultReasoningEffort
+      ? resolvedEffort
+      : undefined;
+  const thinking =
+    supportsClaudeThinkingToggle(model) && modelOptions?.thinking === false ? false : undefined;
+  const fastMode =
+    supportsClaudeFastMode(model) && modelOptions?.fastMode === true ? true : undefined;
+  const nextOptions: ClaudeCodeModelOptions = {
+    ...(thinking === false ? { thinking: false } : {}),
+    ...(effort ? { effort } : {}),
+    ...(fastMode ? { fastMode: true } : {}),
+  };
+  return Object.keys(nextOptions).length > 0 ? nextOptions : undefined;
+}
+
+export function applyClaudePromptEffortPrefix(
+  text: string,
+  effort: ClaudeCodeEffort | null | undefined,
+): string {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+  if (effort !== "ultrathink") {
+    return trimmed;
+  }
+  if (trimmed.startsWith("Ultrathink:")) {
+    return trimmed;
+  }
+  return `Ultrathink:\n${trimmed}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -102,43 +266,35 @@ export interface ContextWindowLimit {
 
 const CONTEXT_WINDOW_LIMITS: Readonly<Record<string, ContextWindowLimit>> = {
   // Codex / OpenAI
-  "gpt-5.4": { maxInputTokens: 1_050_000, maxOutputTokens: 128_000 }, // openai.com/api/docs/models/gpt-5.4, verified 2026-03
-  "gpt-5.3-codex": { maxInputTokens: 400_000, maxOutputTokens: 128_000 }, // openai.com/api/docs/models/gpt-5.3-codex, verified 2026-03
-  "gpt-5.3-codex-spark": { maxInputTokens: 128_000, maxOutputTokens: 128_000 }, // openai.com blog, 2026-02 -- MEDIUM confidence (research preview)
-  "gpt-5.2-codex": { maxInputTokens: 400_000, maxOutputTokens: 128_000 }, // openai.com/api/docs/models/gpt-5.2-codex, verified 2026-03
-  "gpt-5.2": { maxInputTokens: 400_000, maxOutputTokens: 128_000 }, // openai.com/api/docs/models/gpt-5.2, verified 2026-03
+  "gpt-5.4": { maxInputTokens: 1_050_000, maxOutputTokens: 128_000 },
+  "gpt-5.3-codex": { maxInputTokens: 400_000, maxOutputTokens: 128_000 },
+  "gpt-5.3-codex-spark": { maxInputTokens: 128_000, maxOutputTokens: 128_000 },
+  "gpt-5.2-codex": { maxInputTokens: 400_000, maxOutputTokens: 128_000 },
+  "gpt-5.2": { maxInputTokens: 400_000, maxOutputTokens: 128_000 },
 
   // Claude Code / Anthropic
-  "claude-opus-4-6": { maxInputTokens: 200_000, maxOutputTokens: 128_000 }, // platform.claude.com/docs, verified 2026-03
-  "claude-sonnet-4-6": { maxInputTokens: 200_000, maxOutputTokens: 64_000 }, // platform.claude.com/docs, verified 2026-03
-  "claude-haiku-4-5": { maxInputTokens: 200_000, maxOutputTokens: 64_000 }, // platform.claude.com/docs, verified 2026-03
+  "claude-opus-4-6": { maxInputTokens: 200_000, maxOutputTokens: 128_000 },
+  "claude-sonnet-4-6": { maxInputTokens: 200_000, maxOutputTokens: 64_000 },
+  "claude-haiku-4-5": { maxInputTokens: 200_000, maxOutputTokens: 64_000 },
 
   // Gemini / Google
-  "gemini-3.1-pro-preview": { maxInputTokens: 1_048_576, maxOutputTokens: 65_536 }, // openrouter.ai, 2026-03 -- MEDIUM confidence (preview)
-  "gemini-3-flash-preview": { maxInputTokens: 1_048_576, maxOutputTokens: 65_536 }, // openrouter.ai, 2026-03 -- MEDIUM confidence (preview)
-  "gemini-3.1-flash-lite-preview": { maxInputTokens: 1_048_576, maxOutputTokens: 65_536 }, // openrouter.ai + deepmind, 2026-03 -- MEDIUM confidence (preview)
-  "gemini-2.5-pro": { maxInputTokens: 1_048_576, maxOutputTokens: 65_536 }, // cloud.google.com, verified 2026-03
-  "gemini-2.5-flash": { maxInputTokens: 1_048_576, maxOutputTokens: 65_536 }, // verified 2026-03
-  "gemini-2.5-flash-lite": { maxInputTokens: 1_048_576, maxOutputTokens: 65_536 }, // openrouter.ai, verified 2026-03
+  "gemini-3.1-pro-preview": { maxInputTokens: 1_048_576, maxOutputTokens: 65_536 },
+  "gemini-3-flash-preview": { maxInputTokens: 1_048_576, maxOutputTokens: 65_536 },
+  "gemini-3.1-flash-lite-preview": { maxInputTokens: 1_048_576, maxOutputTokens: 65_536 },
+  "gemini-2.5-pro": { maxInputTokens: 1_048_576, maxOutputTokens: 65_536 },
+  "gemini-2.5-flash": { maxInputTokens: 1_048_576, maxOutputTokens: 65_536 },
+  "gemini-2.5-flash-lite": { maxInputTokens: 1_048_576, maxOutputTokens: 65_536 },
 };
 
-/**
- * Resolve the context window limits for a model slug.
- *
- * Attempts a direct lookup first, then falls back to alias resolution via
- * `normalizeModelSlug`. Returns `null` for unknown models -- never guesses.
- */
 export function getContextWindowLimit(
   model: string | null | undefined,
   provider?: ProviderKind,
 ): ContextWindowLimit | null {
   if (!model) return null;
 
-  // Try direct lookup first
   const direct = CONTEXT_WINDOW_LIMITS[model];
   if (direct) return direct;
 
-  // Try alias resolution using existing normalizeModelSlug
   if (provider) {
     const normalized = normalizeModelSlug(model, provider);
     if (normalized) {
@@ -146,7 +302,6 @@ export function getContextWindowLimit(
       if (resolved) return resolved;
     }
   } else {
-    // Try all providers for alias resolution
     for (const p of PROVIDERS) {
       const normalized = normalizeModelSlug(model, p);
       if (normalized && CONTEXT_WINDOW_LIMITS[normalized]) {
@@ -155,8 +310,7 @@ export function getContextWindowLimit(
     }
   }
 
-  // Unknown model -- return null, never guess (REG-03)
   return null;
 }
 
-export { CODEX_REASONING_EFFORT_OPTIONS };
+export { CLAUDE_CODE_EFFORT_OPTIONS, CODEX_REASONING_EFFORT_OPTIONS };

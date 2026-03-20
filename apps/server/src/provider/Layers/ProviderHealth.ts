@@ -309,7 +309,17 @@ export const checkCodexProviderStatus: Effect.Effect<
 
 // ── Gemini health check ──────────────────────────────────────────────
 
+const CLAUDE_CODE_PROVIDER = "claudeCode" as const;
 const GEMINI_PROVIDER = "gemini" as const;
+
+export const checkClaudeCodeProviderStatus: Effect.Effect<ServerProviderStatus> = Effect.sync(() => ({
+  provider: CLAUDE_CODE_PROVIDER,
+  status: "warning" as const,
+  available: true,
+  authStatus: "unknown" as const,
+  checkedAt: new Date().toISOString(),
+  message: "Claude Code readiness is determined at runtime when a session starts.",
+}));
 
 export const checkGeminiProviderStatus: Effect.Effect<ServerProviderStatus> = Effect.sync(() => {
   const checkedAt = new Date().toISOString();
@@ -343,6 +353,7 @@ export const ProviderHealthLive = Layer.effect(
   Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
 
+    const claudeCodeStatus = yield* checkClaudeCodeProviderStatus;
     // Gemini check is synchronous (env-var only), resolve immediately.
     const geminiStatus = yield* checkGeminiProviderStatus;
 
@@ -355,6 +366,7 @@ export const ProviderHealthLive = Layer.effect(
         checkedAt: new Date().toISOString(),
         message: "Checking Codex CLI availability...",
       },
+      claudeCodeStatus,
       geminiStatus,
     ];
 
@@ -363,7 +375,7 @@ export const ProviderHealthLive = Layer.effect(
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
       Effect.runPromise,
     ).then((codexStatus) => {
-      cachedStatuses = [codexStatus, geminiStatus];
+      cachedStatuses = [codexStatus, claudeCodeStatus, geminiStatus];
     }).catch(() => {
       cachedStatuses = [
         {
@@ -374,6 +386,7 @@ export const ProviderHealthLive = Layer.effect(
           checkedAt: new Date().toISOString(),
           message: "Failed to check Codex CLI status.",
         },
+        claudeCodeStatus,
         geminiStatus,
       ];
     });

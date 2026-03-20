@@ -86,25 +86,69 @@ function toRuntimeStatus(session: ProviderSession): "starting" | "running" | "st
   }
 }
 
-function toRuntimePayloadFromSession(session: ProviderSession): Record<string, unknown> {
+function isRuntimePayloadRecord(
+  runtimePayload: ProviderRuntimeBinding["runtimePayload"],
+): runtimePayload is Record<string, unknown> {
+  return Boolean(runtimePayload) && typeof runtimePayload === "object" && !Array.isArray(runtimePayload);
+}
+
+function toRuntimePayloadFromSession(
+  session: ProviderSession,
+  options?: {
+    readonly modelOptions?: ProviderSessionStartInput["modelOptions"];
+    readonly providerOptions?: ProviderSessionStartInput["providerOptions"];
+  },
+): Record<string, unknown> {
   return {
     cwd: session.cwd ?? null,
     model: session.model ?? null,
     activeTurnId: session.activeTurnId ?? null,
     lastError: session.lastError ?? null,
+    ...(options?.modelOptions !== undefined ? { modelOptions: options.modelOptions } : {}),
+    ...(options?.providerOptions !== undefined ? { providerOptions: options.providerOptions } : {}),
   };
 }
 
 function readPersistedCwd(
   runtimePayload: ProviderRuntimeBinding["runtimePayload"],
 ): string | undefined {
-  if (!runtimePayload || typeof runtimePayload !== "object" || Array.isArray(runtimePayload)) {
+  if (!isRuntimePayloadRecord(runtimePayload)) {
     return undefined;
   }
-  const rawCwd = "cwd" in runtimePayload ? runtimePayload.cwd : undefined;
+  const rawCwd = runtimePayload.cwd;
   if (typeof rawCwd !== "string") return undefined;
   const trimmed = rawCwd.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function readPersistedModel(
+  runtimePayload: ProviderRuntimeBinding["runtimePayload"],
+): string | undefined {
+  if (!isRuntimePayloadRecord(runtimePayload)) {
+    return undefined;
+  }
+  const rawModel = runtimePayload.model;
+  if (typeof rawModel !== "string") return undefined;
+  const trimmed = rawModel.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function readPersistedModelOptions(
+  runtimePayload: ProviderRuntimeBinding["runtimePayload"],
+): ProviderSessionStartInput["modelOptions"] | undefined {
+  if (!isRuntimePayloadRecord(runtimePayload) || !("modelOptions" in runtimePayload)) {
+    return undefined;
+  }
+  return runtimePayload.modelOptions as ProviderSessionStartInput["modelOptions"] | undefined;
+}
+
+function readPersistedProviderOptions(
+  runtimePayload: ProviderRuntimeBinding["runtimePayload"],
+): ProviderSessionStartInput["providerOptions"] | undefined {
+  if (!isRuntimePayloadRecord(runtimePayload) || !("providerOptions" in runtimePayload)) {
+    return undefined;
+  }
+  return runtimePayload.providerOptions as ProviderSessionStartInput["providerOptions"] | undefined;
 }
 
 const makeProviderService = (options?: ProviderServiceLiveOptions) =>
@@ -137,6 +181,10 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
     const upsertSessionBinding = (
       session: ProviderSession,
       threadId: ThreadId,
+      options?: {
+        readonly modelOptions?: ProviderSessionStartInput["modelOptions"];
+        readonly providerOptions?: ProviderSessionStartInput["providerOptions"];
+      },
     ) =>
       directory.upsert({
         threadId,
@@ -144,7 +192,7 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
         runtimeMode: session.runtimeMode,
         status: toRuntimeStatus(session),
         ...(session.resumeCursor !== undefined ? { resumeCursor: session.resumeCursor } : {}),
-        runtimePayload: toRuntimePayloadFromSession(session),
+        runtimePayload: toRuntimePayloadFromSession(session, options),
       });
 
     const providers = yield* registry.listProviders();
@@ -213,11 +261,19 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
         }
 
         const persistedCwd = readPersistedCwd(input.binding.runtimePayload);
+        const persistedModel = readPersistedModel(input.binding.runtimePayload);
+        const persistedModelOptions = readPersistedModelOptions(input.binding.runtimePayload);
+        const persistedProviderOptions = readPersistedProviderOptions(input.binding.runtimePayload);
 
         const resumed = yield* adapter.startSession({
           threadId: input.binding.threadId,
           provider: input.binding.provider,
           ...(persistedCwd ? { cwd: persistedCwd } : {}),
+          ...(persistedModel ? { model: persistedModel } : {}),
+          ...(persistedModelOptions !== undefined ? { modelOptions: persistedModelOptions } : {}),
+          ...(persistedProviderOptions !== undefined
+            ? { providerOptions: persistedProviderOptions }
+            : {}),
           ...(hasResumeCursor ? { resumeCursor: input.binding.resumeCursor } : {}),
           runtimeMode: input.binding.runtimeMode ?? "full-access",
         });
@@ -279,8 +335,26 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
           threadId,
           provider: parsed.provider ?? "codex",
         };
+        const persistedBinding = Option.getOrUndefined(yield* directory.getBinding(threadId));
+        const sameProviderBinding = persistedBinding?.provider === input.provider ? persistedBinding : undefined;
+        const effectiveResumeCursor = input.resumeCursor ?? sameProviderBinding?.resumeCursor ?? undefined;
+        const effectiveCwd = input.cwd ?? readPersistedCwd(sameProviderBinding?.runtimePayload);
+        const effectiveModel = input.model ?? readPersistedModel(sameProviderBinding?.runtimePayload);
+        const effectiveModelOptions =
+          input.modelOptions ?? readPersistedModelOptions(sameProviderBinding?.runtimePayload);
+        const effectiveProviderOptions =
+          input.providerOptions ?? readPersistedProviderOptions(sameProviderBinding?.runtimePayload);
         const adapter = yield* registry.getByProvider(input.provider);
-        const session = yield* adapter.startSession(input);
+        const session = yield* adapter.startSession({
+          ...input,
+          ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
+          ...(effectiveModel ? { model: effectiveModel } : {}),
+          ...(effectiveModelOptions !== undefined ? { modelOptions: effectiveModelOptions } : {}),
+          ...(effectiveProviderOptions !== undefined
+            ? { providerOptions: effectiveProviderOptions }
+            : {}),
+          ...(effectiveResumeCursor !== undefined ? { resumeCursor: effectiveResumeCursor } : {}),
+        });
 
         if (session.provider !== adapter.provider) {
           return yield* toValidationError(
@@ -289,7 +363,10 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
           );
         }
 
-        yield* upsertSessionBinding(session, threadId);
+        yield* upsertSessionBinding(session, threadId, {
+          ...(effectiveModelOptions !== undefined ? { modelOptions: effectiveModelOptions } : {}),
+          ...(effectiveProviderOptions !== undefined ? { providerOptions: effectiveProviderOptions } : {}),
+        });
         yield* analytics.record("provider.session.started", {
           provider: session.provider,
           runtimeMode: input.runtimeMode,

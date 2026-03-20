@@ -51,6 +51,8 @@ import { CodexRolloutParserLive } from "./historyImport/Layers/CodexRolloutParse
 import { HistoryMaterializerLive } from "./historyImport/Layers/HistoryMaterializer";
 import { HistoryImportServiceLive } from "./historyImport/Layers/HistoryImportService";
 import { ProjectionUsageAggregateRepositoryLive } from "./persistence/Layers/ProjectionUsageAggregate";
+import { DashboardRateLimitStateLive } from "./dashboard/Layers/DashboardRateLimitState";
+import { DashboardCloudSummaryLive } from "./dashboard/Layers/DashboardCloudSummary";
 
 export function makeServerProviderLayer(): Layer.Layer<
   ProviderService,
@@ -104,6 +106,8 @@ export function makeServerRuntimeServicesLayer() {
     Layer.provideMerge(OrchestrationProjectionSnapshotQueryLive),
     Layer.provideMerge(CheckpointStoreLive),
   );
+  const dashboardRateLimitLayer = DashboardRateLimitStateLive;
+  const dashboardCloudSummaryLayer = DashboardCloudSummaryLive;
 
   const runtimeServicesLayer = Layer.mergeAll(
     orchestrationLayer,
@@ -113,6 +117,7 @@ export function makeServerRuntimeServicesLayer() {
   );
   const runtimeIngestionLayer = ProviderRuntimeIngestionLive.pipe(
     Layer.provideMerge(runtimeServicesLayer),
+    Layer.provideMerge(dashboardRateLimitLayer),
   );
   const providerCommandReactorLayer = ProviderCommandReactorLive.pipe(
     Layer.provideMerge(runtimeServicesLayer),
@@ -183,6 +188,8 @@ export function makeServerRuntimeServicesLayer() {
     ProjectionNotificationRepositoryLive,
     ProjectionDraftRepositoryLive,
     ProjectionUsageAggregateRepositoryLive,
+    dashboardRateLimitLayer,
+    dashboardCloudSummaryLayer,
     notificationLayer,
     historyImportLayers,
   ).pipe(Layer.provideMerge(NodeServices.layer));

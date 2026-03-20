@@ -69,6 +69,7 @@ import type {
 } from "./historyImport";
 import type {
   DashboardGetUsageSummaryInput,
+  DashboardCloudSummary,
   DashboardUsageSummary,
   DashboardRateLimit,
   DashboardProviderStatus,
@@ -219,6 +220,7 @@ export interface NativeApi {
   };
   dashboard: {
     getUsageSummary: (input: DashboardGetUsageSummaryInput) => Promise<DashboardUsageSummary>;
+    getCloudSummary: (input: DashboardGetUsageSummaryInput) => Promise<DashboardCloudSummary>;
     getRateLimits: () => Promise<DashboardRateLimit[]>;
     getProviderStatus: () => Promise<DashboardProviderStatus[]>;
   };
