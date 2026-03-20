@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { Effect } from "effect";
+import { Effect, Exit, Schema } from "effect";
 import type { ThreadId, TurnId } from "@xbetools/contracts";
+import { ProviderRuntimeEvent } from "@xbetools/contracts";
 import {
   parseCliEvent,
   buildCliArgs,
+  buildTranscriptPrefix,
   mapCliEventToRuntimeEvents,
   type GeminiCliEvent,
 } from "./GeminiCliRuntime.ts";
@@ -203,7 +205,7 @@ describe("GeminiCliRuntime", () => {
       expect(events[0]?.type).toBe("item.completed");
     });
 
-    it("maps result event to turn.completed", async () => {
+    it("result event produces no events (adapter is authoritative for turn completion)", async () => {
       const event: GeminiCliEvent = {
         type: "result",
         timestamp: "2026-03-20T00:00:00Z",
@@ -211,8 +213,115 @@ describe("GeminiCliRuntime", () => {
         stats: { total_tokens: 100 },
       };
       const events = await Effect.runPromise(mapCliEventToRuntimeEvents(event, ctx));
+      expect(events).toHaveLength(0);
+    });
+
+    it("tool_use maps read tools to dynamic_tool_call (not file_read_approval)", async () => {
+      const event: GeminiCliEvent = {
+        type: "tool_use",
+        timestamp: "2026-03-20T00:00:00Z",
+        tool_name: "read_file",
+        tool_id: "t-read",
+        parameters: { path: "README.md" },
+      };
+      const events = await Effect.runPromise(mapCliEventToRuntimeEvents(event, ctx));
       expect(events).toHaveLength(1);
-      expect(events[0]?.type).toBe("turn.completed");
+      const payload = (events[0] as any).payload;
+      expect(payload.itemType).toBe("dynamic_tool_call");
+    });
+
+    it("all produced events decode against the ProviderRuntimeEvent schema", async () => {
+      const testEvents: GeminiCliEvent[] = [
+        {
+          type: "init",
+          timestamp: "2026-03-20T00:00:00Z",
+          session_id: "s1",
+          model: "gemini-3",
+        },
+        {
+          type: "message",
+          timestamp: "2026-03-20T00:00:00Z",
+          role: "assistant",
+          content: "hello",
+          delta: true,
+        },
+        {
+          type: "tool_use",
+          timestamp: "2026-03-20T00:00:00Z",
+          tool_name: "run_shell_command",
+          tool_id: "t1",
+          parameters: { command: "ls" },
+        },
+        {
+          type: "tool_result",
+          timestamp: "2026-03-20T00:00:00Z",
+          tool_id: "t1",
+          status: "success",
+          output: "file.txt",
+        },
+      ];
+
+      for (const cliEvent of testEvents) {
+        const runtimeEvents = await Effect.runPromise(
+          mapCliEventToRuntimeEvents(cliEvent, ctx),
+        );
+        for (const re of runtimeEvents) {
+          const result = Schema.decodeUnknownExit(ProviderRuntimeEvent)(re);
+          expect(Exit.isSuccess(result)).toBe(true);
+        }
+      }
+    });
+  });
+
+  describe("buildTranscriptPrefix", () => {
+    it("returns empty string for no prior turns", () => {
+      expect(buildTranscriptPrefix([])).toBe("");
+    });
+
+    it("includes prior turns in XML format", () => {
+      const prefix = buildTranscriptPrefix([
+        { userMessage: "Hello", assistantText: "Hi there" },
+      ]);
+      expect(prefix).toContain("<user>Hello</user>");
+      expect(prefix).toContain("<assistant>Hi there</assistant>");
+      expect(prefix).toContain("prior_conversation");
+    });
+
+    it("bounds to MAX_TURNS (10)", () => {
+      const turns = Array.from({ length: 15 }, (_, i) => ({
+        userMessage: `Q${i}`,
+        assistantText: `A${i}`,
+      }));
+      const prefix = buildTranscriptPrefix(turns);
+      // Should only contain the last 10 turns
+      expect(prefix).not.toContain("Q0");
+      expect(prefix).toContain("Q5");
+      expect(prefix).toContain("Q14");
+    });
+  });
+
+  describe("buildCliArgs with prior turns", () => {
+    it("prepends transcript to prompt when prior turns exist", () => {
+      const args = buildCliArgs({
+        prompt: "new question",
+        runtimeMode: "full-access",
+        priorTurns: [
+          { userMessage: "Hello", assistantText: "Hi" },
+        ],
+      });
+      const promptIdx = args.indexOf("-p");
+      const prompt = args[promptIdx + 1]!;
+      expect(prompt).toContain("prior_conversation");
+      expect(prompt).toContain("new question");
+    });
+
+    it("does not prepend transcript when no prior turns", () => {
+      const args = buildCliArgs({
+        prompt: "hello",
+        runtimeMode: "full-access",
+        priorTurns: [],
+      });
+      expect(args).toEqual(["-p", "hello", "-o", "stream-json", "--approval-mode", "yolo"]);
     });
   });
 });

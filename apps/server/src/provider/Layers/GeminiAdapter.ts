@@ -145,6 +145,8 @@ interface GeminiCliSessionContext {
   cliProcess: import("node:child_process").ChildProcess | undefined;
   turnState: GeminiTurnState | undefined;
   stopped: boolean;
+  /** Set to true when the current turn's CLI process is intentionally killed by XBE. */
+  interrupted: boolean;
 }
 
 type GeminiSessionContext = GeminiSdkSessionContext | GeminiCliSessionContext;
@@ -747,6 +749,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
             cliProcess: undefined,
             turnState: undefined,
             stopped: false,
+            interrupted: false,
           };
         } else {
           // ── SDK transport: resolve auth ourselves ─────────────────
@@ -909,14 +912,29 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
 
         if (ctx.transport === "cli") {
           // ── CLI transport: spawn gemini process ──────────────────
+
+          // CLI transport does not support attachments — reject explicitly
+          if (input.attachments && input.attachments.length > 0) {
+            ctx.turnState = undefined;
+            ctx.session.status = "ready";
+            ctx.session.activeTurnId = undefined;
+            return yield* new ProviderAdapterValidationError({
+              provider: PROVIDER,
+              operation: "sendTurn",
+              issue: "Attachments are not supported with CLI transport. Use SDK transport for attachment support.",
+            });
+          }
+
           const userMessage = input.input ?? "";
           const cliCtx = ctx;
+          cliCtx.interrupted = false;
 
           const cliArgs = buildCliArgs({
             prompt: userMessage,
             cwd: ctx.session.cwd,
             model: ctx.model,
             runtimeMode: ctx.session.runtimeMode,
+            priorTurns: cliCtx.cliTurns,
           });
 
           const runCliTurn = Effect.gen(function* () {
@@ -998,8 +1016,15 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
                       }
                     }
 
-                    if (code === 0 || code === null) {
+                    // Distinguish: interrupted by XBE, normal success, or process failure
+                    if (cliCtx.interrupted) {
+                      // Intentionally killed — reject so the catch path marks as interrupted
+                      reject(new Error("Gemini CLI interrupted by XBE"));
+                    } else if (code === 0) {
                       resolve();
+                    } else if (code === null) {
+                      // Signaled without our interrupt flag — treat as failure
+                      reject(new Error("Gemini CLI process was killed unexpectedly"));
                     } else {
                       reject(new Error(`Gemini CLI exited with code ${code}`));
                     }
@@ -1018,6 +1043,8 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
             });
 
             cliCtx.cliProcess = undefined;
+
+            // Only persist the turn on genuine success (not interrupted)
             cliCtx.cliTurns.push({ userMessage, assistantText: accumulatedText });
 
             // Update turn state
@@ -1034,6 +1061,14 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
               Effect.catchCause((cause) =>
                 Effect.gen(function* () {
                   if (Cause.hasInterruptsOnly(cause) || ctx.stopped) return;
+
+                  // Check if this was an intentional interruption
+                  if (cliCtx.interrupted) {
+                    cliCtx.cliProcess = undefined;
+                    yield* completeTurn(ctx, "interrupted");
+                    return;
+                  }
+
                   const squashed = Cause.squash(cause);
                   const msg = toMessage(squashed, "Gemini CLI turn failed");
                   const stamp = yield* emitter.makeEventStamp();
@@ -1046,6 +1081,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
                     turnId,
                     payload: { message: msg, class: "provider_error" },
                   });
+                  cliCtx.cliProcess = undefined;
                   yield* completeTurn(ctx, "failed", msg);
                 }),
               ),
@@ -1144,7 +1180,8 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
         const ctx = yield* requireSession(threadId);
 
         if (ctx.transport === "cli") {
-          // Kill the CLI process to interrupt the turn
+          // Mark as interrupted before killing so the close handler knows
+          ctx.interrupted = true;
           if (ctx.cliProcess) {
             ctx.cliProcess.kill("SIGTERM");
             ctx.cliProcess = undefined;

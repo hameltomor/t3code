@@ -7,8 +7,10 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 import {
   checkClaudeCodeProviderStatus,
   checkCodexProviderStatus,
+  checkGeminiProviderStatus,
   parseAuthStatusFromOutput,
   parseClaudeAuthStatusFromOutput,
+  parseGeminiCliAuthStatus,
 } from "./ProviderHealth";
 
 const encoder = new TextEncoder();
@@ -311,3 +313,124 @@ it("parseClaudeAuthStatusFromOutput: unsupported auth command is warning", () =>
   assert.strictEqual(parsed.status, "warning");
   assert.strictEqual(parsed.authStatus, "unknown");
 });
+
+// ── Gemini CLI health tests ─────────────────────────────────────────
+
+it("parseGeminiCliAuthStatus: version 0 exit code means CLI available", () => {
+  const parsed = parseGeminiCliAuthStatus({ stdout: "0.32.1\n", stderr: "", code: 0 });
+  assert.strictEqual(parsed.cliAvailable, true);
+  assert.strictEqual(parsed.cliVersion, "0.32.1");
+});
+
+it("parseGeminiCliAuthStatus: non-zero exit means CLI unavailable", () => {
+  const parsed = parseGeminiCliAuthStatus({ stdout: "", stderr: "not found", code: 127 });
+  assert.strictEqual(parsed.cliAvailable, false);
+  assert.strictEqual(parsed.cliVersion, undefined);
+});
+
+it.effect("gemini: CLI installed but auth unknown (no SDK key)", () =>
+  Effect.gen(function* () {
+    // Temporarily clear env vars for this test
+    const savedGemini = process.env.GEMINI_API_KEY;
+    const savedGoogle = process.env.GOOGLE_API_KEY;
+    const savedGac = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.GOOGLE_API_KEY;
+    delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
+
+    try {
+      const status = yield* checkGeminiProviderStatus;
+      assert.strictEqual(status.provider, "gemini");
+      assert.strictEqual(status.available, true);
+      assert.strictEqual(status.status, "warning");
+      assert.strictEqual(status.authStatus, "unknown");
+      assert.ok(status.message?.includes("CLI auth status cannot be verified"));
+    } finally {
+      if (savedGemini !== undefined) process.env.GEMINI_API_KEY = savedGemini;
+      if (savedGoogle !== undefined) process.env.GOOGLE_API_KEY = savedGoogle;
+      if (savedGac !== undefined) process.env.GOOGLE_APPLICATION_CREDENTIALS = savedGac;
+    }
+  }).pipe(
+    Effect.provide(
+      mockSpawnerLayer((args) => {
+        const joined = args.join(" ");
+        if (joined === "--version") return { stdout: "0.32.1\n", stderr: "", code: 0 };
+        throw new Error("Unexpected args: " + joined);
+      }),
+    ),
+  ),
+);
+
+it.effect("gemini: SDK auth only (no CLI)", () =>
+  Effect.gen(function* () {
+    const savedGemini = process.env.GEMINI_API_KEY;
+    process.env.GEMINI_API_KEY = "test-key";
+
+    try {
+      const status = yield* checkGeminiProviderStatus;
+      assert.strictEqual(status.provider, "gemini");
+      assert.strictEqual(status.status, "ready");
+      assert.strictEqual(status.authStatus, "authenticated");
+      assert.ok(status.message?.includes("API key configured"));
+    } finally {
+      if (savedGemini !== undefined) {
+        process.env.GEMINI_API_KEY = savedGemini;
+      } else {
+        delete process.env.GEMINI_API_KEY;
+      }
+    }
+  }).pipe(Effect.provide(failingSpawnerLayer("spawn gemini ENOENT"))),
+);
+
+it.effect("gemini: neither SDK nor CLI available", () =>
+  Effect.gen(function* () {
+    const savedGemini = process.env.GEMINI_API_KEY;
+    const savedGoogle = process.env.GOOGLE_API_KEY;
+    const savedGac = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.GOOGLE_API_KEY;
+    delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
+
+    try {
+      const status = yield* checkGeminiProviderStatus;
+      assert.strictEqual(status.provider, "gemini");
+      assert.strictEqual(status.status, "error");
+      assert.strictEqual(status.available, false);
+      assert.strictEqual(status.authStatus, "unauthenticated");
+    } finally {
+      if (savedGemini !== undefined) process.env.GEMINI_API_KEY = savedGemini;
+      if (savedGoogle !== undefined) process.env.GOOGLE_API_KEY = savedGoogle;
+      if (savedGac !== undefined) process.env.GOOGLE_APPLICATION_CREDENTIALS = savedGac;
+    }
+  }).pipe(Effect.provide(failingSpawnerLayer("spawn gemini ENOENT"))),
+);
+
+it.effect("gemini: both SDK and CLI available", () =>
+  Effect.gen(function* () {
+    const savedGemini = process.env.GEMINI_API_KEY;
+    process.env.GEMINI_API_KEY = "test-key";
+
+    try {
+      const status = yield* checkGeminiProviderStatus;
+      assert.strictEqual(status.provider, "gemini");
+      assert.strictEqual(status.status, "ready");
+      assert.strictEqual(status.authStatus, "authenticated");
+      assert.ok(status.message?.includes("API key configured"));
+      assert.ok(status.message?.includes("CLI auth unverified"));
+    } finally {
+      if (savedGemini !== undefined) {
+        process.env.GEMINI_API_KEY = savedGemini;
+      } else {
+        delete process.env.GEMINI_API_KEY;
+      }
+    }
+  }).pipe(
+    Effect.provide(
+      mockSpawnerLayer((args) => {
+        const joined = args.join(" ");
+        if (joined === "--version") return { stdout: "0.32.1\n", stderr: "", code: 0 };
+        throw new Error("Unexpected args: " + joined);
+      }),
+    ),
+  ),
+);

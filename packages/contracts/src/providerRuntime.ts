@@ -29,6 +29,9 @@ const RuntimeEventRawSource = Schema.Literals([
   "claude.sdk.permission",
   "gemini.sdk.chunk",
   "gemini.sdk.function-call",
+  "gemini.cli.init",
+  "gemini.cli.tool-use",
+  "gemini.cli.tool-result",
 ]);
 export type RuntimeEventRawSource = typeof RuntimeEventRawSource.Type;
 

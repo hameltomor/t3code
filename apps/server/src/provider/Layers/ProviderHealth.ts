@@ -551,7 +551,7 @@ export const checkGeminiProviderStatus: Effect.Effect<
       available: true,
       authStatus: "authenticated" as const,
       checkedAt,
-      message: `${describeAuthMode(sdkAuth)}. Gemini CLI ${cliVersion ?? ""} also available.`.trim(),
+      message: `${describeAuthMode(sdkAuth)}. Gemini CLI ${cliVersion ?? ""} also installed (CLI auth unverified).`.trim(),
     };
   }
 
@@ -567,13 +567,16 @@ export const checkGeminiProviderStatus: Effect.Effect<
   }
 
   if (cliAvailable) {
+    // CLI binary exists and --version succeeded, but that does not prove auth.
+    // Gemini CLI does not currently expose a headless auth-status probe, so we
+    // report the CLI as available with unknown auth status.
     return {
       provider: GEMINI_PROVIDER,
-      status: "ready" as const,
+      status: "warning" as const,
       available: true,
-      authStatus: "authenticated" as const,
+      authStatus: "unknown" as const,
       checkedAt,
-      message: `Gemini CLI ${cliVersion ?? ""} available (use transport: "cli"). No SDK API key configured.`.trim(),
+      message: `Gemini CLI ${cliVersion ?? ""} installed (use transport: "cli"). CLI auth status cannot be verified. No SDK API key configured.`.trim(),
     };
   }
 

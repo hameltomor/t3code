@@ -137,6 +137,8 @@ function makeEventStamp(): Effect.Effect<EventStamp> {
 /**
  * Map a Gemini CLI event into zero or more canonical ProviderRuntimeEvents.
  * Returns an array since some CLI events may map to multiple provider events.
+ *
+ * All returned objects satisfy the ProviderRuntimeEvent schema without unsafe casts.
  */
 export function mapCliEventToRuntimeEvents(
   event: GeminiCliEvent,
@@ -166,7 +168,11 @@ export function mapCliEventToRuntimeEvents(
               transport: "cli",
             },
           },
-        } as unknown as ProviderRuntimeEvent);
+          raw: {
+            source: "gemini.cli.init",
+            payload: { session_id: event.session_id, model: event.model },
+          },
+        } satisfies ProviderRuntimeEvent);
         break;
       }
 
@@ -182,7 +188,7 @@ export function mapCliEventToRuntimeEvents(
             turnId,
             itemId: RuntimeItemId.makeUnsafe(`cli-assistant-${turnId}`),
             payload: { streamKind: "assistant_text", delta: event.content },
-          } as unknown as ProviderRuntimeEvent);
+          } satisfies ProviderRuntimeEvent);
         }
         break;
       }
@@ -208,7 +214,7 @@ export function mapCliEventToRuntimeEvents(
             source: "gemini.cli.tool-use",
             payload: { name: event.tool_name, parameters: event.parameters, id: event.tool_id },
           },
-        } as unknown as ProviderRuntimeEvent);
+        } satisfies ProviderRuntimeEvent);
         break;
       }
 
@@ -223,29 +229,24 @@ export function mapCliEventToRuntimeEvents(
           turnId,
           itemId: RuntimeItemId.makeUnsafe(event.tool_id),
           payload: {
-            itemType: "command_execution",
+            itemType: "dynamic_tool_call",
             status: event.status === "success" ? "completed" : "failed",
-            title: `Tool result`,
+            title: "Tool result",
             detail: truncate(event.output, 500),
             data: { output: event.output },
           },
-        } as unknown as ProviderRuntimeEvent);
+          raw: {
+            source: "gemini.cli.tool-result",
+            payload: { tool_id: event.tool_id, status: event.status, output: event.output },
+          },
+        } satisfies ProviderRuntimeEvent);
         break;
       }
 
       case "result": {
-        const stamp = yield* makeEventStamp();
-        events.push({
-          type: "turn.completed",
-          eventId: stamp.eventId,
-          provider: PROVIDER,
-          threadId,
-          createdAt: stamp.createdAt,
-          turnId,
-          payload: {
-            state: event.status === "success" ? "completed" : "failed",
-          },
-        } as unknown as ProviderRuntimeEvent);
+        // NOTE: Do not emit turn.completed here. The adapter (GeminiAdapter)
+        // is the sole authority for turn completion and emits it after the
+        // CLI process exits. Emitting here would cause duplicate events.
         break;
       }
     }
@@ -256,6 +257,12 @@ export function mapCliEventToRuntimeEvents(
 
 // ── CLI Process Lifecycle ────────────────────────────────────────────
 
+/** Serialized prior turn for CLI transcript replay. */
+export interface CliTranscriptTurn {
+  readonly userMessage: string;
+  readonly assistantText: string;
+}
+
 export interface GeminiCliSessionOptions {
   readonly prompt: string;
   readonly cwd?: string | undefined;
@@ -263,14 +270,53 @@ export interface GeminiCliSessionOptions {
   readonly runtimeMode: RuntimeMode;
   /** Resume a previous CLI session by index or "latest". */
   readonly resumeSession?: string | undefined;
+  /** Prior turns for multi-turn continuity. Injected into the prompt prefix. */
+  readonly priorTurns?: ReadonlyArray<CliTranscriptTurn> | undefined;
+}
+
+/**
+ * Build a deterministic transcript prefix for multi-turn CLI continuity.
+ *
+ * Since the Gemini CLI does not support native session resume in headless mode,
+ * we prepend a bounded transcript of prior turns to the new prompt. This gives
+ * the model conversational context without claiming full session parity.
+ *
+ * Continuity strategy: prompt-based transcript replay (bounded, deterministic).
+ */
+export function buildTranscriptPrefix(
+  priorTurns: ReadonlyArray<CliTranscriptTurn>,
+): string {
+  if (priorTurns.length === 0) return "";
+
+  // Bound transcript to last 10 turns and 8k chars to stay within reasonable prompt limits
+  const MAX_TURNS = 10;
+  const MAX_CHARS = 8_000;
+  const recent = priorTurns.slice(-MAX_TURNS);
+
+  let transcript = "<prior_conversation>\n";
+  let charCount = transcript.length;
+
+  for (const turn of recent) {
+    const entry = `<user>${turn.userMessage}</user>\n<assistant>${turn.assistantText}</assistant>\n`;
+    if (charCount + entry.length > MAX_CHARS) break;
+    transcript += entry;
+    charCount += entry.length;
+  }
+
+  transcript += "</prior_conversation>\n\nContinuing from the conversation above:\n\n";
+  return transcript;
 }
 
 /**
  * Build the command-line arguments for spawning `gemini` in headless mode.
  */
 export function buildCliArgs(opts: GeminiCliSessionOptions): string[] {
+  // If there are prior turns, prepend transcript context to the prompt
+  const transcriptPrefix = opts.priorTurns ? buildTranscriptPrefix(opts.priorTurns) : "";
+  const fullPrompt = transcriptPrefix + opts.prompt;
+
   const args: string[] = [
-    "-p", opts.prompt,
+    "-p", fullPrompt,
     "-o", "stream-json",
   ];
 
@@ -322,18 +368,22 @@ export function parseNdjsonStream(
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
+/**
+ * Classify a CLI tool name into a valid canonical item type.
+ *
+ * NOTE: `file_read_approval` is a request type, not an item type. Read/view
+ * tools are classified as `dynamic_tool_call` which is the correct generic
+ * canonical item type for tool invocations that don't fit a more specific bucket.
+ */
 function classifyCliToolItemType(
   toolName: string,
-): "command_execution" | "file_change" | "file_read_approval" | "dynamic_tool_call" {
+): "command_execution" | "file_change" | "dynamic_tool_call" {
   const lower = toolName.toLowerCase();
   if (lower.includes("command") || lower.includes("shell") || lower === "run_shell_command") {
     return "command_execution";
   }
   if (lower.includes("edit") || lower.includes("write") || lower.includes("patch") || lower.includes("replace")) {
     return "file_change";
-  }
-  if (lower.includes("read") || lower.includes("view")) {
-    return "file_read_approval";
   }
   return "dynamic_tool_call";
 }

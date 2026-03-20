@@ -12,11 +12,19 @@
  *   4. GOOGLE_API_KEY environment variable
  *   5. Application Default Credentials (ADC) via google-auth-library
  *
+ * Note: `resolveGeminiAuth()` is mostly pure (env lookup only), but
+ * `hasAdcMarkers()` performs a synchronous filesystem existence check
+ * for gcloud default credentials. This is an intentional trade-off to
+ * detect ADC availability without a full auth handshake.
+ *
  * Track A limitation: This module improves auth for the SDK transport only.
  * True CLI subscription parity is handled by Track B (GeminiCliRuntime).
  *
  * @module GeminiAuthResolver
  */
+
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 
 // GoogleAuthOptions type from google-auth-library. We define a minimal
 // interface here to avoid a direct dependency on google-auth-library types,
@@ -48,8 +56,8 @@ export interface GeminiAuthSources {
 /**
  * Resolve Gemini auth credentials from all available sources.
  *
- * Pure function — does not perform I/O. Environment variables are read
- * from `sources.env` when provided, otherwise from `process.env`.
+ * Mostly pure — reads environment variables and performs a single synchronous
+ * filesystem existence check for gcloud ADC credentials when no API key is found.
  */
 export function resolveGeminiAuth(sources: GeminiAuthSources = {}): GeminiAuthResult {
   const env = sources.env ?? process.env;
@@ -123,16 +131,8 @@ function hasAdcMarkers(env: Record<string, string | undefined>): boolean {
   const home = env.HOME ?? env.USERPROFILE;
   if (home) {
     try {
-      // Only check existence, don't read the file.
-      // Use require('fs') lazily to avoid top-level side effects.
-      const fs = require("node:fs");
-      const adcPath = require("node:path").join(
-        home,
-        ".config",
-        "gcloud",
-        "application_default_credentials.json",
-      );
-      if (fs.existsSync(adcPath)) return true;
+      const adcPath = join(home, ".config", "gcloud", "application_default_credentials.json");
+      if (existsSync(adcPath)) return true;
     } catch {
       // Ignore fs errors — fall through to "no markers"
     }
