@@ -1173,6 +1173,38 @@ describe("ClaudeCodeAdapterLive", () => {
     );
   });
 
+  it.effect("closes the Claude prompt stream cleanly when a session stops", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeCodeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: "claudeCode",
+        runtimeMode: "full-access",
+      });
+
+      const createInput = harness.getLastCreateQueryInput();
+      assert.ok(createInput);
+      if (!createInput) {
+        return;
+      }
+
+      const iterator = createInput.prompt[Symbol.asyncIterator]();
+      const nextMessage = iterator.next();
+
+      yield* adapter.stopSession(THREAD_ID);
+
+      const result = yield* Effect.promise(() => nextMessage);
+      assert.deepEqual(result, {
+        done: true,
+        value: undefined,
+      });
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("creates a fresh assistant message when Claude reuses a text block index", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {

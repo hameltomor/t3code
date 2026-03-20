@@ -1,13 +1,17 @@
 /**
- * GeminiCliRuntime - Native Gemini CLI runtime wrapper for Track B.
+ * GeminiCliRuntime - Gemini CLI wrapper for Track B (CLI transport).
  *
  * Spawns the Gemini CLI in headless mode with `-o stream-json` to get structured
  * NDJSON events. Maps CLI events into canonical ProviderRuntimeEvent types that
  * match the existing SDK adapter and Codex/Claude Code patterns.
  *
- * This module gives XBE true Gemini subscription parity: the CLI owns
- * login/subscription state, and XBE brokers the session — same as Codex and
- * Claude Code.
+ * Limitations vs SDK transport:
+ *   - Multi-turn continuity uses prompt-based transcript replay, not native
+ *     session resume. Context is bounded and approximate.
+ *   - readThread returns assistant-only text reconstructed from the local
+ *     cliTurns log. Tool calls, attachments, and system messages are not
+ *     available in CLI readback.
+ *   - Attachments are not supported (rejected at preflight).
  *
  * CLI event types (stream-json):
  *   - init:        { type, timestamp, session_id, model }
@@ -90,7 +94,9 @@ export type GeminiCliEvent =
 
 /**
  * Parse a single line of NDJSON from the Gemini CLI stream-json output.
- * Returns undefined for unparseable or unknown event types.
+ * Returns undefined for unparseable, malformed, or unknown event types.
+ *
+ * Each event type is validated with strict type guards — no `as unknown as` casts.
  */
 export function parseCliEvent(line: string): GeminiCliEvent | undefined {
   const trimmed = line.trim();
@@ -99,25 +105,88 @@ export function parseCliEvent(line: string): GeminiCliEvent | undefined {
   try {
     const parsed = JSON.parse(trimmed) as Record<string, unknown>;
     if (!parsed.type || typeof parsed.type !== "string") return undefined;
+    if (typeof parsed.timestamp !== "string") return undefined;
 
     switch (parsed.type) {
       case "init":
-        return parsed as unknown as GeminiCliInitEvent;
+        return validateInitEvent(parsed);
       case "message":
-        return parsed as unknown as GeminiCliMessageEvent;
+        return validateMessageEvent(parsed);
       case "tool_use":
-        return parsed as unknown as GeminiCliToolUseEvent;
+        return validateToolUseEvent(parsed);
       case "tool_result":
-        return parsed as unknown as GeminiCliToolResultEvent;
+        return validateToolResultEvent(parsed);
       case "result":
-        return parsed as unknown as GeminiCliResultEvent;
+        return validateResultEvent(parsed);
       default:
-        // Unknown event type — skip gracefully
         return undefined;
     }
   } catch {
     return undefined;
   }
+}
+
+function validateInitEvent(p: Record<string, unknown>): GeminiCliInitEvent | undefined {
+  if (typeof p.session_id !== "string" || typeof p.model !== "string") return undefined;
+  return {
+    type: "init",
+    timestamp: p.timestamp as string,
+    session_id: p.session_id,
+    model: p.model,
+  };
+}
+
+function validateMessageEvent(p: Record<string, unknown>): GeminiCliMessageEvent | undefined {
+  if (typeof p.content !== "string") return undefined;
+  if (p.role !== "user" && p.role !== "assistant") return undefined;
+  return {
+    type: "message",
+    timestamp: p.timestamp as string,
+    role: p.role,
+    content: p.content,
+    ...(typeof p.delta === "boolean" ? { delta: p.delta } : {}),
+  };
+}
+
+function validateToolUseEvent(p: Record<string, unknown>): GeminiCliToolUseEvent | undefined {
+  if (typeof p.tool_name !== "string" || typeof p.tool_id !== "string") return undefined;
+  if (typeof p.parameters !== "object" || p.parameters === null || Array.isArray(p.parameters)) return undefined;
+  return {
+    type: "tool_use",
+    timestamp: p.timestamp as string,
+    tool_name: p.tool_name,
+    tool_id: p.tool_id,
+    parameters: p.parameters as Record<string, unknown>,
+  };
+}
+
+function validateToolResultEvent(p: Record<string, unknown>): GeminiCliToolResultEvent | undefined {
+  if (typeof p.tool_id !== "string" || typeof p.output !== "string") return undefined;
+  if (p.status !== "success" && p.status !== "error") return undefined;
+  return {
+    type: "tool_result",
+    timestamp: p.timestamp as string,
+    tool_id: p.tool_id,
+    status: p.status,
+    output: p.output,
+  };
+}
+
+function validateResultEvent(p: Record<string, unknown>): GeminiCliResultEvent | undefined {
+  if (p.status !== "success" && p.status !== "error") return undefined;
+  if (typeof p.stats === "object" && p.stats !== null && !Array.isArray(p.stats)) {
+    return {
+      type: "result",
+      timestamp: p.timestamp as string,
+      status: p.status,
+      stats: p.stats as NonNullable<GeminiCliResultEvent["stats"]>,
+    };
+  }
+  return {
+    type: "result",
+    timestamp: p.timestamp as string,
+    status: p.status,
+  };
 }
 
 // ── CLI Event to Runtime Event Mapping ───────────────────────────────
@@ -282,29 +351,40 @@ export interface GeminiCliSessionOptions {
  * the model conversational context without claiming full session parity.
  *
  * Continuity strategy: prompt-based transcript replay (bounded, deterministic).
+ *
+ * Safety: Content is JSON-encoded per turn to prevent injection via user/assistant
+ * text. Newest turns are preserved first under the character budget. Oversized
+ * individual turns are skipped (not break-terminated) so smaller older turns
+ * can still be included.
  */
 export function buildTranscriptPrefix(
   priorTurns: ReadonlyArray<CliTranscriptTurn>,
 ): string {
   if (priorTurns.length === 0) return "";
 
-  // Bound transcript to last 10 turns and 8k chars to stay within reasonable prompt limits
   const MAX_TURNS = 10;
   const MAX_CHARS = 8_000;
   const recent = priorTurns.slice(-MAX_TURNS);
 
-  let transcript = "<prior_conversation>\n";
-  let charCount = transcript.length;
+  // Build from newest to oldest so newest turns are preserved under char budget
+  const selected: string[] = [];
+  let charCount = 0;
+  const HEADER = "--- prior conversation (JSONL, one object per turn) ---\n";
+  const FOOTER = "--- end prior conversation ---\n\nContinuing from the conversation above:\n\n";
+  const overhead = HEADER.length + FOOTER.length;
+  charCount += overhead;
 
-  for (const turn of recent) {
-    const entry = `<user>${turn.userMessage}</user>\n<assistant>${turn.assistantText}</assistant>\n`;
-    if (charCount + entry.length > MAX_CHARS) break;
-    transcript += entry;
+  for (let i = recent.length - 1; i >= 0; i--) {
+    const entry = JSON.stringify({ role: "user", content: recent[i]!.userMessage }) + "\n" +
+      JSON.stringify({ role: "assistant", content: recent[i]!.assistantText }) + "\n";
+    if (charCount + entry.length > MAX_CHARS) continue;
+    selected.unshift(entry);
     charCount += entry.length;
   }
 
-  transcript += "</prior_conversation>\n\nContinuing from the conversation above:\n\n";
-  return transcript;
+  if (selected.length === 0) return "";
+
+  return HEADER + selected.join("") + FOOTER;
 }
 
 /**

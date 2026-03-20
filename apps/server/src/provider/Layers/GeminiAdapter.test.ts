@@ -767,3 +767,384 @@ describe("GeminiAdapterLive", () => {
       ));
   });
 });
+
+// ── CLI Transport Tests ─────────────────────────────────────────────────
+
+import { EventEmitter } from "node:events";
+
+/** Create a mock ChildProcess that emits NDJSON lines and closes with a given code. */
+function createMockChildProcess(options: {
+  stdoutLines: string[];
+  exitCode: number;
+  exitDelay?: number;
+}) {
+  const stdout = new EventEmitter();
+  const stderr = new EventEmitter();
+  const proc = new EventEmitter() as EventEmitter & {
+    stdout: EventEmitter;
+    stderr: EventEmitter;
+    stdin: { write: () => void; end: () => void };
+    pid: number;
+    kill: ReturnType<typeof vi.fn>;
+  };
+  proc.stdout = stdout;
+  proc.stderr = stderr;
+  proc.stdin = { write: () => {}, end: () => {} };
+  proc.pid = 12345;
+  proc.kill = vi.fn(() => {
+    // Simulate kill: emit close with null code
+    setTimeout(() => proc.emit("close", null), 5);
+  });
+
+  // Emit stdout lines then close after a delay
+  setTimeout(() => {
+    for (const line of options.stdoutLines) {
+      stdout.emit("data", Buffer.from(line + "\n"));
+    }
+    setTimeout(() => {
+      proc.emit("close", options.exitCode);
+    }, options.exitDelay ?? 20);
+  }, 10);
+
+  return proc;
+}
+
+let mockSpawnImpl: (...args: unknown[]) => unknown = () => undefined;
+const mockSpawnSpy = vi.fn((...args: unknown[]) => mockSpawnImpl(...args));
+
+vi.mock("node:child_process", () => ({
+  spawn: (...args: unknown[]) => mockSpawnSpy(...args),
+}));
+
+const CLI_THREAD_ID = "thread-cli-1" as ThreadId;
+
+describe("GeminiAdapter CLI transport", () => {
+  beforeEach(() => {
+    mockSpawnSpy.mockClear();
+    mockSpawnImpl = () => undefined;
+  });
+
+  it("starts a CLI session and reports ready", () =>
+    run(
+      Effect.gen(function* () {
+        const adapter = yield* makeGeminiAdapter({ apiKey: TEST_API_KEY });
+        const session = yield* adapter.startSession({
+          threadId: CLI_THREAD_ID,
+          runtimeMode: "full-access",
+          providerOptions: { gemini: { transport: "cli" } },
+        });
+
+        expect(session.provider).toBe("gemini");
+        expect(session.status).toBe("ready");
+        expect(session.threadId).toBe(CLI_THREAD_ID);
+      }),
+    ));
+
+  it("CLI sendTurn success: spawns process and completes turn", () =>
+    run(
+      Effect.gen(function* () {
+        mockSpawnImpl = () =>
+          createMockChildProcess({
+            stdoutLines: [
+              '{"type":"init","timestamp":"2026-03-20T00:00:00Z","session_id":"s1","model":"gemini-3"}',
+              '{"type":"message","timestamp":"2026-03-20T00:00:01Z","role":"assistant","content":"Hello!","delta":true}',
+              '{"type":"result","timestamp":"2026-03-20T00:00:02Z","status":"success","stats":{"total_tokens":50}}',
+            ],
+            exitCode: 0,
+          });
+
+        const adapter = yield* makeGeminiAdapter({ apiKey: TEST_API_KEY });
+        const { events } = yield* collectEvents(adapter.streamEvents);
+        yield* adapter.startSession({
+          threadId: CLI_THREAD_ID,
+          runtimeMode: "full-access",
+          providerOptions: { gemini: { transport: "cli" } },
+        });
+
+        const turn = yield* adapter.sendTurn({
+          threadId: CLI_THREAD_ID,
+          input: "Hello",
+        });
+
+        expect(turn.threadId).toBe(CLI_THREAD_ID);
+        expect(turn.turnId).toBeDefined();
+
+        // Wait for CLI process to complete
+        yield* Effect.sleep(300);
+
+        // Verify turn was persisted
+        const thread = yield* adapter.readThread(CLI_THREAD_ID);
+        expect(thread.turns).toHaveLength(1);
+        expect((thread.turns[0]?.items[0] as { text?: string })?.text).toBe("Hello!");
+
+        // Verify lifecycle events: turn.started, content.delta, turn.completed
+        const turnStarted = events.filter((e) => e.type === "turn.started");
+        const turnCompleted = events.filter((e) => e.type === "turn.completed");
+        expect(turnStarted).toHaveLength(1);
+        expect(turnCompleted).toHaveLength(1);
+
+        // No duplicate turn.completed
+        expect(turnCompleted).toHaveLength(1);
+      }),
+    ));
+
+  it("CLI attachment rejection: fails before emitting turn.started", () =>
+    run(
+      Effect.gen(function* () {
+        const adapter = yield* makeGeminiAdapter({ apiKey: TEST_API_KEY });
+        const { events } = yield* collectEvents(adapter.streamEvents);
+        yield* adapter.startSession({
+          threadId: CLI_THREAD_ID,
+          runtimeMode: "full-access",
+          providerOptions: { gemini: { transport: "cli" } },
+        });
+
+        const result = yield* adapter
+          .sendTurn({
+            threadId: CLI_THREAD_ID,
+            input: "Hello",
+            attachments: [{ name: "file.txt", content: "data" }] as any,
+          })
+          .pipe(Effect.result);
+
+        expect(result._tag).toBe("Failure");
+
+        // No turn.started event should have been emitted
+        const turnStarted = events.filter((e) => e.type === "turn.started");
+        expect(turnStarted).toHaveLength(0);
+
+        // Session should still be usable
+        expect(yield* adapter.hasSession(CLI_THREAD_ID)).toBe(true);
+        const sessions = yield* adapter.listSessions();
+        const session = sessions.find((s) => s.threadId === CLI_THREAD_ID);
+        expect(session?.status).toBe("ready");
+      }),
+    ));
+
+  it("CLI interrupt: kills process and marks turn as interrupted", () =>
+    run(
+      Effect.gen(function* () {
+        // Create a process that stays open until killed
+        const stdout = new EventEmitter();
+        const stderr = new EventEmitter();
+        const proc = new EventEmitter() as EventEmitter & {
+          stdout: EventEmitter;
+          stderr: EventEmitter;
+          stdin: { write: () => void; end: () => void };
+          pid: number;
+          kill: ReturnType<typeof vi.fn>;
+        };
+        proc.stdout = stdout;
+        proc.stderr = stderr;
+        proc.stdin = { write: () => {}, end: () => {} };
+        proc.pid = 99999;
+        proc.kill = vi.fn(() => {
+          setTimeout(() => proc.emit("close", null), 5);
+        });
+
+        // Emit init immediately, then stay open
+        setTimeout(() => {
+          stdout.emit(
+            "data",
+            Buffer.from(
+              '{"type":"init","timestamp":"2026-03-20T00:00:00Z","session_id":"s2","model":"gemini-3"}\n',
+            ),
+          );
+        }, 10);
+
+        mockSpawnImpl = () => proc;
+
+        const adapter = yield* makeGeminiAdapter({ apiKey: TEST_API_KEY });
+        yield* adapter.startSession({
+          threadId: CLI_THREAD_ID,
+          runtimeMode: "full-access",
+          providerOptions: { gemini: { transport: "cli" } },
+        });
+
+        yield* adapter.sendTurn({
+          threadId: CLI_THREAD_ID,
+          input: "Long task",
+        });
+
+        yield* Effect.sleep(100);
+
+        // Interrupt
+        yield* adapter.interruptTurn(CLI_THREAD_ID);
+
+        yield* Effect.sleep(200);
+
+        // Session still valid
+        expect(yield* adapter.hasSession(CLI_THREAD_ID)).toBe(true);
+
+        // Interrupted turn should NOT be persisted
+        const thread = yield* adapter.readThread(CLI_THREAD_ID);
+        expect(thread.turns).toHaveLength(0);
+      }),
+    ));
+
+  it("CLI failure: non-zero exit code marks turn as failed", () =>
+    run(
+      Effect.gen(function* () {
+        mockSpawnImpl = () =>
+          createMockChildProcess({
+            stdoutLines: [
+              '{"type":"init","timestamp":"2026-03-20T00:00:00Z","session_id":"s3","model":"gemini-3"}',
+            ],
+            exitCode: 1,
+          });
+
+        const adapter = yield* makeGeminiAdapter({ apiKey: TEST_API_KEY });
+        const { events } = yield* collectEvents(adapter.streamEvents);
+        yield* adapter.startSession({
+          threadId: CLI_THREAD_ID,
+          runtimeMode: "full-access",
+          providerOptions: { gemini: { transport: "cli" } },
+        });
+
+        yield* adapter.sendTurn({
+          threadId: CLI_THREAD_ID,
+          input: "Fail",
+        });
+
+        yield* Effect.sleep(300);
+
+        // Turn should not be persisted on failure
+        const thread = yield* adapter.readThread(CLI_THREAD_ID);
+        expect(thread.turns).toHaveLength(0);
+
+        // Should have a runtime.error event
+        const errors = events.filter((e) => e.type === "runtime.error");
+        expect(errors.length).toBeGreaterThanOrEqual(1);
+
+        // turn.completed with failed status
+        const completed = events.filter((e) => e.type === "turn.completed");
+        expect(completed).toHaveLength(1);
+        expect((completed[0] as any).payload.state).toBe("failed");
+      }),
+    ));
+
+  it("CLI multi-turn: transcript grows with each turn", () =>
+    run(
+      Effect.gen(function* () {
+        let callCount = 0;
+        mockSpawnImpl = () => {
+          callCount++;
+          return createMockChildProcess({
+            stdoutLines: [
+              `{"type":"init","timestamp":"2026-03-20T00:00:00Z","session_id":"s${callCount}","model":"gemini-3"}`,
+              `{"type":"message","timestamp":"2026-03-20T00:00:01Z","role":"assistant","content":"Answer ${callCount}","delta":true}`,
+              `{"type":"result","timestamp":"2026-03-20T00:00:02Z","status":"success"}`,
+            ],
+            exitCode: 0,
+          });
+        };
+
+        const adapter = yield* makeGeminiAdapter({ apiKey: TEST_API_KEY });
+        yield* adapter.startSession({
+          threadId: CLI_THREAD_ID,
+          runtimeMode: "full-access",
+          providerOptions: { gemini: { transport: "cli" } },
+        });
+
+        // Turn 1
+        yield* adapter.sendTurn({ threadId: CLI_THREAD_ID, input: "Q1" });
+        yield* Effect.sleep(300);
+
+        // Turn 2 — the prompt should include prior conversation context
+        yield* adapter.sendTurn({ threadId: CLI_THREAD_ID, input: "Q2" });
+        yield* Effect.sleep(300);
+
+        const thread = yield* adapter.readThread(CLI_THREAD_ID);
+        expect(thread.turns).toHaveLength(2);
+
+        // Verify second spawn call included transcript in prompt
+        const secondCallArgs = mockSpawnSpy.mock.calls[1];
+        expect(secondCallArgs).toBeDefined();
+        const cliArgs = secondCallArgs![1] as string[];
+        const promptIdx = cliArgs.indexOf("-p");
+        const prompt = cliArgs[promptIdx + 1]!;
+        expect(prompt).toContain("prior conversation");
+        expect(prompt).toContain("Q2");
+      }),
+    ));
+
+  it("CLI rollback removes turns from transcript", () =>
+    run(
+      Effect.gen(function* () {
+        mockSpawnImpl = () =>
+          createMockChildProcess({
+            stdoutLines: [
+              '{"type":"init","timestamp":"2026-03-20T00:00:00Z","session_id":"s1","model":"gemini-3"}',
+              '{"type":"message","timestamp":"2026-03-20T00:00:01Z","role":"assistant","content":"Answer","delta":true}',
+              '{"type":"result","timestamp":"2026-03-20T00:00:02Z","status":"success"}',
+            ],
+            exitCode: 0,
+          });
+
+        const adapter = yield* makeGeminiAdapter({ apiKey: TEST_API_KEY });
+        yield* adapter.startSession({
+          threadId: CLI_THREAD_ID,
+          runtimeMode: "full-access",
+          providerOptions: { gemini: { transport: "cli" } },
+        });
+
+        yield* adapter.sendTurn({ threadId: CLI_THREAD_ID, input: "Hello" });
+        yield* Effect.sleep(300);
+
+        const threadBefore = yield* adapter.readThread(CLI_THREAD_ID);
+        expect(threadBefore.turns).toHaveLength(1);
+
+        const threadAfter = yield* adapter.rollbackThread(CLI_THREAD_ID, 1);
+        expect(threadAfter.turns).toHaveLength(0);
+      }),
+    ));
+
+  it("CLI event ordering: content.delta and tool events arrive before turn.completed", () =>
+    run(
+      Effect.gen(function* () {
+        mockSpawnImpl = () =>
+          createMockChildProcess({
+            stdoutLines: [
+              '{"type":"init","timestamp":"2026-03-20T00:00:00Z","session_id":"s1","model":"gemini-3"}',
+              '{"type":"tool_use","timestamp":"2026-03-20T00:00:01Z","tool_name":"read_file","tool_id":"t1","parameters":{"path":"a.ts"}}',
+              '{"type":"tool_result","timestamp":"2026-03-20T00:00:02Z","tool_id":"t1","status":"success","output":"content"}',
+              '{"type":"message","timestamp":"2026-03-20T00:00:03Z","role":"assistant","content":"Done!","delta":true}',
+              '{"type":"result","timestamp":"2026-03-20T00:00:04Z","status":"success"}',
+            ],
+            exitCode: 0,
+          });
+
+        const adapter = yield* makeGeminiAdapter({ apiKey: TEST_API_KEY });
+        const { events } = yield* collectEvents(adapter.streamEvents);
+        yield* adapter.startSession({
+          threadId: CLI_THREAD_ID,
+          runtimeMode: "full-access",
+          providerOptions: { gemini: { transport: "cli" } },
+        });
+
+        yield* adapter.sendTurn({ threadId: CLI_THREAD_ID, input: "Read file" });
+        yield* Effect.sleep(300);
+
+        // Find turn.completed index — all content/tool events must precede it
+        const completedIdx = events.findIndex((e) => e.type === "turn.completed");
+        expect(completedIdx).toBeGreaterThan(-1);
+
+        // content.delta must appear before turn.completed
+        const deltaIdx = events.findIndex((e) => e.type === "content.delta");
+        expect(deltaIdx).toBeGreaterThan(-1);
+        expect(deltaIdx).toBeLessThan(completedIdx);
+
+        // item.started (tool_use) must appear before turn.completed
+        const toolStartIdx = events.findIndex((e) => e.type === "item.started");
+        expect(toolStartIdx).toBeGreaterThan(-1);
+        expect(toolStartIdx).toBeLessThan(completedIdx);
+
+        // item.completed (tool_result) must appear before turn.completed
+        const toolCompleteIdx = events.findIndex(
+          (e) => e.type === "item.completed" && (e as any).payload?.itemType === "dynamic_tool_call",
+        );
+        expect(toolCompleteIdx).toBeGreaterThan(-1);
+        expect(toolCompleteIdx).toBeLessThan(completedIdx);
+      }),
+    ));
+});

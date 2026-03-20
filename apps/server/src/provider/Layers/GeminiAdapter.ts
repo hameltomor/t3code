@@ -49,7 +49,7 @@ import {
   type MaterializedImageAttachment,
 } from "../attachmentMaterializer.ts";
 import { resolveGeminiAuth, type GeminiAuthResult } from "../gemini/GeminiAuthResolver.ts";
-import { buildCliArgs, mapCliEventToRuntimeEvents, parseCliEvent } from "../gemini/GeminiCliRuntime.ts";
+import { buildCliArgs, mapCliEventToRuntimeEvents, parseCliEvent, type GeminiCliEvent } from "../gemini/GeminiCliRuntime.ts";
 
 import { GEMINI_FUNCTION_DECLARATIONS, toolRequiresApproval } from "../gemini/GeminiToolDefinitions.ts";
 import {
@@ -866,6 +866,15 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
           });
         }
 
+        // ── CLI preflight: reject unsupported inputs before emitting lifecycle events ──
+        if (ctx.transport === "cli" && input.attachments && input.attachments.length > 0) {
+          return yield* new ProviderAdapterValidationError({
+            provider: PROVIDER,
+            operation: "sendTurn",
+            issue: "Attachments are not supported with CLI transport. Use SDK transport for attachment support.",
+          });
+        }
+
         const turnId = TurnId.makeUnsafe(yield* Random.nextUUIDv4);
         const assistantItemId = yield* Random.nextUUIDv4;
         const now = yield* nowIso;
@@ -913,18 +922,6 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
         if (ctx.transport === "cli") {
           // ── CLI transport: spawn gemini process ──────────────────
 
-          // CLI transport does not support attachments — reject explicitly
-          if (input.attachments && input.attachments.length > 0) {
-            ctx.turnState = undefined;
-            ctx.session.status = "ready";
-            ctx.session.activeTurnId = undefined;
-            return yield* new ProviderAdapterValidationError({
-              provider: PROVIDER,
-              operation: "sendTurn",
-              issue: "Attachments are not supported with CLI transport. Use SDK transport for attachment support.",
-            });
-          }
-
           const userMessage = input.input ?? "";
           const cliCtx = ctx;
           cliCtx.interrupted = false;
@@ -955,11 +952,15 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
             });
             cliCtx.cliProcess = child;
 
+            // Accumulate parsed CLI events synchronously — no fire-and-forget.
+            // Events are mapped and queued after the process closes to guarantee
+            // ordering: all content/tool events are queued before completeTurn.
+            const parsedCliEvents: GeminiCliEvent[] = [];
             let accumulatedText = "";
 
-            yield* Effect.tryPromise({
+            const exitResult = yield* Effect.tryPromise({
               try: () =>
-                new Promise<void>((resolve, reject) => {
+                new Promise<{ code: number | null }>((resolve, reject) => {
                   let buffer = "";
 
                   child.stdout?.on("data", (chunk: Buffer) => {
@@ -970,23 +971,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
                     for (const line of lines) {
                       const event = parseCliEvent(line);
                       if (!event) continue;
-
-                      // Process events synchronously — map and emit
-                      Effect.runPromise(
-                        Effect.gen(function* () {
-                          const runtimeEvents = yield* mapCliEventToRuntimeEvents(event, {
-                            threadId,
-                            turnId,
-                          });
-                          for (const re of runtimeEvents) {
-                            yield* Queue.offer(runtimeEventQueue, re);
-                          }
-                        }),
-                      ).catch(() => {
-                        // Best-effort event emission
-                      });
-
-                      // Track assistant text for thread readback
+                      parsedCliEvents.push(event);
                       if (event.type === "message" && event.role === "assistant" && event.delta) {
                         accumulatedText += event.content;
                       }
@@ -998,36 +983,17 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
                   });
 
                   child.on("close", (code: number | null) => {
-                    // Process remaining buffer
+                    // Parse remaining buffer before resolving
                     if (buffer.trim()) {
                       const event = parseCliEvent(buffer);
                       if (event) {
-                        Effect.runPromise(
-                          Effect.gen(function* () {
-                            const runtimeEvents = yield* mapCliEventToRuntimeEvents(event, {
-                              threadId,
-                              turnId,
-                            });
-                            for (const re of runtimeEvents) {
-                              yield* Queue.offer(runtimeEventQueue, re);
-                            }
-                          }),
-                        ).catch(() => {});
+                        parsedCliEvents.push(event);
+                        if (event.type === "message" && event.role === "assistant" && event.delta) {
+                          accumulatedText += event.content;
+                        }
                       }
                     }
-
-                    // Distinguish: interrupted by XBE, normal success, or process failure
-                    if (cliCtx.interrupted) {
-                      // Intentionally killed — reject so the catch path marks as interrupted
-                      reject(new Error("Gemini CLI interrupted by XBE"));
-                    } else if (code === 0) {
-                      resolve();
-                    } else if (code === null) {
-                      // Signaled without our interrupt flag — treat as failure
-                      reject(new Error("Gemini CLI process was killed unexpectedly"));
-                    } else {
-                      reject(new Error(`Gemini CLI exited with code ${code}`));
-                    }
+                    resolve({ code });
                   });
 
                   child.on("error", (err: Error) => {
@@ -1042,9 +1008,41 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
                 }),
             });
 
+            // Map and queue all CLI events in order before evaluating exit status.
+            // This guarantees content.delta/tool events are queued before turn.completed.
+            for (const cliEvent of parsedCliEvents) {
+              const runtimeEvents = yield* mapCliEventToRuntimeEvents(cliEvent, { threadId, turnId });
+              for (const re of runtimeEvents) {
+                yield* Queue.offer(runtimeEventQueue, re);
+              }
+            }
+
             cliCtx.cliProcess = undefined;
 
-            // Only persist the turn on genuine success (not interrupted)
+            // Evaluate exit status after all events are queued
+            if (cliCtx.interrupted) {
+              return yield* Effect.fail(
+                new ProviderAdapterProcessError({
+                  provider: PROVIDER,
+                  threadId,
+                  detail: "Gemini CLI interrupted by XBE",
+                }),
+              );
+            }
+            if (exitResult.code !== 0) {
+              const code = exitResult.code;
+              return yield* Effect.fail(
+                new ProviderAdapterProcessError({
+                  provider: PROVIDER,
+                  threadId,
+                  detail: code === null
+                    ? "Gemini CLI process was killed unexpectedly"
+                    : `Gemini CLI exited with code ${code}`,
+                }),
+              );
+            }
+
+            // Only persist the turn on genuine success
             cliCtx.cliTurns.push({ userMessage, assistantText: accumulatedText });
 
             // Update turn state
@@ -1210,6 +1208,10 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
         const ctx = yield* requireSession(threadId);
 
         if (ctx.transport === "cli") {
+          // CLI readback is limited to assistant text only. Tool calls,
+          // attachments, and system messages are not captured by the CLI
+          // transport. This is an intentional limitation — the CLI does not
+          // expose structured history in headless mode.
           return {
             threadId,
             turns: ctx.cliTurns.map((turn, i) => ({

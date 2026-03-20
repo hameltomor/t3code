@@ -240,6 +240,46 @@ export interface ClaudeCodeAdapterLiveOptions {
   readonly stateDir?: string;
 }
 
+function promptQueueToAsyncIterable(
+  promptQueue: Queue.Dequeue<PromptQueueItem>,
+): AsyncIterable<SDKUserMessage> {
+  return {
+    [Symbol.asyncIterator](): AsyncIterator<SDKUserMessage> {
+      let done = false;
+
+      return {
+        next: async (): Promise<IteratorResult<SDKUserMessage>> => {
+          if (done) {
+            return { done: true, value: undefined };
+          }
+
+          while (true) {
+            const exit = await Effect.runPromiseExit(Queue.take(promptQueue));
+            if (Exit.isFailure(exit)) {
+              // The Claude SDK detaches its prompt stream consumer. When we stop a session
+              // and shut the queue down, the iterator must end cleanly instead of rejecting.
+              done = true;
+              return { done: true, value: undefined };
+            }
+
+            const item = exit.value;
+            if (item.type === "terminate") {
+              done = true;
+              return { done: true, value: undefined };
+            }
+
+            return { done: false, value: item.message };
+          }
+        },
+        return: async (): Promise<IteratorResult<SDKUserMessage>> => {
+          done = true;
+          return { done: true, value: undefined };
+        },
+      };
+    },
+  };
+}
+
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
@@ -2288,11 +2328,7 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
         const threadId = resumeState?.threadId;
 
         const promptQueue = yield* Queue.unbounded<PromptQueueItem>();
-        const prompt = Stream.fromQueue(promptQueue).pipe(
-          Stream.filter((item) => item.type === "message"),
-          Stream.map((item) => item.message),
-          Stream.toAsyncIterable,
-        );
+        const prompt = promptQueueToAsyncIterable(promptQueue);
 
         const pendingApprovals = new Map<ApprovalRequestId, PendingApproval>();
         const pendingUserInputs = new Map<ApprovalRequestId, PendingUserInput>();
