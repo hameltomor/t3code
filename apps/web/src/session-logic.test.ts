@@ -458,6 +458,7 @@ describe("deriveWorkLogEntries", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
         id: "file-tool",
+        turnId: TurnId.makeUnsafe("turn-7"),
         kind: "tool.completed",
         summary: "File change complete",
         payload: {
@@ -475,6 +476,7 @@ describe("deriveWorkLogEntries", () => {
     ];
 
     const [entry] = deriveWorkLogEntries(activities, undefined);
+    expect(entry?.turnId).toBe("turn-7");
     expect(entry?.changedFiles).toEqual([
       "apps/web/src/components/ChatView.tsx",
       "apps/web/src/session-logic.ts",

@@ -1099,6 +1099,80 @@ describe("GeminiAdapter CLI transport", () => {
       }),
     ));
 
+  it("CLI streams content.delta before process exit", () =>
+    run(
+      Effect.gen(function* () {
+        const stdout = new EventEmitter();
+        const stderr = new EventEmitter();
+        let closed = false;
+        const proc = new EventEmitter() as EventEmitter & {
+          stdout: EventEmitter;
+          stderr: EventEmitter;
+          stdin: { write: () => void; end: () => void };
+          pid: number;
+          kill: ReturnType<typeof vi.fn>;
+        };
+        proc.stdout = stdout;
+        proc.stderr = stderr;
+        proc.stdin = { write: () => {}, end: () => {} };
+        proc.pid = 77777;
+        proc.kill = vi.fn(() => {
+          closed = true;
+          setTimeout(() => proc.emit("close", null), 5);
+        });
+
+        setTimeout(() => {
+          stdout.emit(
+            "data",
+            Buffer.from(JSON.stringify({
+              type: "init",
+              timestamp: "2026-03-20T00:00:00Z",
+              session_id: "live-1",
+              model: "gemini-3",
+            }) + "\n"),
+          );
+        }, 10);
+        setTimeout(() => {
+          stdout.emit(
+            "data",
+            Buffer.from(JSON.stringify({
+              type: "message",
+              timestamp: "2026-03-20T00:00:01Z",
+              role: "assistant",
+              content: "Streaming now",
+              delta: true,
+            }) + "\n"),
+          );
+        }, 30);
+        setTimeout(() => {
+          closed = true;
+          proc.emit("close", 0);
+        }, 220);
+
+        mockSpawnImpl = () => proc;
+
+        const adapter = yield* makeGeminiAdapter({ apiKey: TEST_API_KEY });
+        const { events } = yield* collectEvents(adapter.streamEvents);
+        yield* adapter.startSession({
+          threadId: CLI_THREAD_ID,
+          runtimeMode: "full-access",
+          providerOptions: { gemini: { transport: "cli" } },
+        });
+
+        yield* adapter.sendTurn({ threadId: CLI_THREAD_ID, input: "Say something" });
+
+        yield* Effect.sleep(120);
+
+        expect(closed).toBe(false);
+        expect(events.some((e) => e.type === "content.delta")).toBe(true);
+        expect(events.some((e) => e.type === "turn.completed")).toBe(false);
+
+        yield* Effect.sleep(180);
+
+        expect(events.filter((e) => e.type === "turn.completed")).toHaveLength(1);
+      }),
+    ));
+
   it("CLI event ordering: content.delta and tool events arrive before turn.completed", () =>
     run(
       Effect.gen(function* () {

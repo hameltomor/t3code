@@ -952,16 +952,55 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
             });
             cliCtx.cliProcess = child;
 
-            // Accumulate parsed CLI events synchronously — no fire-and-forget.
-            // Events are mapped and queued after the process closes to guarantee
-            // ordering: all content/tool events are queued before completeTurn.
-            const parsedCliEvents: GeminiCliEvent[] = [];
+            // Stream CLI runtime events live, but serialize mapping/queueing
+            // through a per-process promise chain so all events flush in order
+            // before completeTurn() runs.
             let accumulatedText = "";
 
             const exitResult = yield* Effect.tryPromise({
               try: () =>
                 new Promise<{ code: number | null }>((resolve, reject) => {
                   let buffer = "";
+                  let settled = false;
+                  let processing: Promise<void> = Promise.resolve();
+
+                  const settleResolve = (result: { code: number | null }) => {
+                    if (settled) return;
+                    settled = true;
+                    resolve(result);
+                  };
+
+                  const settleReject = (err: unknown) => {
+                    if (settled) return;
+                    settled = true;
+                    reject(err);
+                  };
+
+                  const processCliEvent = (event: GeminiCliEvent) => {
+                    if (event.type === "message" && event.role === "assistant" && event.delta) {
+                      accumulatedText += event.content;
+                    }
+
+                    processing = processing.then(() =>
+                      Effect.runPromise(
+                        Effect.gen(function* () {
+                          const runtimeEvents = yield* mapCliEventToRuntimeEvents(event, {
+                            threadId,
+                            turnId,
+                          });
+                          for (const re of runtimeEvents) {
+                            yield* Queue.offer(runtimeEventQueue, re);
+                          }
+                        }),
+                      )
+                    );
+
+                    // Avoid an early unhandled rejection. The close/error path
+                    // awaits the same chain and converts it into adapter failure.
+                    void processing.catch((err) => {
+                      settleReject(err);
+                    });
+                  };
 
                   child.stdout?.on("data", (chunk: Buffer) => {
                     buffer += chunk.toString();
@@ -971,10 +1010,7 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
                     for (const line of lines) {
                       const event = parseCliEvent(line);
                       if (!event) continue;
-                      parsedCliEvents.push(event);
-                      if (event.type === "message" && event.role === "assistant" && event.delta) {
-                        accumulatedText += event.content;
-                      }
+                      processCliEvent(event);
                     }
                   });
 
@@ -983,21 +1019,20 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
                   });
 
                   child.on("close", (code: number | null) => {
-                    // Parse remaining buffer before resolving
-                    if (buffer.trim()) {
+                    // Parse remaining buffer before waiting for the queued event work.
+                    if (buffer.trim() && !settled) {
                       const event = parseCliEvent(buffer);
-                      if (event) {
-                        parsedCliEvents.push(event);
-                        if (event.type === "message" && event.role === "assistant" && event.delta) {
-                          accumulatedText += event.content;
-                        }
-                      }
+                      if (event) processCliEvent(event);
                     }
-                    resolve({ code });
+
+                    void processing.then(
+                      () => settleResolve({ code }),
+                      (err) => settleReject(err),
+                    );
                   });
 
                   child.on("error", (err: Error) => {
-                    reject(err);
+                    settleReject(err);
                   });
                 }),
               catch: (err) =>
@@ -1008,38 +1043,25 @@ export function makeGeminiAdapter(options?: GeminiAdapterLiveOptions) {
                 }),
             });
 
-            // Map and queue all CLI events in order before evaluating exit status.
-            // This guarantees content.delta/tool events are queued before turn.completed.
-            for (const cliEvent of parsedCliEvents) {
-              const runtimeEvents = yield* mapCliEventToRuntimeEvents(cliEvent, { threadId, turnId });
-              for (const re of runtimeEvents) {
-                yield* Queue.offer(runtimeEventQueue, re);
-              }
-            }
-
             cliCtx.cliProcess = undefined;
 
             // Evaluate exit status after all events are queued
             if (cliCtx.interrupted) {
-              return yield* Effect.fail(
-                new ProviderAdapterProcessError({
-                  provider: PROVIDER,
-                  threadId,
-                  detail: "Gemini CLI interrupted by XBE",
-                }),
-              );
+              return yield* new ProviderAdapterProcessError({
+                provider: PROVIDER,
+                threadId,
+                detail: "Gemini CLI interrupted by XBE",
+              });
             }
             if (exitResult.code !== 0) {
               const code = exitResult.code;
-              return yield* Effect.fail(
-                new ProviderAdapterProcessError({
-                  provider: PROVIDER,
-                  threadId,
-                  detail: code === null
-                    ? "Gemini CLI process was killed unexpectedly"
-                    : `Gemini CLI exited with code ${code}`,
-                }),
-              );
+              return yield* new ProviderAdapterProcessError({
+                provider: PROVIDER,
+                threadId,
+                detail: code === null
+                  ? "Gemini CLI process was killed unexpectedly"
+                  : `Gemini CLI exited with code ${code}`,
+              });
             }
 
             // Only persist the turn on genuine success

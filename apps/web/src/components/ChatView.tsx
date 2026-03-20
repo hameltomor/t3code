@@ -242,6 +242,7 @@ import { Toggle } from "./ui/toggle";
 import { SidebarTrigger, useSidebar } from "./ui/sidebar";
 import { newCommandId, newMessageId, newThreadId } from "~/lib/utils";
 import { readNativeApi } from "~/nativeApi";
+import { preferredTerminalEditor, resolvePathLinkTarget } from "../terminal-links";
 import { useMessageQueueStore, useQueueVersion } from "~/messageQueueStore";
 import { QueueBar } from "./QueueBar";
 import {
@@ -6231,13 +6232,32 @@ const MessagesTimeline = memo(function MessagesTimeline({
                       {workEntry.changedFiles && workEntry.changedFiles.length > 0 && (
                         <div className="mt-1 flex flex-wrap gap-1">
                           {workEntry.changedFiles.slice(0, 6).map((filePath) => (
-                            <span
+                            <button
                               key={`${workEntry.id}:${filePath}`}
-                              className="rounded-md border border-border/70 bg-background/65 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground/85"
+                              type="button"
+                              className="rounded-md border border-border/70 bg-background/65 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground/85 transition-colors duration-150 hover:border-border hover:bg-background hover:text-foreground/90"
                               title={filePath}
+                              onClick={() => {
+                                if (workEntry.turnId) {
+                                  onOpenTurnDiff(workEntry.turnId, filePath);
+                                  return;
+                                }
+
+                                if (!markdownCwd) {
+                                  return;
+                                }
+
+                                const api = readNativeApi();
+                                if (!api) {
+                                  return;
+                                }
+
+                                const targetPath = resolvePathLinkTarget(filePath, markdownCwd);
+                                void api.shell.openInEditor(targetPath, preferredTerminalEditor());
+                              }}
                             >
                               {filePath}
-                            </span>
+                            </button>
                           ))}
                           {workEntry.changedFiles.length > 6 && (
                             <span className="px-1 text-[10px] text-muted-foreground-secondary">
