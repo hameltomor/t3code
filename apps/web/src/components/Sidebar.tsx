@@ -5,6 +5,7 @@ import {
   PlusIcon,
   RocketIcon,
   SearchIcon,
+  BarChart3Icon,
   SettingsIcon,
   SquarePenIcon,
   TerminalIcon,
@@ -312,7 +313,7 @@ function SortableProjectItem({
   );
 }
 
-function SidebarSettingsRow({ isOnSettings }: { isOnSettings: boolean }) {
+function SidebarSettingsRow({ isOnSubpage }: { isOnSubpage: boolean }) {
   const router = useRouter();
   const navigate = useNavigate();
 
@@ -341,21 +342,31 @@ function SidebarSettingsRow({ isOnSettings }: { isOnSettings: boolean }) {
     </Tooltip>
   );
 
-  return (
-    <div className="flex flex-col gap-0.5">
-      {isOnSettings ? (
+  if (isOnSubpage) {
+    return (
+      <div className="flex flex-col gap-0.5">
         <button type="button" className={rowClassName} onClick={handleBackClick}>
           <ArrowLeftIcon className="size-4 md:size-3.5 shrink-0" />
           <span>Back</span>
           {versionBadge}
         </button>
-      ) : (
-        <Link to="/settings" className={rowClassName}>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      <div className="flex items-center gap-1">
+        <Link to="/dashboard" className={rowClassName + " flex-1"}>
+          <BarChart3Icon className="size-4 md:size-3.5 shrink-0" />
+          <span>Dashboard</span>
+        </Link>
+        <Link to="/settings" className={rowClassName + " flex-1"}>
           <SettingsIcon className="size-4 md:size-3.5 shrink-0" />
           <span>Settings</span>
           {versionBadge}
         </Link>
-      )}
+      </div>
     </div>
   );
 }
@@ -389,8 +400,9 @@ export default function Sidebar() {
     strict: false,
     select: (params) => (params.threadId ? ThreadId.makeUnsafe(params.threadId) : null),
   });
-  const isOnSettings = useRouterState({
-    select: (state) => state.location.pathname === "/settings",
+  const isOnSubpage = useRouterState({
+    select: (state) =>
+      state.location.pathname === "/settings" || state.location.pathname === "/dashboard",
   });
 
   // Auto-close mobile sidebar drawer when route changes
@@ -1903,7 +1915,7 @@ export default function Sidebar() {
 
       <SidebarSeparator />
       <SidebarFooter className="gap-0 p-2 md:p-2">
-        <SidebarSettingsRow isOnSettings={isOnSettings} />
+        <SidebarSettingsRow isOnSubpage={isOnSubpage} />
       </SidebarFooter>
       <ImportWizard
         isOpen={importWizardState.isOpen}

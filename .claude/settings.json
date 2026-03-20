@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(grep -r \"All fibers interrupted\\\\|causeSquash\" /home/amor/workspace/xbe-code --include=*.ts --include=*.js)"
+      "Bash(grep -r \"All fibers interrupted\\\\|causeSquash\" /home/amor/workspace/xbe-code --include=*.ts --include=*.js)",
+      "Bash(gh api:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(grep -n \"thread.context-status-set\\\\|TurncompleteUsageTracked\\\\|UsageAggregate\" /home/amor/workspace/xbe-code/packages/contracts/src/*.ts)",
+      "Bash(npx tsr:*)",
+      "Bash(bunx turbo:*)"
     ]
   }
 }

@@ -50,6 +50,7 @@ import { CodexHistoryScannerLive } from "./historyImport/Layers/CodexHistoryScan
 import { CodexRolloutParserLive } from "./historyImport/Layers/CodexRolloutParser";
 import { HistoryMaterializerLive } from "./historyImport/Layers/HistoryMaterializer";
 import { HistoryImportServiceLive } from "./historyImport/Layers/HistoryImportService";
+import { ProjectionUsageAggregateRepositoryLive } from "./persistence/Layers/ProjectionUsageAggregate";
 
 export function makeServerProviderLayer(): Layer.Layer<
   ProviderService,
@@ -181,6 +182,7 @@ export function makeServerRuntimeServicesLayer() {
     KeybindingsLive,
     ProjectionNotificationRepositoryLive,
     ProjectionDraftRepositoryLive,
+    ProjectionUsageAggregateRepositoryLive,
     notificationLayer,
     historyImportLayers,
   ).pipe(Layer.provideMerge(NodeServices.layer));

@@ -67,6 +67,12 @@ import type {
   HistoryImportListThreadLinksInput,
   ThreadExternalLink,
 } from "./historyImport";
+import type {
+  DashboardGetUsageSummaryInput,
+  DashboardUsageSummary,
+  DashboardRateLimit,
+  DashboardProviderStatus,
+} from "./dashboard";
 
 export interface ContextMenuItem<T extends string = string> {
   id: T;
@@ -210,5 +216,10 @@ export interface NativeApi {
     execute: (input: HistoryImportExecuteInput) => Promise<HistoryImportExecuteResult>;
     validateLink: (input: HistoryImportValidateLinkInput) => Promise<HistoryImportValidateLinkResult>;
     listThreadLinks: (input: HistoryImportListThreadLinksInput) => Promise<ThreadExternalLink[]>;
+  };
+  dashboard: {
+    getUsageSummary: (input: DashboardGetUsageSummaryInput) => Promise<DashboardUsageSummary>;
+    getRateLimits: () => Promise<DashboardRateLimit[]>;
+    getProviderStatus: () => Promise<DashboardProviderStatus[]>;
   };
 }

@@ -53,6 +53,7 @@ import {
   HistoryImportPreviewInput,
   HistoryImportValidateLinkInput,
 } from "./historyImport";
+import { DASHBOARD_WS_METHODS, DashboardGetUsageSummaryInput } from "./dashboard";
 
 // ── WebSocket RPC Method Names ───────────────────────────────────────
 
@@ -118,6 +119,11 @@ export const WS_METHODS = {
   historyImportExecute: HISTORY_IMPORT_WS_METHODS.execute,
   historyImportValidateLink: HISTORY_IMPORT_WS_METHODS.validateLink,
   historyImportListThreadLinks: HISTORY_IMPORT_WS_METHODS.listThreadLinks,
+
+  // Dashboard methods
+  dashboardGetUsageSummary: DASHBOARD_WS_METHODS.getUsageSummary,
+  dashboardGetRateLimits: DASHBOARD_WS_METHODS.getRateLimits,
+  dashboardGetProviderStatus: DASHBOARD_WS_METHODS.getProviderStatus,
 } as const;
 
 // ── Push Event Channels ──────────────────────────────────────────────
@@ -211,6 +217,11 @@ const WebSocketRequestBody = Schema.Union([
   tagRequestBody(WS_METHODS.historyImportExecute, HistoryImportExecuteInput),
   tagRequestBody(WS_METHODS.historyImportValidateLink, HistoryImportValidateLinkInput),
   tagRequestBody(WS_METHODS.historyImportListThreadLinks, HistoryImportListThreadLinksInput),
+
+  // Dashboard methods
+  tagRequestBody(WS_METHODS.dashboardGetUsageSummary, DashboardGetUsageSummaryInput),
+  tagRequestBody(WS_METHODS.dashboardGetRateLimits, Schema.Struct({})),
+  tagRequestBody(WS_METHODS.dashboardGetProviderStatus, Schema.Struct({})),
 ]);
 
 export const WebSocketRequest = Schema.Struct({

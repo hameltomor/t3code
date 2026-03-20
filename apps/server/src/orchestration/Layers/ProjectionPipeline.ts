@@ -30,8 +30,10 @@ import {
 import { ProjectionThreadRepository } from "../../persistence/Services/ProjectionThreads.ts";
 import { ProjectionNotificationRepository } from "../../persistence/Services/ProjectionNotifications.ts";
 import { ProjectionThreadContextStatusRepository } from "../../persistence/Services/ProjectionThreadContextStatus.ts";
+import { ProjectionUsageAggregateRepository } from "../../persistence/Services/ProjectionUsageAggregate.ts";
 import { ProjectionNotificationRepositoryLive } from "../../persistence/Layers/ProjectionNotifications.ts";
 import { ProjectionThreadContextStatusRepositoryLive } from "../../persistence/Layers/ProjectionThreadContextStatus.ts";
+import { ProjectionUsageAggregateRepositoryLive } from "../../persistence/Layers/ProjectionUsageAggregate.ts";
 import { ProjectionPendingApprovalRepositoryLive } from "../../persistence/Layers/ProjectionPendingApprovals.ts";
 import { ProjectionProjectRepositoryLive } from "../../persistence/Layers/ProjectionProjects.ts";
 import { ProjectionStateRepositoryLive } from "../../persistence/Layers/ProjectionState.ts";
@@ -65,6 +67,7 @@ export const ORCHESTRATION_PROJECTOR_NAMES = {
   pendingApprovals: "projection.pending-approvals",
   notifications: "projection.notifications",
   threadContextStatus: "projection.thread-context-status",
+  usageAggregate: "projection.usage-aggregate",
 } as const;
 
 type ProjectorName =
@@ -359,6 +362,7 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
   const projectionPendingApprovalRepository = yield* ProjectionPendingApprovalRepository;
   const projectionNotificationRepository = yield* ProjectionNotificationRepository;
   const projectionThreadContextStatusRepository = yield* ProjectionThreadContextStatusRepository;
+  const projectionUsageAggregateRepository = yield* ProjectionUsageAggregateRepository;
 
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -1204,6 +1208,32 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
       });
     });
 
+  const applyUsageAggregateProjection: ProjectorDefinition["apply"] = (event) =>
+    Effect.gen(function* () {
+      if (event.type !== "thread.context-status-set") return;
+      const { contextStatus } = event.payload;
+      if (!contextStatus.tokenUsage) return;
+
+      const provider = contextStatus.provider;
+      const model = contextStatus.model ?? "unknown";
+      const date = event.occurredAt.slice(0, 10); // YYYY-MM-DD
+      const usage = contextStatus.tokenUsage;
+
+      yield* projectionUsageAggregateRepository.upsert({
+        id: `${provider}:${model}:${date}`,
+        provider,
+        model,
+        date,
+        turnCount: 1,
+        inputTokens: usage.inputTokens ?? 0,
+        outputTokens: usage.outputTokens ?? 0,
+        totalTokens: usage.totalTokens,
+        cachedInputTokens: usage.cachedInputTokens ?? 0,
+        reasoningTokens: usage.reasoningTokens ?? 0,
+        updatedAt: event.occurredAt,
+      });
+    });
+
   const projectors: ReadonlyArray<ProjectorDefinition> = [
     {
       name: ORCHESTRATION_PROJECTOR_NAMES.projects,
@@ -1248,6 +1278,10 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
     {
       name: ORCHESTRATION_PROJECTOR_NAMES.threadContextStatus,
       apply: applyThreadContextStatusProjection,
+    },
+    {
+      name: ORCHESTRATION_PROJECTOR_NAMES.usageAggregate,
+      apply: applyUsageAggregateProjection,
     },
   ];
 
@@ -1351,5 +1385,6 @@ export const OrchestrationProjectionPipelineLive = Layer.effect(
   Layer.provideMerge(ProjectionPendingApprovalRepositoryLive),
   Layer.provideMerge(ProjectionNotificationRepositoryLive),
   Layer.provideMerge(ProjectionThreadContextStatusRepositoryLive),
+  Layer.provideMerge(ProjectionUsageAggregateRepositoryLive),
   Layer.provideMerge(ProjectionStateRepositoryLive),
 );
