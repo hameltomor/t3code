@@ -1,5 +1,6 @@
 import {
   AppNotification,
+  DASHBOARD_WS_METHODS,
   OrchestrationEvent,
   ORCHESTRATION_WS_CHANNELS,
   ORCHESTRATION_WS_METHODS,
@@ -241,6 +242,11 @@ export function createWsNativeApi(): NativeApi {
       execute: (input) => transport.request(WS_METHODS.historyImportExecute, input),
       validateLink: (input) => transport.request(WS_METHODS.historyImportValidateLink, input),
       listThreadLinks: (input) => transport.request(WS_METHODS.historyImportListThreadLinks, input),
+    },
+    dashboard: {
+      getUsageSummary: (input) => transport.request(DASHBOARD_WS_METHODS.getUsageSummary, input),
+      getRateLimits: () => transport.request(DASHBOARD_WS_METHODS.getRateLimits),
+      getProviderStatus: () => transport.request(DASHBOARD_WS_METHODS.getProviderStatus),
     },
   };
 

@@ -12,8 +12,10 @@ import type { Duplex } from "node:stream";
 import Mime from "@effect/platform-node/Mime";
 import {
   CommandId,
+  DASHBOARD_WS_METHODS,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   type ClientOrchestrationCommand,
+  type DashboardUsagePeriod,
   type OrchestrationCommand,
   ORCHESTRATION_WS_CHANNELS,
   ORCHESTRATION_WS_METHODS,
@@ -82,6 +84,7 @@ import { WebPushService } from "./push/WebPushService.ts";
 import { expandHomePath } from "./os-jank.ts";
 import { HistoryImportServiceService } from "./historyImport/Services/HistoryImportService.ts";
 import { ThreadExternalLinkRepository } from "./persistence/Services/ThreadExternalLinks.ts";
+import { ProjectionUsageAggregateRepository } from "./persistence/Services/ProjectionUsageAggregate.ts";
 
 /**
  * ServerShape - Service API for server lifecycle control.
@@ -239,7 +242,8 @@ export type ServerRuntimeServices =
   | ProjectionDraftRepository
   | WebPushService
   | HistoryImportServiceService
-  | ThreadExternalLinkRepository;
+  | ThreadExternalLinkRepository
+  | ProjectionUsageAggregateRepository;
 
 export class ServerLifecycleError extends Schema.TaggedErrorClass<ServerLifecycleError>()(
   "ServerLifecycleError",
@@ -666,6 +670,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
   const providerService = yield* ProviderService;
   const historyImportService = yield* HistoryImportServiceService;
   const externalLinkRepo = yield* ThreadExternalLinkRepository;
+  const usageAggregateRepo = yield* ProjectionUsageAggregateRepository;
 
   const subscriptionsScope = yield* Scope.make("sequential");
   yield* Effect.addFinalizer(() => Scope.close(subscriptionsScope, Exit.void));
@@ -825,6 +830,27 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
       ),
     ]),
   );
+
+  const dashboardDateRange = (period: DashboardUsagePeriod): { dateFrom: string; dateTo: string } => {
+    const now = new Date();
+    const dateTo = now.toISOString().slice(0, 10);
+    switch (period) {
+      case "today":
+        return { dateFrom: dateTo, dateTo };
+      case "7d": {
+        const from = new Date(now);
+        from.setDate(from.getDate() - 6);
+        return { dateFrom: from.toISOString().slice(0, 10), dateTo };
+      }
+      case "30d": {
+        const from = new Date(now);
+        from.setDate(from.getDate() - 29);
+        return { dateFrom: from.toISOString().slice(0, 10), dateTo };
+      }
+      case "all":
+        return { dateFrom: "2000-01-01", dateTo };
+    }
+  };
 
   const routeRequest = Effect.fnUntraced(function* (request: WebSocketRequest) {
     switch (request.body._tag) {
@@ -1169,6 +1195,66 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
           ),
         );
         return links;
+      }
+
+      // Dashboard methods
+      case DASHBOARD_WS_METHODS.getUsageSummary: {
+        const { period } = request.body;
+        const { dateFrom, dateTo } = dashboardDateRange(period as DashboardUsagePeriod);
+
+        const [providerSummaries, topModels, dailyTotals] = yield* Effect.all([
+          usageAggregateRepo.getProviderSummaries({ dateFrom, dateTo }),
+          usageAggregateRepo.getTopModels({ dateFrom, dateTo, limit: 5 }),
+          usageAggregateRepo.getDailyTotals({ dateFrom, dateTo }),
+        ]).pipe(
+          Effect.mapError(
+            (error) => new RouteRequestError({ message: error.message }),
+          ),
+        );
+
+        return {
+          providers: providerSummaries.map((r) => ({
+            provider: r.provider,
+            totalTokens: r.totalTokens,
+            inputTokens: r.inputTokens,
+            outputTokens: r.outputTokens,
+            turnCount: r.turnCount,
+          })),
+          topModels: topModels.map((r) => ({
+            model: r.model,
+            provider: r.provider,
+            totalTokens: r.totalTokens,
+            turnCount: r.turnCount,
+          })),
+          dailyTotals: dailyTotals.map((r) => ({
+            date: r.date,
+            inputTokens: r.inputTokens,
+            outputTokens: r.outputTokens,
+            totalTokens: r.totalTokens,
+            turnCount: r.turnCount,
+          })),
+          period: { from: dateFrom, to: dateTo },
+        };
+      }
+
+      case DASHBOARD_WS_METHODS.getRateLimits: {
+        // Rate limits are ephemeral — not yet tracked. Return empty.
+        return [];
+      }
+
+      case DASHBOARD_WS_METHODS.getProviderStatus: {
+        const statuses = yield* providerHealth.getStatuses;
+        return statuses.map((s) => ({
+          provider: s.provider,
+          status: s.status === "ready"
+            ? "connected" as const
+            : s.status === "error"
+              ? "error" as const
+              : "disconnected" as const,
+          hasApiKey: s.authStatus === "authenticated",
+          activeSessionCount: 0,
+          lastError: s.message ?? null,
+        }));
       }
 
       default: {

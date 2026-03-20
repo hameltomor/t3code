@@ -1,11 +1,19 @@
+import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import type { DashboardUsagePeriod } from "@xbetools/contracts";
 
 import { isElectron } from "../env";
 import { cn } from "~/lib/utils";
 import { SidebarInset, SidebarTrigger, useSidebar } from "~/components/ui/sidebar";
+import { UsageSummarySection } from "~/components/dashboard/UsageSummarySection";
+import { RateLimitsSection } from "~/components/dashboard/RateLimitsSection";
+import { ProviderStatusSection } from "~/components/dashboard/ProviderStatusSection";
+import { useDashboardData } from "~/hooks/useDashboardData";
 
 function DashboardRouteView() {
   const { open: sidebarOpen } = useSidebar();
+  const [period, setPeriod] = useState<DashboardUsagePeriod>("7d");
+  const { usage, rateLimits, providerStatus, loading, error } = useDashboardData(period);
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground isolate">
@@ -33,44 +41,17 @@ function DashboardRouteView() {
               </p>
             </header>
 
-            {/* Phase 4: UsageSummarySection */}
-            <section className="rounded-2xl border border-border bg-card p-5">
-              <div className="mb-4">
-                <h2 className="text-sm font-medium text-foreground">Usage</h2>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Token usage and turn counts by provider and model.
-                </p>
-              </div>
-              <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
-                Usage data will appear here after AI interactions.
-              </div>
-            </section>
+            <UsageSummarySection
+              usage={usage}
+              loading={loading}
+              error={error}
+              period={period}
+              onPeriodChange={setPeriod}
+            />
 
-            {/* Phase 5: RateLimitsSection */}
-            <section className="rounded-2xl border border-border bg-card p-5">
-              <div className="mb-4">
-                <h2 className="text-sm font-medium text-foreground">Rate Limits</h2>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Current rate limit status for each provider.
-                </p>
-              </div>
-              <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
-                Rate limit data will appear during active sessions.
-              </div>
-            </section>
+            <RateLimitsSection rateLimits={rateLimits} />
 
-            {/* Phase 6: ProviderStatusSection */}
-            <section className="rounded-2xl border border-border bg-card p-5">
-              <div className="mb-4">
-                <h2 className="text-sm font-medium text-foreground">Provider Status</h2>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Connection status and configuration for each AI provider.
-                </p>
-              </div>
-              <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
-                Provider status will appear here.
-              </div>
-            </section>
+            <ProviderStatusSection providerStatus={providerStatus} />
           </div>
         </div>
       </div>

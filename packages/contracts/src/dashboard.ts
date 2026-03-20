@@ -90,6 +90,15 @@ export const DashboardProviderStatus = Schema.Struct({
 export type DashboardProviderStatus = typeof DashboardProviderStatus.Type;
 
 // ---------------------------------------------------------------------------
+// WS Request Inputs
+// ---------------------------------------------------------------------------
+
+export const DashboardGetUsageSummaryInput = Schema.Struct({
+  period: DashboardUsagePeriod,
+});
+export type DashboardGetUsageSummaryInput = typeof DashboardGetUsageSummaryInput.Type;
+
+// ---------------------------------------------------------------------------
 // WS Method types
 // ---------------------------------------------------------------------------
 
