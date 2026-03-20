@@ -240,9 +240,22 @@ export interface ClaudeCodeAdapterLiveOptions {
   readonly stateDir?: string;
 }
 
+/**
+ * Convert an Effect queue into an async iterable that **never rejects**.
+ *
+ * The Claude Agent SDK fires `streamInput(prompt)` in a detached async task
+ * that is neither awaited nor wrapped in a try-catch.  If our `next()` ever
+ * rejects, the rejection becomes unhandled and crashes the Node process.
+ *
+ * Defence-in-depth: the outer try-catch absorbs any rejection that
+ * `Effect.runPromiseExit` may produce during scope/runtime teardown in
+ * effect-smol, which the inner `Exit.isFailure` path cannot catch.
+ */
 function promptQueueToAsyncIterable(
   promptQueue: Queue.Dequeue<PromptQueueItem>,
 ): AsyncIterable<SDKUserMessage> {
+  const DONE: IteratorResult<SDKUserMessage> = { done: true, value: undefined };
+
   return {
     [Symbol.asyncIterator](): AsyncIterator<SDKUserMessage> {
       let done = false;
@@ -250,30 +263,36 @@ function promptQueueToAsyncIterable(
       return {
         next: async (): Promise<IteratorResult<SDKUserMessage>> => {
           if (done) {
-            return { done: true, value: undefined };
+            return DONE;
           }
 
-          while (true) {
-            const exit = await Effect.runPromiseExit(Queue.take(promptQueue));
-            if (Exit.isFailure(exit)) {
-              // The Claude SDK detaches its prompt stream consumer. When we stop a session
-              // and shut the queue down, the iterator must end cleanly instead of rejecting.
-              done = true;
-              return { done: true, value: undefined };
-            }
+          try {
+            while (true) {
+              const exit = await Effect.runPromiseExit(Queue.take(promptQueue));
+              if (Exit.isFailure(exit)) {
+                done = true;
+                return DONE;
+              }
 
-            const item = exit.value;
-            if (item.type === "terminate") {
-              done = true;
-              return { done: true, value: undefined };
-            }
+              const item = exit.value;
+              if (item.type === "terminate") {
+                done = true;
+                return DONE;
+              }
 
-            return { done: false, value: item.message };
+              return { done: false, value: item.message };
+            }
+          } catch {
+            // Effect.runPromiseExit rejected during runtime/scope teardown.
+            // End the stream cleanly so the SDK's detached consumer does not
+            // produce an unhandled rejection.
+            done = true;
+            return DONE;
           }
         },
         return: async (): Promise<IteratorResult<SDKUserMessage>> => {
           done = true;
-          return { done: true, value: undefined };
+          return DONE;
         },
       };
     },

@@ -1724,4 +1724,42 @@ describe("ClaudeCodeAdapterLive", () => {
       Effect.provide(harness.layer),
     );
   });
+
+  it.effect("prompt iterator resolves cleanly with done:true when session is stopped (no unhandled rejection)", () => {
+    const harness = makeHarness();
+
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeCodeAdapter;
+
+      // Drain runtime events in the background so they don't block the queue.
+      const eventDrain = yield* Stream.runDrain(adapter.streamEvents).pipe(Effect.forkChild);
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: "claudeCode",
+        runtimeMode: "full-access",
+      });
+
+      // Grab the prompt async iterable the adapter handed to createQuery.
+      const createInput = harness.getLastCreateQueryInput();
+      assert.notEqual(createInput, undefined);
+      const promptIterator = createInput!.prompt[Symbol.asyncIterator]();
+
+      // Start a pending next() — it will block waiting for a prompt item.
+      const pendingNext = promptIterator.next();
+
+      // Stop the session (shuts down the prompt queue).
+      yield* adapter.stopSession(THREAD_ID);
+      harness.query.finish();
+
+      // The pending next() must resolve to { done: true } — NOT reject.
+      const result = yield* Effect.promise(() => pendingNext);
+      assert.equal(result.done, true);
+
+      yield* Fiber.interrupt(eventDrain);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
 });
